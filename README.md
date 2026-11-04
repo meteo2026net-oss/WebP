@@ -49,7 +49,7 @@ Never commit local settings, credentials, database files, logs, or downloaded da
 $env:PYTHONPATH = "src"
 python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json
 ``
-3. Convert every compatible 2-D regular latitude/longitude scalar field:
+3. Convert every compatible regular latitude/longitude scalar field, including its separate forecast-time and vertical-level slices:
 ```powershell
 python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
 ``
@@ -76,6 +76,6 @@ python -m unittest discover -s tests -t . -v
 Tests use synthetic arrays and fake FTP sessions; they do not prove compatibility with the live ECMWF service or every GRIB grid projection.
 
 ## Current scientific and geographic limitations
-The initial map renderer and nearest-point sampler support regular 1-D latitude/longitude grids only. Click a map location to retrieve the nearest stored value, units, and valid time (nearest-neighbour only; no bilinear interpolation yet). Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids need reprojection before map display. The converter deliberately rejects unsupported grids rather than placing them incorrectly.
+The initial map renderer and nearest-point sampler support regular 1-D latitude/longitude grids only. Multi-step and multi-level fields are split into separately selectable layers when cfgrib exposes their dimensions. Click a map location to retrieve the nearest stored value, units, and valid time (nearest-neighbour only; no bilinear interpolation yet). Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids need reprojection before map display. The converter deliberately rejects unsupported grids rather than placing them incorrectly.
 
 The RGB WebP wind texture uses 8-bit quantization. Lossless WebP preserves encoded channel bytes, not original floating-point precision. PNG overlays are display products, not scientific source data. Preserve original GRIB files for scientific calculations.
