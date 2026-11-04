@@ -55,10 +55,10 @@ python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output ou
 ### 6. فتح الخريطة التفاعلية
 من جذر المستودع:
 ```powershell
-python -m http.server 8000
+python serve_map.py
 ```
 ثم افتح:
-`http://localhost:8000/map_viewer/`
+`http://127.0.0.1:8765/map_viewer/`
 
 تستطيع اختيار الطبقة، تغيير شفافيتها، وتكبير نطاقها. يلزم تشغيل الخادم المحلي لأن المتصفح لا يقرأ manifest عبر `file://` مباشرة.
 
