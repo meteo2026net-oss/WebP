@@ -54,12 +54,20 @@ _UNITS = {
     # Base unit: mm s-1. Mass flux units (e.g. kg m-2 s-1) are intentionally
     # excluded because converting them requires an explicit water-equivalent assumption.
     "mm h-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
+    "mm h**-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
+    "mm h^-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
+    "mm hour**-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
+    "mm hour^-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
     "mm/hr": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
     "mm hour-1": ("precipitation_rate", 1.0 / 3600.0, 0.0, "mm h-1"),
     "mm day-1": ("precipitation_rate", 1.0 / 86400.0, 0.0, "mm day-1"),
+    "mm day**-1": ("precipitation_rate", 1.0 / 86400.0, 0.0, "mm day-1"),
+    "mm day^-1": ("precipitation_rate", 1.0 / 86400.0, 0.0, "mm day-1"),
     "mm/day": ("precipitation_rate", 1.0 / 86400.0, 0.0, "mm day-1"),
     "mm d-1": ("precipitation_rate", 1.0 / 86400.0, 0.0, "mm day-1"),
     "mm s-1": ("precipitation_rate", 1.0, 0.0, "mm s-1"),
+    "mm s**-1": ("precipitation_rate", 1.0, 0.0, "mm s-1"),
+    "mm s^-1": ("precipitation_rate", 1.0, 0.0, "mm s-1"),
     "mm/s": ("precipitation_rate", 1.0, 0.0, "mm s-1"),
 }
 
