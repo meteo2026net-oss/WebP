@@ -65,7 +65,7 @@ python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output ou
 ```powershell
 python serve_map.py
 ``
-Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`. Click the map to query the nearest original GRIB grid cell; this requires the matching `.npz` data file.
+Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`. Click the map to query the nearest original GRIB grid cell; this requires the matching `.npz` data file. Compatible forecast frames can be browsed with the timeline slider and played sequentially.
 
 ## Tests
 ```powershell
