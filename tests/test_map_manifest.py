@@ -27,6 +27,15 @@ class MapManifestTests(unittest.TestCase):
             self.assertIn("surface_new.png", [x["image"] for x in manifest["layers"]])
             self.assertIn("850.png", [x["image"] for x in manifest["layers"]])
 
+    def test_accepts_array_valued_time_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            layer = {"source_file": "wind.grib", "source_id": "abc", "variable": "wind_speed",
+                     "valid_time": ["2026-11-04T00:00", "2026-11-04T06:00"], "step": [0, 6], "image": "wind.png"}
+            path = update_manifest(root, [layer])
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["layers"][0]["step"], [0, 6])
+
 
 if __name__ == "__main__":
     unittest.main()
