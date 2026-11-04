@@ -159,9 +159,20 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
     query_longitude = longitude + 360.0 * round(
         (float(np.mean(unwrapped_longitudes)) - longitude) / 360.0
     )
+    longitude_step = float(np.median(np.abs(np.diff(unwrapped_longitudes))))
+    longitude_span = abs(float(unwrapped_longitudes[-1] - unwrapped_longitudes[0]))
+    cyclic_tolerance = max(1e-6, longitude_step * 1e-6)
+    is_cyclic_global_grid = np.isclose(
+        longitude_span + longitude_step, 360.0,
+        rtol=0.0, atol=cyclic_tolerance,
+    )
     if method == "nearest":
         lat_delta = np.abs(latitudes - latitude)
-        lon_delta = np.abs(unwrapped_longitudes - query_longitude)
+        raw_lon_delta = unwrapped_longitudes - query_longitude
+        lon_delta = (
+            np.abs((raw_lon_delta + 180.0) % 360.0 - 180.0)
+            if is_cyclic_global_grid else np.abs(raw_lon_delta)
+        )
         row, col = int(np.argmin(lat_delta)), int(np.argmin(lon_delta))
         if (lat_delta[row] > np.median(np.abs(lat_diffs)) / 2.0 + 1e-6
                 or lon_delta[col] > np.median(np.abs(lon_diffs)) / 2.0 + 1e-6):
