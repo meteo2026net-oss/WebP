@@ -6,3 +6,5 @@ xarray>=2024.1
 cfgrib>=0.9.15
 eccodes>=2.36
 pandas>=2.2
+pyproj>=3.6
+scipy>=1.11
