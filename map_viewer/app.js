@@ -152,7 +152,6 @@
         result.long_name || result.variable || "الحقل الجوي",
         "القيمة: " + valueText,
         "طريقة الاستخراج: " + (result.method === "bilinear" ? "استيفاء ثنائي" : "أقرب خلية"),
-        "طريقة الاستخراج: " + (result.method === "bilinear" ? "استيفاء ثنائي" : "أقرب خلية"),
         "إحداثيات الخلية: " + Number(result.latitude).toFixed(4) + ", " + Number(result.longitude).toFixed(4),
         "الإحداثيات المطلوبة: " + lat.toFixed(4) + ", " + lon.toFixed(4),
         "الصلاحية: " + (result.valid_time || "غير محددة")
