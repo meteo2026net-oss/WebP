@@ -18,6 +18,16 @@ class MapRenderTests(unittest.TestCase):
         self.assertTrue(np.all(np.diff(out_lon) > 0))
         self.assertEqual(data.shape, (2, 3))
 
+    def test_rejects_duplicate_or_non_monotonic_latitudes(self):
+        values = np.ones((3, 2), dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "strictly monotonic"):
+            normalize_regular_grid(values, np.array([0, 1, 0]), np.array([0, 1]))
+
+    def test_rejects_latitude_outside_geographic_range(self):
+        values = np.ones((2, 2), dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "-90..90"):
+            normalize_regular_grid(values, np.array([91, 90]), np.array([0, 1]))
+
     def test_rejects_irregular_longitude_grid(self):
         values = np.ones((2, 3), dtype=np.float32)
         with self.assertRaisesRegex(ValueError, "regularly spaced"):
