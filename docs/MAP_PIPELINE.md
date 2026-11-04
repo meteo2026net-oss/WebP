@@ -14,7 +14,7 @@
 The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
 
 ## Grid limitations
-The renderer supports regular 1-D latitude/longitude grids and 2-D geolocation grids. For 2-D geolocation, it transforms decoder-provided latitude/longitude cell centres to EPSG:3857 and interpolates onto a regular display raster. This makes regional rotated-pole, Lambert, polar-stereographic and other projected GRIB grids renderable when cfgrib exposes matching 2-D latitude/longitude coordinates. It does not guess projection parameters. Curvilinear interpolation currently uses linear triangulation and is limited to regional extents; global/seam-spanning curvilinear grids require a dedicated tiling path. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products.
+The renderer supports regular 1-D latitude/longitude grids and 2-D geolocation grids. For 2-D geolocation, it transforms decoder-provided latitude/longitude cell centres to EPSG:3857 and interpolates onto a regular display raster. This makes regional rotated-pole, Lambert, polar-stereographic and other projected GRIB grids renderable when cfgrib exposes matching 2-D latitude/longitude coordinates. It does not guess projection parameters. Curvilinear interpolation currently uses linear triangulation and is limited to regional extents; global/seam-spanning curvilinear grids require a dedicated tiling path. Missing geolocation outside a projected grid's valid domain is masked and ignored rather than invalidating the entire field. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products.
 
 ## Scientific integrity
 PNG is a display product, not the scientific source. Preserve original GRIB files and use their decoded values for calculations. The existing RGB WebP wind texture is an 8-bit quantized encoding and is separate from the display PNG.
@@ -30,7 +30,7 @@ PNG is a display product, not the scientific source. Preserve original GRIB file
 GET /api/point?image=<layer-image>&lat=<latitude>&lon=<longitude>
 ```
 
-يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها. للشبكات المنتظمة ذات إحداثيات 1-D يمكن اختيار أقرب خلية أو الاستيفاء الثنائي. أما الشبكات ذات الإحداثيات الجغرافية 2-D فيُعاد أقرب مركز خلية صالح؛ الاستيفاء الثنائي غير متاح لها بعد.
+يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها. للشبكات المنتظمة ذات إحداثيات 1-D يمكن اختيار أقرب خلية أو الاستيفاء الثنائي. أما الشبكات ذات الإحداثيات الجغرافية 2-D فيُعاد أقرب مركز خلية صالح، مع تجاهل الخلايا التي لا تملك إحداثيات جغرافية صالحة؛ الاستيفاء الثنائي غير متاح لها بعد.
 
 ملفات NPZ تحفظ بيانات الشبكة بعد فك GRIB إلى float32. احتفظ بملف GRIB الأصلي لأي حسابات تحتاج دقة المصدر الكاملة.
 
