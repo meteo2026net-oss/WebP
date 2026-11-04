@@ -27,8 +27,8 @@ class PointQueryTests(unittest.TestCase):
             path = Path(tmp) / "field.npz"
             np.savez_compressed(
                 path,
-                values=np.array([[np.nan, 2.0]], dtype=np.float32),
-                latitudes=np.array([10.0]),
+                values=np.array([[np.nan, 2.0], [3.0, 4.0]], dtype=np.float32),
+                latitudes=np.array([10.0, 9.0]),
                 longitudes=np.array([20.0, 21.0]),
             )
             result = sample_npz(path, 10.0, 20.0)
