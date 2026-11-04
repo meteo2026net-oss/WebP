@@ -33,6 +33,7 @@ class MapRenderTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(metadata["width"], 2)
             self.assertEqual(metadata["height"], 2)
+            self.assertEqual(metadata["render_projection"], "EPSG:3857")
             with Image.open(path) as image:
                 self.assertEqual(image.mode, "RGBA")
                 alpha = np.asarray(image)[..., 3]
