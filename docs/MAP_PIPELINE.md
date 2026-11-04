@@ -79,3 +79,15 @@ The U/V wind encoder checks that both components declare matching units when uni
 ## Meteorological unit conversions
 
 The `meteorological_units` helper provides explicit conversions for pressure (Pa, hPa/mbar, kPa), temperature (K, °C), wind speed (m s-1, km h-1, knots), and precipitation depth (mm, m). It accepts scalar or NumPy-array values and preserves missing values. Unknown units and conversions across physical dimensions are rejected. The GRIB wind encoder uses canonical unit aliases when checking U/V compatibility; it still does not silently convert source fields, so their declared source unit remains recorded.
+
+
+## Display-only unit conversion
+
+The general scalar converter can create a display raster in a requested unit while preserving decoded source values for scientific point queries. Select exactly one variable when requesting a display conversion:
+
+```bash
+python -m ecmwf_collector.tools.grib_to_map forecast.grib2 --variable t2m --display-unit degC
+python -m ecmwf_collector.tools.grib_to_map forecast.grib2 --variable msl --display-unit hPa
+```
+
+The NPZ `values` array remains in the source GRIB unit and is used by point queries. A separate `display_values` array stores the converted display field; PNG colour limits and the map legend use `display_units`. The point-value panel reports the source unit. Unknown units and incompatible dimensions fail rather than being guessed. This option intentionally requires `--variable` so one requested target unit cannot accidentally be applied to a mixed collection of pressure, temperature, precipitation and other fields. The helper only covers explicitly documented dimensions/aliases; precipitation rates and fluxes are not treated as precipitation depth.
