@@ -205,7 +205,13 @@ def _has_two_dimensional_spread(points: np.ndarray) -> bool:
     if coordinates.ndim != 2 or coordinates.shape[1] != 2 or coordinates.shape[0] < 3:
         return False
     centered = coordinates - np.mean(coordinates, axis=0)
-    return int(np.linalg.matrix_rank(centered)) == 2
+    singular_values = np.linalg.svd(centered, compute_uv=False)
+    if singular_values.size < 2 or singular_values[0] <= 0:
+        return False
+    # Projected coordinates are large (metres); inverse-projection round-off
+    # can give an exactly collinear mesh a tiny non-zero second singular value.
+    # Use a relative geometric tolerance rather than exact numerical rank.
+    return bool(singular_values[1] > singular_values[0] * 1e-10)
 
 
 def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
