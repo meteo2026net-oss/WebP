@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ecmwf_collector.tools.map_render import normalize_regular_grid, render_scalar_png
+from ecmwf_collector.tools.map_render import normalize_regular_grid, render_scalar_png, render_direction_png
 
 
 class MapRenderTests(unittest.TestCase):
@@ -139,6 +139,45 @@ class MapRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "three valid geolocated"):
                 render_scalar_png(values, lat, lon, Path(tmp) / "invalid.png")
+
+
+    def test_direction_renderer_uses_cyclic_hue_and_transparent_missing_cells(self):
+        directions = np.array([[359.0, 1.0], [90.0, np.nan]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "direction.png"
+            metadata = render_direction_png(directions, [10, 0], [20, 21], path)
+            self.assertEqual(metadata["value_min"], 0.0)
+            self.assertEqual(metadata["value_max"], 360.0)
+            self.assertEqual(metadata["resampling"], "circular_sine_cosine")
+            with Image.open(path) as image:
+                rgba = np.asarray(image)
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(rgba.shape[:2], (2, 2))
+                self.assertEqual(int((rgba[..., 3] == 0).sum()), 1)
+
+    def test_direction_renderer_supports_antimeridian_regular_grid(self):
+        directions = np.array([[359, 1, 2], [358, 0, 3]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(directions, [10, 0], [178, 180, 182],
+                                          Path(tmp) / "direction-dateline.png")
+            self.assertLess(result["bounds"]["west"], result["bounds"]["east"])
+            self.assertEqual(result["longitude_convention"], "continuous_unwrapped")
+
+    def test_direction_renderer_reprojects_curvilinear_grid(self):
+        lat = np.array([[12, 12.1, 12.2], [11, 11.1, 11.2], [10, 10.1, 10.2]])
+        lon = np.array([[30, 31, 32], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]])
+        direction = np.array([[359, 1, 359], [359, 1, 359], [359, 1, 359]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(direction, lat, lon, Path(tmp) / "curvilinear-direction.png")
+            self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+            self.assertEqual(result["resampling"], "circular_sine_cosine")
+            self.assertGreater(result["valid_cells"], 0)
+
+    def test_direction_renderer_rejects_all_missing_bearings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "no valid bearings"):
+                render_direction_png(np.full((2, 2), np.nan), [10, 0], [20, 21],
+                                     Path(tmp) / "empty-direction.png")
 
 
 if __name__ == "__main__":
