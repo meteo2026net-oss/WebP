@@ -15,7 +15,7 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
     except (OSError, json.JSONDecodeError):
         current = {"version": 1, "layers": []}
     layers = current.get("layers", [])
-    identity = lambda p: (p.get("source_file"), p.get("variable"), p.get("valid_time"), p.get("typeOfLevel"), p.get("level"), p.get("step"))
+    identity = lambda p: (p.get("source_id"), p.get("source_file"), p.get("variable"), p.get("valid_time"), p.get("typeOfLevel"), p.get("level"), p.get("step"))
     keys = {identity(p) for p in products}
     layers = [p for p in layers if identity(p) not in keys]
     layers.extend(products)
