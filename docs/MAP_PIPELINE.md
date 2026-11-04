@@ -91,3 +91,8 @@ python -m ecmwf_collector.tools.grib_to_map forecast.grib2 --variable msl --disp
 ```
 
 The NPZ `values` array remains in the source GRIB unit and is used by point queries. A separate `display_values` array stores the converted display field; PNG colour limits and the map legend use `display_units`. The point-value panel reports the source unit. Unknown units and incompatible dimensions fail rather than being guessed. This option intentionally requires `--variable` so one requested target unit cannot accidentally be applied to a mixed collection of pressure, temperature, precipitation and other fields. The helper only covers explicitly documented dimensions/aliases; precipitation rates and fluxes are not treated as precipitation depth.
+
+
+## Explicit grid-relative wind rotation
+
+The wind converter accepts `--grid-to-earth-angle-deg` only when cfgrib explicitly marks the components as grid-relative. The angle convention is counter-clockwise from true east to the positive grid-x axis. The conversion is `U_e = U_g cos(a) - V_g sin(a)` and `V_n = U_g sin(a) + V_g cos(a)`. The angle must come from a trusted product specification or independently validated GRIB metadata; the converter does not infer it from grid type or projection names. Without the argument, grid-relative wind directions remain flagged as invalid for true-north bearings. The encoded RGB WebP texture retains the original grid-relative U/V channels; the derived direction calculation uses the rotated earth-relative components.
