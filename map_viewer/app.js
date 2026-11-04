@@ -86,11 +86,11 @@
       interactive: false
     }).addTo(map);
     map.fitBounds(bounds);
-    document.getElementById("legendMin").textContent = Number(entry.value_min).toPrecision(3) + " " + (entry.units || "");
-    document.getElementById("legendMax").textContent = Number(entry.value_max).toPrecision(3) + " " + (entry.units || "");
+    document.getElementById("legendMin").textContent = Number(entry.value_min).toPrecision(3) + " " + (entry.display_units || entry.units || "");
+    document.getElementById("legendMax").textContent = Number(entry.value_max).toPrecision(3) + " " + (entry.display_units || entry.units || "");
     info.textContent = [
       entry.long_name || entry.variable || "Weather field",
-      "الوحدة: " + (entry.units || "غير معروفة"),
+      "وحدة العرض: " + (entry.display_units || entry.units || "غير معروفة"),
       "وقت الصلاحية: " + (entry.valid_time || "غير محدد"),
       "المدى: " + Number(entry.value_min).toFixed(2) + " إلى " + Number(entry.value_max).toFixed(2),
       "الخلايا الصالحة: " + (entry.valid_cells ?? "—")
