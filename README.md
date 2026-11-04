@@ -10,6 +10,7 @@
 - `.github/workflows/tests.yml`: تشغيل الاختبارات تلقائياً عند الدفع أو فتح Pull Request.
 - `requirements.txt`: مكتبات Python المطلوبة.
 - `docs/ENCODING.md`: مواصفات القنوات وفك الترميز.
+- `docs/DATA_ACCESS.md`: ملاحظات الوصول إلى مجموعة WMO Support وتسلسل إدخال البيانات وحماية بيانات الدخول.
 - `.gitignore`: استثناء الملفات المؤقتة والبيانات الكبيرة.
 
 ## المتطلبات والتثبيت
