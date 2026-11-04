@@ -45,7 +45,7 @@ def _json_scalar(value):
 def _json_value(value):
     array = np.asarray(value)
     if array.ndim == 0:
-        return _json_scalar(array.item())
+        return _json_scalar(array[()] )
     return [_json_scalar(item) for item in array.ravel()]
 
 
