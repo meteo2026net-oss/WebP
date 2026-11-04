@@ -49,7 +49,7 @@ Regular one-dimensional longitude grids that cross the international date line a
 
 The local point-query endpoint accepts an optional `method` parameter:
 - `nearest` (default): returns the nearest source grid cell, preserving the original discrete-grid behaviour.
-- `bilinear`: interpolates between the four surrounding cells on a regular 1-D latitude/longitude grid. It refuses extrapolation outside cell centres and returns no numeric value if any required corner is missing. Full-cycle global longitude grids are treated cyclically, including interpolation across the last-to-first column seam; a duplicated 360-degree endpoint is removed from the interpolation geometry.
+- `bilinear`: interpolates between the four surrounding cells on a regular 1-D latitude/longitude grid. It refuses extrapolation outside cell centres and returns no numeric value if any required corner is missing. Full-cycle global longitude grids are treated cyclically, including interpolation across the last-to-first column seam; a duplicated 360-degree endpoint is removed from the interpolation geometry. For nearest-cell sampling, the same cyclic longitude-distance rule is applied to full-cycle regular grids, including grids with a duplicated endpoint; regional longitude axes are deliberately not wrapped.
 
 Example:
 `GET /api/point?image=layer.png&lat=32.5&lon=36.5&method=bilinear`
