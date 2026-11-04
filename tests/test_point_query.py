@@ -21,6 +21,8 @@ class PointQueryTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual(result["value"], 1.0)
             self.assertEqual(result["latitude"], 10.0)
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 9.8, 170.0)
 
     def test_reports_missing_nearest_cell(self):
         with tempfile.TemporaryDirectory() as tmp:
