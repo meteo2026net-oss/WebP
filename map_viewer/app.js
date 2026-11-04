@@ -49,7 +49,7 @@
         return;
       }
       entries.forEach((entry, index) => {
-        const label = [entry.variable || "field", entry.units || "", entry.valid_time || ""].filter(Boolean).join(" — ");
+        const label = [entry.variable || "field", entry.typeOfLevel || "", entry.level ?? "", entry.units || "", entry.valid_time || ""].filter(x => x !== "" && x !== null && x !== undefined).join(" — ");
         select.add(new Option(label, String(index)));
       });
       select.value = "0";
