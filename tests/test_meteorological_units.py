@@ -58,6 +58,22 @@ class MeteorologicalUnitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Incompatible"):
             convert_values(1, "mm h-1", "mm")
 
+    def test_cf_precipitation_rate_aliases(self):
+        for alias in ("mm h-1", "mm h**-1", "mm h^-1", "mm hour**-1", "mm hour^-1"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(1, alias, "mm s-1"), 1 / 3600)
+        for alias in ("mm day-1", "mm day**-1", "mm day^-1", "mm/day"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(24, alias, "mm h-1"), 1.0)
+        for alias in ("mm s-1", "mm s**-1", "mm s^-1", "mm/s"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(1, alias, "mm h-1"), 3600.0)
+
+    def test_precipitation_rate_array_keeps_missing_values(self):
+        result = convert_values(np.array([1.0, np.nan]), "mm h-1", "mm day-1")
+        self.assertAlmostEqual(result[0], 24.0)
+        self.assertTrue(np.isnan(result[1]))
+
     def test_mass_flux_is_not_assumed_to_be_depth_rate(self):
         with self.assertRaisesRegex(ValueError, "Unsupported"):
             convert_values(1, "kg m-2 s-1", "mm h-1")
