@@ -183,6 +183,16 @@ class MapRenderTests(unittest.TestCase):
                 render_direction_png(np.full((2, 2), np.nan), [10, 0], [20, 21],
                                      Path(tmp) / "empty-direction.png")
 
+    def test_curvilinear_direction_rejects_duplicate_projected_cells(self):
+        lat = np.array([[10.0, 10.0], [10.0, 10.0]])
+        lon = np.array([[20.0, 20.0], [20.0, 20.0]])
+        direction = np.array([[0.0, 90.0], [180.0, 270.0]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "fewer than three distinct projected cells"):
+                render_direction_png(
+                    direction, lat, lon, Path(tmp) / "duplicate-direction-cells.png"
+                )
+
 
     def test_opposing_interpolated_bearings_are_marked_ambiguous(self):
         lat = np.array([[12, 12.1, 12.2], [11, 11.1, 11.2], [10, 10.1, 10.2]])
