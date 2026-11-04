@@ -60,6 +60,23 @@ def spatial_layout(da: xr.DataArray) -> tuple[str, str, np.ndarray, np.ndarray, 
     raise ValueError("Latitude/longitude coordinates must both be 1-D or matching 2-D arrays.")
 
 
+def validate_component_geolocation(
+    u_da: Any, v_da: Any
+) -> tuple[str, str, np.ndarray, np.ndarray, str]:
+    """Require U and V to describe the same grid, not merely equal array shapes."""
+    u_layout = spatial_layout(u_da)
+    v_layout = spatial_layout(v_da)
+    if u_layout[0] != v_layout[0] or u_layout[1] != v_layout[1] or u_layout[4] != v_layout[4]:
+        raise ValueError("U and V components do not share the same spatial geolocation layout.")
+    for label, left, right in (
+        ("latitude", u_layout[2], v_layout[2]),
+        ("longitude", u_layout[3], v_layout[3]),
+    ):
+        if left.shape != right.shape or not np.array_equal(left, right, equal_nan=True):
+            raise ValueError(f"U and V components have different {label} coordinates.")
+    return u_layout
+
+
 def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return speed and meteorological direction FROM for earth-relative U/V."""
     u_values, v_values = np.asarray(u, dtype=np.float32), np.asarray(v, dtype=np.float32)
@@ -159,9 +176,7 @@ def main() -> None:
         u_name = find_variable(ds, U_CANDIDATES, args.u_var)
         v_name = find_variable(ds, V_CANDIDATES, args.v_var)
         u_da, v_da = xr.align(ds[u_name].squeeze(drop=True), ds[v_name].squeeze(drop=True), join="exact")
-        row_dim, col_dim, lat, lon, grid_type = spatial_layout(u_da)
-        if row_dim not in v_da.dims or col_dim not in v_da.dims:
-            raise ValueError("U and V components do not share the same spatial dimensions.")
+        row_dim, col_dim, lat, lon, grid_type = validate_component_geolocation(u_da, v_da)
         u_da, v_da = u_da.transpose(row_dim, col_dim), v_da.transpose(row_dim, col_dim)
         u = np.asarray(u_da.values, dtype=np.float32)
         v = np.asarray(v_da.values, dtype=np.float32)
