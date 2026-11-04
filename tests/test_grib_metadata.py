@@ -18,6 +18,10 @@ class GribMetadataSerializationTests(unittest.TestCase):
         self.assertIsNone(_json_scalar(np.datetime64("NaT")))
         self.assertIsNone(_json_scalar(np.timedelta64("NaT")))
 
+    def test_zero_dimensional_datetime_coordinate_keeps_timestamp(self):
+        value = np.array(np.datetime64("2026-11-04T00:00:00", "ns"))
+        self.assertEqual(_json_value(value), "2026-11-04T00:00:00.000000000")
+
     def test_coordinate_arrays_use_same_scalar_conversion(self):
         values = np.array(
             ["2026-11-04T00:00:00", "2026-11-04T06:00:00"],
