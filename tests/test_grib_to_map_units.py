@@ -197,5 +197,72 @@ class GribMapDisplayUnitTests(unittest.TestCase):
                     self.assertEqual(stored["values"].shape, (2, 2))
 
 
+    def test_preserves_multiple_cfgrib_groups_and_ensemble_members(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            common_coords = {
+                "number": [0, 1],
+                "latitude": [10.0, 20.0],
+                "longitude": [30.0, 40.0],
+            }
+            group0 = xr.Dataset({
+                "t": xr.DataArray(
+                    np.arange(8, dtype=np.float32).reshape(2, 2, 2),
+                    dims=("number", "latitude", "longitude"),
+                    coords=common_coords,
+                    attrs={"units": "K", "long_name": "Air temperature",
+                           "GRIB_typeOfLevel": "isobaricInhPa", "GRIB_level": 850},
+                )
+            })
+            # The second cfgrib group intentionally repeats the same field
+            # identity and ensemble member coordinate; group_index must keep it.
+            group1 = xr.Dataset({
+                "t": xr.DataArray(
+                    np.full((1, 2, 2), 280.0, dtype=np.float32),
+                    dims=("number", "latitude", "longitude"),
+                    coords={
+                        "number": [0],
+                        "latitude": [10.0, 20.0],
+                        "longitude": [30.0, 40.0],
+                    },
+                    attrs={"units": "K", "long_name": "Air temperature",
+                           "GRIB_typeOfLevel": "isobaricInhPa", "GRIB_level": 850},
+                )
+            })
+            fake_cfgrib = types.SimpleNamespace(
+                open_datasets=lambda *args, **kwargs: [group0, group1]
+            )
+            with (
+                patch.dict(sys.modules, {"cfgrib": fake_cfgrib}),
+                patch(
+                    "ecmwf_collector.tools.grib_to_map.render_scalar_png",
+                    return_value={"width": 2, "height": 2},
+                ),
+            ):
+                source = output_dir / "multi-group-ensemble.grib2"
+                source.touch()
+                products = convert_file(source, output_dir, "t")
+
+            self.assertEqual(len(products), 3)
+            self.assertEqual(
+                {(item["group_index"], item["extra_coordinates"]["number"]) for item in products},
+                {(0, 0), (0, 1), (1, 0)},
+            )
+            self.assertEqual(len({item["image"] for item in products}), 3)
+            manifest = __import__("json").loads(
+                (output_dir / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(len(manifest["layers"]), 3)
+            self.assertEqual(
+                {(item["group_index"], item["extra_coordinates"]["number"])
+                 for item in manifest["layers"]},
+                {(0, 0), (0, 1), (1, 0)},
+            )
+            for item in products:
+                with np.load(output_dir / item["data_file"]) as stored:
+                    self.assertEqual(stored["values"].shape, (2, 2))
+
+
+
 if __name__ == "__main__":
     unittest.main()
