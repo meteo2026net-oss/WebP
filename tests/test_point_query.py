@@ -35,6 +35,18 @@ class PointQueryTests(unittest.TestCase):
             self.assertFalse(result["valid"])
             self.assertIsNone(result["value"])
 
+    def test_rejects_click_outside_grid_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "field.npz"
+            np.savez_compressed(
+                path,
+                values=np.ones((2, 2), dtype=np.float32),
+                latitudes=np.array([10.0, 9.0]),
+                longitudes=np.array([20.0, 21.0]),
+            )
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 30.0, 40.0)
+
     def test_rejects_invalid_latitude(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "field.npz"
