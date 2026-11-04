@@ -49,7 +49,9 @@ def spatial_layout(da: xr.DataArray) -> tuple[str, str, np.ndarray, np.ndarray, 
         if lat_dim == lon_dim or lat_dim not in da.dims or lon_dim not in da.dims:
             raise ValueError("1-D latitude and longitude must map to distinct data dimensions.")
         return lat_dim, lon_dim, np.asarray(lat_coord.values), np.asarray(lon_coord.values), "regular_latitude_longitude"
-    if lat_coord.ndim == lon_coord.ndim == 2 and lat_coord.dims == lon_coord.dims:
+    if (lat_coord.ndim == lon_coord.ndim == 2
+            and lat_coord.dims == lon_coord.dims
+            and lat_coord.shape == lon_coord.shape):
         dims = tuple(lat_coord.dims)
         if len(dims) != 2 or any(dim not in da.dims for dim in dims):
             raise ValueError("2-D geolocation must map to two data dimensions.")
