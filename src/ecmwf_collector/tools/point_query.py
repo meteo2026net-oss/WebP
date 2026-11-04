@@ -77,18 +77,33 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         row, col = np.unravel_index(int(np.argmin(distance)), distance.shape)
         if not np.isfinite(distance[row, col]):
             raise ValueError("Curvilinear grid has no valid geolocation cells.")
-        neighbour_steps = []
-        for nr, nc in ((row - 1, col), (row + 1, col),
-                       (row, col - 1), (row, col + 1)):
-            if (0 <= nr < distance.shape[0] and 0 <= nc < distance.shape[1]
-                    and geo_valid[nr, nc]):
+        row_steps, column_steps = [], []
+        for nr in (row - 1, row + 1):
+            if 0 <= nr < distance.shape[0] and geo_valid[nr, col]:
                 step = _great_circle_distance_degrees(
                     latitudes[row, col], longitudes[row, col],
-                    latitudes[nr, nc], longitudes[nr, nc]
+                    latitudes[nr, col], longitudes[nr, col]
                 )
                 if np.isfinite(step) and step > 0:
-                    neighbour_steps.append(float(step))
-        if neighbour_steps and distance[row, col] > float(np.median(neighbour_steps)) * 0.8:
+                    row_steps.append(float(step))
+        for nc in (col - 1, col + 1):
+            if 0 <= nc < distance.shape[1] and geo_valid[row, nc]:
+                step = _great_circle_distance_degrees(
+                    latitudes[row, col], longitudes[row, col],
+                    latitudes[row, nc], longitudes[row, nc]
+                )
+                if np.isfinite(step) and step > 0:
+                    column_steps.append(float(step))
+        local_steps = row_steps + column_steps
+        if row_steps and column_steps:
+            coverage_radius = 0.5 * np.hypot(
+                float(np.median(row_steps)), float(np.median(column_steps))
+            )
+        elif local_steps:
+            coverage_radius = 0.5 * float(np.median(local_steps))
+        else:
+            coverage_radius = None
+        if coverage_radius is not None and distance[row, col] > coverage_radius:
             raise ValueError("The clicked location is outside the data grid coverage.")
         value = float(values[row, col])
         result = {"valid": bool(np.isfinite(value)),
