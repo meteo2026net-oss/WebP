@@ -110,7 +110,7 @@ class GribMapDisplayUnitTests(unittest.TestCase):
                     np.testing.assert_allclose(rendered[0], expected_display, atol=1e-5)
                     metadata = products[0]
                     self.assertEqual(metadata["source_units"], source_unit)
-                    self.assertEqual(metadata["display_units"], target_unit if target_unit != "degC" else "°C")
+                    self.assertEqual(metadata["display_units"], {"degC": "°C", "km/h": "km h-1"}.get(target_unit, target_unit))
                     with np.load(output_dir / metadata["data_file"]) as stored:
                         np.testing.assert_allclose(stored["values"], source_values)
                         np.testing.assert_allclose(stored["display_values"], expected_display, atol=1e-5)
@@ -137,7 +137,7 @@ class GribMapDisplayUnitTests(unittest.TestCase):
                     ):
                         source = output_dir / "synthetic.grib2"
                         source.touch()
-                        with self.assertRaisesRegex(KeyError, expected_error):
+                        with self.assertRaisesRegex(ValueError, expected_error):
                             convert_file(source, output_dir, "prate", target_unit)
                         renderer.assert_not_called()
 
