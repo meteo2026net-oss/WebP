@@ -13,6 +13,7 @@ import numpy as np
 
 from .map_render import render_scalar_png
 from .map_manifest import update_manifest
+from .meteorological_units import convert_values, canonical_unit
 
 
 def _safe_name(value: str) -> str:
@@ -55,7 +56,7 @@ def _coordinate_value(data_array, name):
     return None
 
 
-def convert_file(source: Path, output_dir: Path, requested: str | None = None) -> list[dict]:
+def convert_file(source: Path, output_dir: Path, requested: str | None = None, display_unit: str | None = None) -> list[dict]:
     """Decode all cfgrib groups and every non-spatial forecast/level slice."""
     try:
         import cfgrib
@@ -115,7 +116,16 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                         suffix = "_" + "_".join(_safe_name(str(part)) for part in slice_parts) if slice_parts else ""
                         stem = _safe_name(f"{source.stem}_{source_id}_g{group_index}_{variable}{suffix}")
                         png_path = output_dir / f"{stem}.png"
-                        rendered = render_scalar_png(values, lat, lon, png_path)
+                        source_unit = str(sliced.attrs.get("units", "")).strip()
+                        if display_unit:
+                            if not source_unit:
+                                raise ValueError(f"Cannot convert {variable}: source unit metadata is missing.")
+                            display_values = np.asarray(convert_values(values, source_unit, display_unit), dtype=np.float32)
+                            normalized_display_unit = canonical_unit(display_unit)
+                        else:
+                            display_values = values
+                            normalized_display_unit = source_unit or "unknown"
+                        rendered = render_scalar_png(display_values, lat, lon, png_path)
                         valid_time = _coordinate_value(sliced, "valid_time")
                         if valid_time is None:
                             valid_time = _coordinate_value(ds, "valid_time")
@@ -136,7 +146,10 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                             "grid_type": grid_type,
                             "variable": variable,
                             "long_name": str(sliced.attrs.get("long_name", variable)),
-                            "units": str(sliced.attrs.get("units", "unknown")),
+                            "units": source_unit or "unknown",
+                            "source_units": source_unit or "unknown",
+                            "display_units": normalized_display_unit,
+                            "display_conversion_applied": bool(display_unit),
                             "typeOfLevel": str(type_of_level),
                             "level": _json_scalar(level) if level is not None else None,
                             "extra_coordinates": extra_coordinates,
@@ -146,7 +159,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                             "image": png_path.name,
                         }
                         data_path = png_path.with_suffix(".npz")
-                        np.savez_compressed(data_path, values=values, latitudes=lat, longitudes=lon)
+                        np.savez_compressed(data_path, values=values, display_values=display_values, latitudes=lat, longitudes=lon)
                         metadata["data_file"] = data_path.name
                         sidecar = png_path.with_suffix(".json")
                         sidecar.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -171,10 +184,13 @@ def main() -> None:
     parser.add_argument("input_grib", type=Path)
     parser.add_argument("--variable", help="Exact variable name; default: all compatible variables and forecast slices")
     parser.add_argument("--output-dir", type=Path, default=Path("output/map_data"))
+    parser.add_argument("--display-unit", help="Optional display-only unit conversion for the selected --variable; raw source values remain available for point queries.")
     args = parser.parse_args()
     if not args.input_grib.is_file():
         parser.error(f"Input file does not exist: {args.input_grib}")
-    products = convert_file(args.input_grib, args.output_dir, args.variable)
+    if args.display_unit and not args.variable:
+        parser.error("--display-unit must be used with --variable so one physical field dimension is converted at a time.")
+    products = convert_file(args.input_grib, args.output_dir, args.variable, args.display_unit)
     print(json.dumps(products, ensure_ascii=False, indent=2))
 
 
