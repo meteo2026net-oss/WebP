@@ -147,6 +147,17 @@ def _resample_rows_to_web_mercator(data: np.ndarray, lat: np.ndarray, bounds: di
     return output
 
 
+def _web_mercator_bounds(west: float, south: float, east: float, north: float) -> dict:
+    """Convert projected bounds without normalizing unwrapped longitudes at ±180°."""
+    radius = 6378137.0
+    return {
+        "west": float(np.rad2deg(west / radius)),
+        "south": float(_inverse_mercator_y(np.asarray([south]))[0]),
+        "east": float(np.rad2deg(east / radius)),
+        "north": float(_inverse_mercator_y(np.asarray([north]))[0]),
+    }
+
+
 def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
         raise ValueError("Invalid rendering range.")
@@ -259,12 +270,9 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
                      np.isfinite(sampled), low, high)
     Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
 
-    inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True, force_over=True)
-    west_lon, south_lat = inverse.transform(west, south)
-    east_lon, north_lat = inverse.transform(east, north)
+    bounds = _web_mercator_bounds(west, south, east, north)
     return {
-        "bounds": {"west": float(west_lon), "south": float(south_lat),
-                   "east": float(east_lon), "north": float(north_lat)},
+        "bounds": bounds,
         "width": int(width), "height": int(height),
         "value_min": low, "value_max": high,
         "valid_cells": int(np.isfinite(sampled).sum()),
@@ -371,11 +379,7 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
             sampled_cos = griddata(points, cosine[usable], (tx, ty), method="linear")
         except Exception as exc:
             raise ValueError("Curvilinear direction grid cannot form an interpolation mesh.") from exc
-        inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True, force_over=True)
-        west_lon, south_lat = inverse.transform(west, south)
-        east_lon, north_lat = inverse.transform(east, north)
-        bounds = {"west": float(west_lon), "south": float(south_lat),
-                  "east": float(east_lon), "north": float(north_lat)}
+        bounds = _web_mercator_bounds(west, south, east, north)
         convention = "curvilinear_unwrapped"
     else:
         sine_grid, out_lat, out_lon, convention = normalize_regular_grid(sine, lat, lon)
