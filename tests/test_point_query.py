@@ -38,6 +38,14 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside the data grid"):
                 sample_npz(path, 30, 40)
 
+    def test_normalizes_extreme_finite_longitude_before_grid_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_grid(tmp, np.ones((2, 2)), [10, 9], [20, 21])
+            # A finite but enormous longitude is still a valid angular input;
+            # it must be reduced modulo one revolution, not overflow round().
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 10.0, 1e308)
+
     def test_rejects_non_monotonic_grid_coordinates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_grid(tmp, np.ones((2, 2)), [10, 10], [20, 21])
