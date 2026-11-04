@@ -1,15 +1,44 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
 .venv/
 venv/
+env/
+
+# Secrets and local configuration
 .env
+.env.*
+!.env.example
 config/settings.json
-downloads/*
-processed/*
-logs/*
-state/*
-!downloads/.gitkeep
-!processed/.gitkeep
-!logs/.gitkeep
-!state/.gitkeep
+*.pem
+*.key
+
+# Local data, downloads, processing outputs and logs
+downloads/
+processed/
+output/
+logs/
+state/
 *.part
+*.invalid
+*.db
+*.sqlite
+*.sqlite3
+manifest.csv
+collector.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
