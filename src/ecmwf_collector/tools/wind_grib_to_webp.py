@@ -72,6 +72,24 @@ def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, 
     return speed.astype(np.float32), direction.astype(np.float32)
 
 
+def rotate_grid_to_earth(u: np.ndarray, v: np.ndarray, angle_degrees: float) -> tuple[np.ndarray, np.ndarray]:
+    """Rotate grid-axis components into east/north components.
+
+    Angle is counter-clockwise from true east to positive grid-x. The caller
+    must supply a trusted angle; it is never inferred from projection names.
+    """
+    u_values = np.asarray(u, dtype=np.float64)
+    v_values = np.asarray(v, dtype=np.float64)
+    if u_values.shape != v_values.shape:
+        raise ValueError("U and V wind arrays must have identical shapes.")
+    if not np.isfinite(angle_degrees):
+        raise ValueError("Grid-to-earth rotation angle must be finite.")
+    angle = np.deg2rad(float(angle_degrees))
+    cosine, sine = np.cos(angle), np.sin(angle)
+    east = u_values * cosine - v_values * sine
+    north = u_values * sine + v_values * cosine
+    return east.astype(np.float32), north.astype(np.float32)
+
 def optional_bool(value: Any) -> bool | None:
     """Parse decoder boolean metadata without treating the string '0' as true."""
     if value is None:
