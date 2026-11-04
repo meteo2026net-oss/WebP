@@ -208,16 +208,22 @@ class MapRenderTests(unittest.TestCase):
 
 
     def test_curvilinear_scalar_rejects_collinear_projected_cells(self):
-        lat = np.tile(np.array([10.0, 9.0, 8.0])[:, None], (1, 3))
-        lon = np.tile(np.array([20.0, 21.0, 22.0])[:, None], (1, 3))
+        lon = np.linspace(20.0, 22.0, 9).reshape(3, 3)
+        # Construct a straight line in projected Web-Mercator coordinates:
+        # y = 0.5 * x + 0.1, where x = radians(longitude).
+        mercator_y = 0.5 * np.deg2rad(lon) + 0.1
+        lat = np.rad2deg(2.0 * np.arctan(np.exp(mercator_y)) - np.pi / 2.0)
         values = np.arange(9, dtype=np.float32).reshape(3, 3)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "collinear"):
                 render_scalar_png(values, lat, lon, Path(tmp) / "collinear-scalar.png")
 
     def test_curvilinear_direction_rejects_collinear_projected_cells(self):
-        lat = np.tile(np.array([10.0, 9.0, 8.0])[:, None], (1, 3))
-        lon = np.tile(np.array([20.0, 21.0, 22.0])[:, None], (1, 3))
+        lon = np.linspace(20.0, 22.0, 9).reshape(3, 3)
+        # Construct a straight line in projected Web-Mercator coordinates:
+        # y = 0.5 * x + 0.1, where x = radians(longitude).
+        mercator_y = 0.5 * np.deg2rad(lon) + 0.1
+        lat = np.rad2deg(2.0 * np.arctan(np.exp(mercator_y)) - np.pi / 2.0)
         direction = np.full((3, 3), 225.0, dtype=np.float32)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "collinear"):
