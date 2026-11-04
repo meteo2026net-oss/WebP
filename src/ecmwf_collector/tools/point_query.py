@@ -18,11 +18,16 @@ def sample_npz(path: Path, latitude: float, longitude: float) -> dict:
         longitudes = np.asarray(archive["longitudes"], dtype=np.float64)
     if values.ndim != 2 or values.shape != (latitudes.size, longitudes.size):
         raise ValueError("Scientific layer has inconsistent grid dimensions.")
-    if latitudes.ndim != 1 or longitudes.ndim != 1 or not latitudes.size or not longitudes.size:
-        raise ValueError("Only 1-D latitude/longitude grids can be sampled.")
-    row = int(np.argmin(np.abs(latitudes - latitude)))
-    lon_delta = (longitudes - longitude + 180.0) % 360.0 - 180.0
-    col = int(np.argmin(np.abs(lon_delta)))
+    if latitudes.ndim != 1 or longitudes.ndim != 1 or latitudes.size < 2 or longitudes.size < 2:
+        raise ValueError("At least a 2x2 1-D latitude/longitude grid is required.")
+    lat_step = float(np.median(np.abs(np.diff(latitudes))))
+    lon_step = float(np.median(np.abs(np.diff(longitudes))))
+    lat_delta = np.abs(latitudes - latitude)
+    lon_delta = np.abs((longitudes - longitude + 180.0) % 360.0 - 180.0)
+    row = int(np.argmin(lat_delta))
+    col = int(np.argmin(lon_delta))
+    if lat_delta[row] > lat_step / 2.0 + 1e-6 or lon_delta[col] > lon_step / 2.0 + 1e-6:
+        raise ValueError("The clicked location is outside the data grid coverage.")
     value = float(values[row, col])
     if not np.isfinite(value):
         return {
