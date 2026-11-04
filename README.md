@@ -47,9 +47,9 @@ python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output ou
 ``
 6. Start a local web server from the repository root and open the map:
 ```powershell
-python -m http.server 8000
+python serve_map.py
 ``
-Open `http://localhost:8000/map_viewer/`. The map reads `output/map_data/manifest.json`.
+Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`.
 
 ## Tests
 ```powershell
