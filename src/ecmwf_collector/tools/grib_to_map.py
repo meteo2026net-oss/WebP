@@ -26,6 +26,12 @@ def _coordinate(da, names):
     raise ValueError(f"Missing coordinate {names}; found {list(da.coords)}")
 
 
+def _json_scalar(value):
+    if hasattr(value, "item"):
+        value = value.item()
+    return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+
+
 def convert_file(source: Path, output_dir: Path, requested: str | None = None) -> list[dict]:
     """Open all cfgrib hypercube groups; one GRIB may contain multiple level types."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +65,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                         "long_name": str(da.attrs.get("long_name", variable)),
                         "units": str(da.attrs.get("units", "unknown")),
                         "typeOfLevel": str(da.attrs.get("typeOfLevel", "")),
-                        "level": da.attrs.get("GRIB_level", da.attrs.get("level")),
+                        "level": _json_scalar(da.attrs.get("GRIB_level", da.attrs.get("level"))),
                         "valid_time": valid_time,
                         "step": str(ds["step"].values) if "step" in ds.coords else None,
                         **rendered,
