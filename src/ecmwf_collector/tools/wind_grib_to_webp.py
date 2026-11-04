@@ -13,7 +13,6 @@ import json
 from pathlib import Path
 from typing import Any
 import numpy as np
-import xarray as xr
 from PIL import Image
 from .map_render import render_wind_speed_png
 from .map_manifest import update_manifest
@@ -98,6 +97,10 @@ def main() -> None:
     if not args.vmin < args.vmax:
         raise ValueError("--vmin must be smaller than --vmax")
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import xarray as xr
+    except ImportError as exc:
+        raise RuntimeError("Wind GRIB conversion requires xarray and cfgrib; install the GRIB processing dependencies.") from exc
     ds = xr.open_dataset(args.input_grib, engine="cfgrib", backend_kwargs={"indexpath": ""})
     try:
         u_name = find_variable(ds, U_CANDIDATES, args.u_var)
