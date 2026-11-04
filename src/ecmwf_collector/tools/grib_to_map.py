@@ -20,6 +20,15 @@ def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "field"
 
 
+def _source_id(source: Path) -> str:
+    """Return a content-derived identifier without loading a GRIB file into memory."""
+    digest = hashlib.sha256()
+    with Path(source).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:12]
+
+
 def _coordinate(da, names):
     available = {str(k).lower(): str(k) for k in da.coords}
     for name in names:
@@ -66,7 +75,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None, d
         ) from exc
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    source_id = hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:12]
+    source_id = _source_id(source)
     datasets = cfgrib.open_datasets(str(source), backend_kwargs={"indexpath": ""})
     products = []
     errors = []
