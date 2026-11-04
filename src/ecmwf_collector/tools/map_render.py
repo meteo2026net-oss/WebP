@@ -253,7 +253,9 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
 def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray,
                       output_path, vmin: float | None = None, vmax: float | None = None) -> dict:
     """Render a transparent RGBA PNG with rows resampled for Leaflet EPSG:3857."""
-    if np.asarray(latitudes).ndim == 2 or np.asarray(longitudes).ndim == 2:\n        return _render_curvilinear_scalar_png(values, latitudes, longitudes, output_path, vmin, vmax)\n    data, lat, lon, longitude_convention = normalize_regular_grid(values, latitudes, longitudes)
+    if np.asarray(latitudes).ndim == 2 or np.asarray(longitudes).ndim == 2:
+        return _render_curvilinear_scalar_png(values, latitudes, longitudes, output_path, vmin, vmax)
+    data, lat, lon, longitude_convention = normalize_regular_grid(values, latitudes, longitudes)
     bounds = grid_bounds(lat, lon)
     data = _resample_rows_to_web_mercator(data, lat, bounds)
     valid = np.isfinite(data)
