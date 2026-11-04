@@ -156,8 +156,12 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
                 "Global bilinear sampling requires at least two unique longitude columns."
             )
 
-    query_longitude = longitude + 360.0 * round(
-        (float(np.mean(unwrapped_longitudes)) - longitude) / 360.0
+    # Normalize the click before choosing its world copy. Besides handling
+    # ordinary -180..180 / 0..360 inputs, this avoids overflowing the integer
+    # conversion in round() for very large but finite longitude values.
+    normalized_longitude = (float(longitude) + 180.0) % 360.0 - 180.0
+    query_longitude = normalized_longitude + 360.0 * round(
+        (float(np.mean(unwrapped_longitudes)) - normalized_longitude) / 360.0
     )
     longitude_step = float(np.median(np.abs(np.diff(unwrapped_longitudes))))
     longitude_span = abs(float(unwrapped_longitudes[-1] - unwrapped_longitudes[0]))
