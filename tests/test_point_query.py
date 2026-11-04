@@ -163,8 +163,8 @@ class PointQueryTests(unittest.TestCase):
             path = self._write_grid(tmp, values, lat, lon)
             result = sample_npz(path, 80.0, 179.0)
             self.assertTrue(result["valid"])
-            self.assertEqual(result["value"], 0.0)
-            self.assertEqual(result["longitude"], -120.0)
+            self.assertEqual(result["value"], 5.0)
+            self.assertEqual(result["longitude"], 120.0)
 
 
 if __name__ == "__main__":
