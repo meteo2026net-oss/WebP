@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 from PIL import Image
-from .map_render import render_wind_speed_png
+from .map_render import render_wind_speed_png, render_direction_png
 from .map_manifest import update_manifest
 from .meteorological_units import canonical_unit
 
@@ -276,7 +276,44 @@ def main() -> None:
             "data_file": speed_path.name,
             **display_grid,
         }
-        update_manifest(map_dir, [map_record])
+        map_records = [map_record]
+        direction_valid = rotation_applied or uv_relative_to_grid is False
+        if direction_valid:
+            direction_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_direction.png"
+            direction_grid = render_direction_png(direction_from, lat, lon, direction_path)
+            direction_data_path = direction_path.with_suffix(".npz")
+            np.savez_compressed(direction_data_path, values=direction_from,
+                                latitudes=lat, longitudes=lon)
+            direction_record = {
+                "source_file": args.input_grib.name,
+                "source_id": source_id,
+                "variable": "wind_direction",
+                "long_name": "Wind direction (from true north)",
+                "units": "degrees",
+                "display_units": "degrees",
+                "direction_convention": "meteorological_from_clockwise_from_true_north",
+                "component_frame": metadata["component_frame"],
+                "direction_component_frame": "earth_relative",
+                "bearing_validity": "valid_true_north_bearing",
+                "valid_time": metadata.get("valid_time") or metadata.get("time"),
+                "step": metadata.get("step"),
+                "image": direction_path.name,
+                "data_file": direction_data_path.name,
+                **direction_grid,
+            }
+            map_records.append(direction_record)
+            metadata["direction_display_layer"] = {
+                "image": direction_path.name,
+                "manifest": str(map_dir / "manifest.json"),
+                "bounds": direction_grid["bounds"],
+                "bearing_validity": "valid_true_north_bearing",
+            }
+        else:
+            metadata["direction_display_layer"] = {
+                "published": False,
+                "reason": "U/V reference frame is not confirmed earth-relative and no explicit grid-to-earth rotation was applied.",
+            }
+        update_manifest(map_dir, map_records)
         metadata["display_layer"] = {
             "image": display_path.name,
             "manifest": str(map_dir / "manifest.json"),
@@ -286,6 +323,10 @@ def main() -> None:
         print(f"Created scientific texture: {args.output}")
         print(f"Created metadata: {metadata_path}")
         print(f"Created map overlay: {display_path}")
+        if direction_valid:
+            print(f"Created wind direction overlay: {direction_path}")
+        else:
+            print("Skipped wind direction overlay: true-north bearing is not validated.")
         print(f"Updated map manifest: {map_dir / 'manifest.json'}")
         print(f"Grid: {u.shape[1]} x {u.shape[0]} ({grid_type}); valid cells: {int(valid.sum())}")
         print(f"Encoding range: {args.vmin} .. {args.vmax} {units or 'unknown units'}")
