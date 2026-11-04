@@ -80,12 +80,20 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                     lat_name = _coordinate(da, ("latitude", "lat"))
                     lon_name = _coordinate(da, ("longitude", "lon"))
                     lat_coord, lon_coord = da[lat_name], da[lon_name]
-                    if lat_coord.ndim != 1 or lon_coord.ndim != 1:
-                        raise ValueError("Only 1-D latitude/longitude coordinate arrays are supported.")
-                    lat_dim, lon_dim = lat_coord.dims[0], lon_coord.dims[0]
-                    if lat_dim == lon_dim or lat_dim not in da.dims or lon_dim not in da.dims:
-                        raise ValueError("Latitude and longitude must map to distinct data dimensions.")
-                    extra_dims = [dim for dim in da.dims if dim not in (lat_dim, lon_dim)]
+                    if lat_coord.ndim == lon_coord.ndim == 1:
+                        lat_dim, lon_dim = lat_coord.dims[0], lon_coord.dims[0]
+                        if lat_dim == lon_dim or lat_dim not in da.dims or lon_dim not in da.dims:
+                            raise ValueError("Latitude and longitude must map to distinct data dimensions.")
+                        spatial_dims = (lat_dim, lon_dim)
+                        grid_type = "regular_latitude_longitude"
+                    elif lat_coord.ndim == lon_coord.ndim == 2 and lat_coord.dims == lon_coord.dims:
+                        spatial_dims = tuple(lat_coord.dims)
+                        if len(spatial_dims) != 2 or any(dim not in da.dims for dim in spatial_dims):
+                            raise ValueError("2-D geolocation coordinates must map to two data dimensions.")
+                        grid_type = str(da.attrs.get("GRIB_gridType", da.attrs.get("gridType", "curvilinear_geolocation")))
+                    else:
+                        raise ValueError("Latitude/longitude coordinates must both be 1-D or matching 2-D arrays.")
+                    extra_dims = [dim for dim in da.dims if dim not in spatial_dims]
                     ranges = [range(da.sizes[dim]) for dim in extra_dims]
                     combinations = itertools.product(*ranges) if ranges else [()]
                     for slice_index, indices in enumerate(combinations):
@@ -93,7 +101,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                         sliced = da.isel(selection).squeeze(drop=True)
                         if sliced.ndim != 2:
                             continue
-                        sliced = sliced.transpose(lat_dim, lon_dim)
+                        sliced = sliced.transpose(*spatial_dims)
                         values = np.asarray(sliced.values, dtype=np.float32)
                         lat = np.asarray(sliced[lat_name].values)
                         lon = np.asarray(sliced[lon_name].values)
@@ -124,7 +132,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                             "source_file": source.name,
                             "source_id": source_id,
                             "group_index": group_index,
-                            "slice_index": slice_index,
+                            "slice_index": slice_index,\n                            "grid_type": grid_type,
                             "variable": variable,
                             "long_name": str(sliced.attrs.get("long_name", variable)),
                             "units": str(sliced.attrs.get("units", "unknown")),
@@ -151,7 +159,7 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
         raise KeyError(f"Variable {requested!r} was not converted in any GRIB group. Check the inventory.")
     if not products:
         details = "; ".join(errors[:5])
-        raise ValueError("No compatible 2-D regular latitude/longitude slices were found. " + details)
+        raise ValueError("No compatible 2-D geographic grid slices were found. " + details)
     manifest = update_manifest(output_dir, products)
     print(f"Updated map manifest: {manifest}")
     return products
