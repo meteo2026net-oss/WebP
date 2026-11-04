@@ -7,13 +7,23 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Creating or updating the ecmwf-webp environment...
-conda env update -n ecmwf-webp -f environment.yml --prune
+conda env list | findstr /I "ecmwf-webp" >nul
+if errorlevel 1 (
+  echo Creating the ecmwf-webp environment...
+  conda env create -f environment.yml
+) else (
+  echo Updating the ecmwf-webp environment...
+  conda env update -n ecmwf-webp -f environment.yml --prune
+)
 if errorlevel 1 (
   echo Environment setup failed. Review the conda error above.
   pause
   exit /b 1
 )
+echo.
+echo Running ecCodes and cfgrib self-checks...
+conda run -n ecmwf-webp python -m eccodes selfcheck
+conda run -n ecmwf-webp python -m cfgrib selfcheck
 echo.
 echo Environment ready. Run run_collector_conda.bat to start the application.
 pause
