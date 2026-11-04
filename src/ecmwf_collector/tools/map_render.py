@@ -35,6 +35,8 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
         raise ValueError("Coordinates contain non-finite values.")
     if np.any(np.abs(lat) > 90.0):
         raise ValueError("Latitude coordinates must be within -90..90 degrees.")
+    if np.any(np.abs(lon) > 360.0):
+        raise ValueError("Longitude coordinates must be within -360..360 degrees.")
     lat_diff = np.diff(lat)
     if not (np.all(lat_diff > 0) or np.all(lat_diff < 0)):
         raise ValueError("Latitude coordinates must be strictly monotonic without duplicates.")
