@@ -69,3 +69,8 @@ The U/V converter accepts matching regular 1-D latitude/longitude coordinates or
 Wind speed is computed as `sqrt(U² + V²)`. The reported meteorological direction is the direction **from which** the wind blows, in degrees clockwise from true north:
 `(degrees(atan2(-U, -V)) + 360) % 360`.
 For calm wind (zero speed), direction is undefined and stored as NaN rather than assigning a misleading bearing. Missing U or V produces a missing vector. The RGB WebP texture remains an 8-bit quantized transport/display encoding; preserve original GRIB for scientific calculations.
+
+
+## Wind component validation and reference frame
+
+The U/V wind encoder checks that both components declare matching units when units are present. It does not silently convert between units and does not invent a default unit when metadata is absent; the map manifest then labels the unit as unknown. The speed magnitude is invariant under an orthogonal rotation, but wind direction is not. If cfgrib marks `GRIB_uvRelativeToGrid` as true, metadata explicitly flags the direction as requiring grid-to-earth rotation. If the decoder does not declare the reference frame, the metadata warns that the bearing must be verified before treating it as a true-north meteorological direction.
