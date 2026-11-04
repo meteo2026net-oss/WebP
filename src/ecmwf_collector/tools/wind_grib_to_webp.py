@@ -8,7 +8,6 @@ Keep the source GRIB for scientific calculations.
 """
 from __future__ import annotations
 import argparse
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from PIL import Image
 from .map_render import render_wind_speed_png, render_direction_png
 from .map_manifest import update_manifest
 from .meteorological_units import canonical_unit
+from .grib_to_map import _source_id
 
 U_CANDIDATES = ("u10", "10u", "u_10m", "u")
 V_CANDIDATES = ("v10", "10v", "v_10m", "v")
@@ -259,7 +259,7 @@ def main() -> None:
         # Also create a transparent, geographically placed display layer.
         map_dir = Path("output/map_data")
         map_dir.mkdir(parents=True, exist_ok=True)
-        source_id = hashlib.sha256(str(args.input_grib.resolve()).encode("utf-8")).hexdigest()[:12]
+        source_id = _source_id(args.input_grib)
         display_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_speed.png"
         display_grid = render_wind_speed_png(u, v, lat, lon, display_path)
         speed_path = display_path.with_suffix(".npz")
