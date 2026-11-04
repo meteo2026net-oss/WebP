@@ -259,7 +259,7 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
                      np.isfinite(sampled), low, high)
     Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
 
-    inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+    inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True, force_over=True)
     west_lon, south_lat = inverse.transform(west, south)
     east_lon, north_lat = inverse.transform(east, north)
     return {
@@ -371,7 +371,7 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
             sampled_cos = griddata(points, cosine[usable], (tx, ty), method="linear")
         except Exception as exc:
             raise ValueError("Curvilinear direction grid cannot form an interpolation mesh.") from exc
-        inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True, force_over=True)
         west_lon, south_lat = inverse.transform(west, south)
         east_lon, north_lat = inverse.transform(east, north)
         bounds = {"west": float(west_lon), "south": float(south_lat),
