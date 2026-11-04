@@ -14,7 +14,7 @@
 The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
 
 ## Grid limitations
-The initial renderer supports regular 1-D latitude/longitude grids. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products where available. Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids must be reprojected before rendering. The converter refuses incompatible coordinate shapes instead of silently placing them incorrectly.
+The renderer supports regular 1-D latitude/longitude grids and 2-D geolocation grids. For 2-D geolocation, it transforms decoder-provided latitude/longitude cell centres to EPSG:3857 and interpolates onto a regular display raster. This makes regional rotated-pole, Lambert, polar-stereographic and other projected GRIB grids renderable when cfgrib exposes matching 2-D latitude/longitude coordinates. It does not guess projection parameters. Curvilinear interpolation currently uses linear triangulation and is limited to regional extents; global/seam-spanning curvilinear grids require a dedicated tiling path. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products.
 
 ## Scientific integrity
 PNG is a display product, not the scientific source. Preserve original GRIB files and use their decoded values for calculations. The existing RGB WebP wind texture is an 8-bit quantized encoding and is separate from the display PNG.
@@ -30,7 +30,7 @@ PNG is a display product, not the scientific source. Preserve original GRIB file
 GET /api/point?image=<layer-image>&lat=<latitude>&lon=<longitude>
 ```
 
-يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها ويعيد أقرب خلية شبكية صالحة مع الإحداثيات والقيمة والوحدة ووقت الصلاحية. اختيار أقرب خلية هو الطريقة الحالية؛ الاستيفاء الثنائي بين الخلايا غير مفعّل بعد. يدعم البحث عن أقرب خط طول الالتفاف حول خط التاريخ الدولي.
+يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها. للشبكات المنتظمة ذات إحداثيات 1-D يمكن اختيار أقرب خلية أو الاستيفاء الثنائي. أما الشبكات ذات الإحداثيات الجغرافية 2-D فيُعاد أقرب مركز خلية صالح؛ الاستيفاء الثنائي غير متاح لها بعد.
 
 ملفات NPZ تحفظ بيانات الشبكة بعد فك GRIB إلى float32. احتفظ بملف GRIB الأصلي لأي حسابات تحتاج دقة المصدر الكاملة.
 
@@ -55,3 +55,8 @@ Example:
 `GET /api/point?image=layer.png&lat=32.5&lon=36.5&method=bilinear`
 
 The map viewer exposes this choice next to the point-value panel. Bilinear output is an interpolation of the decoded field, not an additional observation or a higher-resolution forecast.
+
+
+## Curvilinear and projected grids
+
+When cfgrib exposes matching two-dimensional `latitude(y, x)` and `longitude(y, x)` coordinates, the converter preserves those arrays and sends the field through a geolocation-based reprojection to EPSG:3857. This supports regional Lambert, polar stereographic and rotated-pole products without inferring projection parameters from incomplete metadata. The renderer uses linear triangulation; cells outside the geolocation convex hull remain transparent. For these 2-D grids, point queries use the nearest geolocated cell. Bilinear sampling remains limited to regular 1-D grids. Global or seam-spanning curvilinear fields are explicitly outside this initial implementation.
