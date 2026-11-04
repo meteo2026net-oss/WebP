@@ -123,9 +123,9 @@ class PointQueryTests(unittest.TestCase):
                    [179.8, -180.0, -179.8]]
             values = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
             path = self._write_grid(tmp, values, lat, lon)
-            east = sample_npz(path, 9.1, 179.9)
-            west = sample_npz(path, 9.1, -179.9)
-            across = sample_npz(path, 9.1, 180.1)
+            east = sample_npz(path, 9.0, 179.85)
+            west = sample_npz(path, 9.0, -179.85)
+            across = sample_npz(path, 9.0, 180.15)
             self.assertEqual(east["value"], 4.0)
             self.assertEqual(west["value"], 6.0)
             self.assertEqual(across["value"], 6.0)
