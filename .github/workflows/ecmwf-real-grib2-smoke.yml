@@ -85,16 +85,18 @@ jobs:
             --output-dir output/ecmwf-real/map
           python - <<'PY'
           import json
+          import os
           import numpy as np
           from pathlib import Path
+          selected_variable = os.environ["SELECTED_VARIABLE"]
           root = Path("output/ecmwf-real/map")
           manifest = json.loads((root / "manifest.json").read_text())
           layers = manifest.get("layers", [])
           if not layers:
               raise SystemExit("Conversion produced no manifest layers")
-          selected = [layer for layer in layers if layer.get("variable") == "msl"]
+          selected = [layer for layer in layers if layer.get("variable") == selected_variable]
           if not selected:
-              raise SystemExit("The real GRIB2 conversion did not produce an msl layer")
+              raise SystemExit("The real GRIB2 conversion did not produce the requested variable")
           for layer in selected:
               for key in ("image", "data_file"):
                   name = layer.get(key)
@@ -123,14 +125,14 @@ jobs:
           (Path("output/ecmwf-real") / "validation-summary.json").write_text(
               json.dumps({
                   "fixture": "ECMWF static GRIB2 sample",
-                  "requested_variable": "msl",
+                  "requested_variable": selected_variable,
                   "manifest_layer_count": len(layers),
                   "validated_msl_layer_count": len(selected),
                   "validated_outputs": ["PNG", "NPZ", "manifest"],
               }, indent=2) + "\n",
               encoding="utf-8",
           )
-          print(f"Validated {len(selected)} real msl layer(s), source values, geolocation, PNG and NPZ outputs")
+          print(f"Validated {len(selected)} real {selected_variable} layer(s), source values, geolocation, PNG and NPZ outputs")
           PY
 
       - name: Upload inventory, checksum and generated map products
