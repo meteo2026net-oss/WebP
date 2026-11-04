@@ -114,3 +114,16 @@ circular resultant is too small to define a stable bearing. Curvilinear grids
 use the decoder-provided 2-D geolocation and the same circular-component
 interpolation. The viewer labels the legend as meteorological direction FROM
 true north, clockwise.
+
+
+## Curvilinear longitude seam safety
+
+Regional 2-D latitude/longitude grids are unwrapped around their circular-mean
+longitude before Web-Mercator reprojection. A single planar Delaunay
+triangulation is not valid for a global mesh that crosses the antimeridian:
+it can connect opposite sides of the world and create false interpolated
+weather fields. Scalar and wind-direction rendering therefore reject
+curvilinear meshes whose shortest circular longitude span exceeds 180
+degrees. This is an intentional safety limit, not global-grid support.
+Seam-aware tiled rendering is still required for global curvilinear products.
+Regular 1-D global grids continue to use the separate regular-grid path.
