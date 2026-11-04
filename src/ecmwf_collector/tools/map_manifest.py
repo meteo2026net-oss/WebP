@@ -22,7 +22,7 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
         # distinct instead of silently replacing one another in the manifest.
         fields = (
             "source_id", "source_file", "group_index", "variable", "valid_time",
-            "typeOfLevel", "level", "step", "extra_coordinates", "units",
+            "typeOfLevel", "level", "step", "extra_coordinates", "units", "display_units",
         )
         return json.dumps(
             [product.get(key) for key in fields],
