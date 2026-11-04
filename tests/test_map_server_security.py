@@ -47,6 +47,18 @@ class MapServerPathBoundaryTests(unittest.TestCase):
         result = Path(self.handler.translate_path("/map_viewer/index.html?next=/README.md"))
         self.assertEqual(result, ALLOWED_ROOTS[0] / "index.html")
 
+    def test_denies_symlink_escape_from_allowed_directory(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="security-test-", dir=ALLOWED_ROOTS[0]) as folder:
+            link = Path(folder) / "outside-link"
+            link.symlink_to(ROOT / "README.md")
+            request_path = "/" + link.relative_to(ROOT).as_posix()
+            self.assertEqual(
+                Path(self.handler.translate_path(request_path)),
+                ROOT / "__map_file_not_found__",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
