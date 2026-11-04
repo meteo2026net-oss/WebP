@@ -170,7 +170,10 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None, d
         for ds in datasets:
             ds.close()
     if requested and not products:
-        raise KeyError(f"Variable {requested!r} was not converted in any GRIB group. Check the inventory.")
+        if not any(requested in ds.data_vars for ds in datasets):
+            raise KeyError(f"Variable {requested!r} was not found in any GRIB group. Check the inventory.")
+        details = "; ".join(errors[:5])
+        raise ValueError(f"Variable {requested!r} was found but could not be converted. {details}")
     if not products:
         details = "; ".join(errors[:5])
         raise ValueError("No compatible 2-D geographic grid slices were found. " + details)
