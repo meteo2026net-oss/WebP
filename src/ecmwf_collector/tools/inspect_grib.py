@@ -16,6 +16,7 @@ from eccodes import codes_get, codes_grib_new_from_file, codes_release
 KEYS = (
     "edition", "centre", "dataDate", "dataTime", "validityDate", "validityTime",
     "dataType", "shortName", "name", "units", "paramId", "typeOfLevel",
+    "uvRelativeToGrid", "resolutionAndComponentFlags",
     "level", "stepType", "stepRange", "gridType", "Ni", "Nj",
     "latitudeOfFirstGridPointInDegrees", "longitudeOfFirstGridPointInDegrees",
     "latitudeOfLastGridPointInDegrees", "longitudeOfLastGridPointInDegrees",
