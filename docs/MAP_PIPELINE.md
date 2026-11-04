@@ -7,8 +7,8 @@
 3. Convert compatible scalar fields:
    `python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data`
 4. Open the map viewer from the repository root:
-   `python -m http.server 8000`
-   Then browse to `http://localhost:8000/map_viewer/`.
+   `python serve_map.py`
+   Then browse to `http://127.0.0.1:8765/map_viewer/`.
 
 ## Map format
 The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
