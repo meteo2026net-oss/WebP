@@ -188,29 +188,33 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
         raise ValueError("Curvilinear values, latitude and longitude must be matching 2-D arrays.")
     if min(data.shape) < 2:
         raise ValueError("Curvilinear grids must contain at least 2 rows and 2 columns.")
-    if not np.all(np.isfinite(lat)) or not np.all(np.isfinite(lon)):
-        raise ValueError("Curvilinear geolocation contains non-finite coordinates.")
-    if np.any(np.abs(lat) > 90.0):
-        raise ValueError("Curvilinear latitude coordinates must be within -90..90 degrees.")
-
+    geo_valid = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90.0)
+    if int(geo_valid.sum()) < 3:
+        raise ValueError("At least three valid geolocation coordinates are required.")
+    # Missing geolocation is normal outside some projected-grid domains.
+    # Ignore those cells rather than rejecting an otherwise usable field.
     # Unwrap around the circular-mean longitude so regional grids near ±180°
     # remain narrow instead of being projected across almost the whole world.
-    radians = np.deg2rad(lon)
-    center = float(np.rad2deg(np.arctan2(np.nanmean(np.sin(radians)),
-                                        np.nanmean(np.cos(radians)))))
-    unwrapped_lon = center + ((lon - center + 180.0) % 360.0) - 180.0
+    radians = np.deg2rad(lon[geo_valid])
+    center = float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)),
+                                        np.mean(np.cos(radians)))))
+    unwrapped_lon = np.full(lon.shape, np.nan, dtype=np.float64)
+    unwrapped_lon[geo_valid] = center + ((lon[geo_valid] - center + 180.0) % 360.0) - 180.0
     lat_for_projection = np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
     transformer = Transformer.from_crs(
         "EPSG:4326", "EPSG:3857", always_xy=True, force_over=True
     )
     x, y = transformer.transform(unwrapped_lon, lat_for_projection)
     x, y = np.asarray(x), np.asarray(y)
-    valid = np.isfinite(data) & np.isfinite(x) & np.isfinite(y)
+    projected_geo_valid = geo_valid & np.isfinite(x) & np.isfinite(y)
+    valid = np.isfinite(data) & projected_geo_valid
     if int(valid.sum()) < 3:
-        raise ValueError("At least three valid geolocated cells are required for reprojection.")
+        raise ValueError("At least three valid geolocated data cells are required for reprojection.")
+    if np.unique(np.column_stack((x[valid], y[valid])), axis=0).shape[0] < 3:
+        raise ValueError("Curvilinear grid has fewer than three distinct valid projected cells.")
 
-    west, east = float(np.min(x[valid])), float(np.max(x[valid]))
-    south, north = float(np.min(y[valid])), float(np.max(y[valid]))
+    west, east = float(np.min(x[projected_geo_valid])), float(np.max(x[projected_geo_valid]))
+    south, north = float(np.min(y[projected_geo_valid])), float(np.max(y[projected_geo_valid]))
     if not (east > west and north > south):
         raise ValueError("Curvilinear grid has no two-dimensional map extent.")
     height, width = data.shape
@@ -218,7 +222,12 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     target_y = np.linspace(north, south, height)
     mesh_x, mesh_y = np.meshgrid(target_x, target_y)
     points = np.column_stack((x[valid], y[valid]))
-    sampled = griddata(points, data[valid], (mesh_x, mesh_y), method="linear")
+    try:
+        sampled = griddata(points, data[valid], (mesh_x, mesh_y), method="linear")
+    except Exception as exc:
+        raise ValueError(
+            "Curvilinear geolocation cannot form a valid 2-D interpolation mesh."
+        ) from exc
     if not np.any(np.isfinite(sampled)):
         raise ValueError("Curvilinear reprojection produced no valid raster cells.")
 

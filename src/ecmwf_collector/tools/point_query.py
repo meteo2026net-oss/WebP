@@ -44,10 +44,16 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         raise ValueError("Scientific layer has inconsistent grid dimensions.")
     if min(latitudes.shape) < 2:
         raise ValueError("At least a 2x2 latitude/longitude grid is required.")
-    if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
-        raise ValueError("Grid coordinates contain non-finite values.")
-    if np.any(np.abs(latitudes) > 90.0):
-        raise ValueError("Grid latitude coordinates are outside -90..90 degrees.")
+    if latitudes.ndim == 1:
+        if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
+            raise ValueError("Grid coordinates contain non-finite values.")
+        if np.any(np.abs(latitudes) > 90.0):
+            raise ValueError("Grid latitude coordinates are outside -90..90 degrees.")
+    else:
+        geo_valid = (np.isfinite(latitudes) & np.isfinite(longitudes)
+                     & (np.abs(latitudes) <= 90.0))
+        if int(geo_valid.sum()) < 3:
+            raise ValueError("Curvilinear grid has fewer than three valid geolocation cells.")
 
     if latitudes.ndim == 2:
         if method == "bilinear":
@@ -55,7 +61,6 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         lon_delta = ((longitudes - longitude + 180.0) % 360.0) - 180.0
         distance = np.hypot(latitudes - latitude,
                             lon_delta * np.cos(np.deg2rad(latitude)))
-        geo_valid = np.isfinite(latitudes) & np.isfinite(longitudes)
         distance[~geo_valid] = np.inf
         row, col = np.unravel_index(int(np.argmin(distance)), distance.shape)
         if not np.isfinite(distance[row, col]):
@@ -64,13 +69,15 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         if distance.shape[0] > 1:
             dlat = np.diff(latitudes, axis=0)
             dlon = ((np.diff(longitudes, axis=0) + 180.0) % 360.0) - 180.0
+            valid_pairs = (geo_valid[:-1, :] & geo_valid[1:, :])
             steps = np.hypot(dlat, dlon * np.cos(np.deg2rad(latitudes[:-1])))
-            neighbour_steps.extend(steps[np.isfinite(steps) & (steps > 0)].tolist())
+            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
         if distance.shape[1] > 1:
             dlat = np.diff(latitudes, axis=1)
             dlon = ((np.diff(longitudes, axis=1) + 180.0) % 360.0) - 180.0
+            valid_pairs = (geo_valid[:, :-1] & geo_valid[:, 1:])
             steps = np.hypot(dlat, dlon * np.cos(np.deg2rad(latitudes[:, :-1])))
-            neighbour_steps.extend(steps[np.isfinite(steps) & (steps > 0)].tolist())
+            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
         if neighbour_steps and distance[row, col] > float(np.median(neighbour_steps)) * 0.8:
             raise ValueError("The clicked location is outside the data grid coverage.")
         value = float(values[row, col])

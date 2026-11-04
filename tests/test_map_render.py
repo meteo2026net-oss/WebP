@@ -121,6 +121,17 @@ class MapRenderTests(unittest.TestCase):
                 self.assertEqual(image.mode, "RGBA")
                 self.assertEqual(image.size, (3, 3))
 
+    def test_reprojects_curvilinear_grid_with_missing_geolocation_cells(self):
+        values = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+        lat = np.array([[12, 12.1, np.nan], [11, 11.1, 11.2], [10, 10.1, 10.2]])
+        lon = np.array([[30, 31, np.nan], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "curvilinear-masked.png"
+            metadata = render_scalar_png(values, lat, lon, path)
+            self.assertTrue(path.exists())
+            self.assertGreater(metadata["valid_cells"], 0)
+            self.assertEqual(metadata["source_grid_type"], "curvilinear_geolocation")
+
     def test_rejects_curvilinear_grid_with_insufficient_valid_points(self):
         values = np.array([[1, np.nan], [np.nan, np.nan]], dtype=np.float32)
         lat = np.array([[10, 10], [9, 9]], dtype=float)
