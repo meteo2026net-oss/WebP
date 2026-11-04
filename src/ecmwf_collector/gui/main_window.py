@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import logging
 import posixpath
+import socket
+import subprocess
+import sys
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
@@ -193,6 +197,7 @@ class MainWindow(QMainWindow):
         self.btn_stop = QPushButton("إيقاف آمن")
         self.btn_manifest = QPushButton("تصدير سجل الملفات CSV")
         self.btn_process = QPushButton("معالجة الملفات المنزلة للخرائط")
+        self.btn_open_map = QPushButton("فتح خريطة الطقس")
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.btn_preview.clicked.connect(self._on_preview)
@@ -201,10 +206,15 @@ class MainWindow(QMainWindow):
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_manifest.clicked.connect(self._on_manifest)
         self.btn_process.clicked.connect(self._on_process_downloads)
+        self.btn_open_map.clicked.connect(self._on_open_map)
         for b in (self.btn_preview, self.btn_start, self.btn_pause, self.btn_stop, self.btn_manifest, self.btn_process):
             act.addWidget(b)
         act.addStretch()
         dform.addRow(act)
+        map_row = QHBoxLayout()
+        map_row.addWidget(self.btn_open_map)
+        map_row.addStretch()
+        dform.addRow(map_row)
         self.pbar = QProgressBar()
         self.pbar.setRange(0, 100)
         self.pbar_label = QLabel("—")
@@ -476,6 +486,27 @@ class MainWindow(QMainWindow):
         if self._manager:
             self._manager.stop()
             self._log("جارٍ الإيقاف الآمن… تبقى الملفات الجزئية (.part) وتُستكمل لاحقًا.")
+
+    def _on_open_map(self):
+        url = "http://127.0.0.1:8765/map_viewer/"
+        try:
+            with socket.create_connection(("127.0.0.1", 8765), timeout=0.4):
+                webbrowser.open(url)
+                self._log(f"فتح عارض الخريطة: {url}")
+                return
+        except OSError:
+            pass
+        try:
+            subprocess.Popen(
+                [sys.executable, str(project_root() / "serve_map.py")],
+                cwd=str(project_root()),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+            self._log("جارٍ تشغيل خادم الخريطة المحلي وفتح المتصفح…")
+        except OSError as exc:
+            self._log(f"تعذّر تشغيل خادم الخريطة: {exc}")
 
     def _on_process_downloads(self):
         download_root = self._download_root()
