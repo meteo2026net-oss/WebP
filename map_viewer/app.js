@@ -112,7 +112,7 @@
         return;
       }
       entries.forEach((entry, index) => {
-        const label = [entry.variable || "field", entry.typeOfLevel || "", entry.level ?? "", entry.units || "", entry.valid_time || "", entry.step !== undefined ? "step " + entry.step : ""].filter(x => x !== "" && x !== null && x !== undefined).join(" — ");
+        const label = [entry.variable || "field", entry.typeOfLevel || "", entry.level ?? "", entry.display_units || entry.units || "", entry.valid_time || "", entry.step !== undefined ? "step " + entry.step : ""].filter(x => x !== "" && x !== null && x !== undefined).join(" — ");
         select.add(new Option(label, String(index)));
       });
       select.value = "0";
