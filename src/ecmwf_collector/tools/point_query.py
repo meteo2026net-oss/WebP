@@ -155,7 +155,35 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
     if lon_axis[0] > lon_axis[-1]:
         lon_axis, grid = lon_axis[::-1], grid[:, ::-1]
     r0, r1, fy = _bracket(lat_axis, latitude)
-    c0, c1, fx = _bracket(lon_axis, query_longitude)
+    longitude_step = float(np.median(np.abs(np.diff(lon_axis))))
+    longitude_span = float(lon_axis[-1] - lon_axis[0])
+    cyclic_tolerance = max(1e-6, longitude_step * 1e-6)
+    has_duplicate_cyclic_endpoint = np.isclose(
+        longitude_span, 360.0, rtol=0.0, atol=cyclic_tolerance
+    )
+    is_cyclic_global_grid = has_duplicate_cyclic_endpoint or np.isclose(
+        longitude_span + longitude_step, 360.0,
+        rtol=0.0, atol=cyclic_tolerance,
+    )
+    if has_duplicate_cyclic_endpoint:
+        # A repeated 360-degree endpoint represents the same meridian as the
+        # first column. Drop only that duplicate before seam interpolation.
+        lon_axis = lon_axis[:-1]
+        grid = grid[:, :-1]
+    if is_cyclic_global_grid:
+        wrapped_longitude = float(
+            lon_axis[0] + ((query_longitude - lon_axis[0]) % 360.0)
+        )
+        if wrapped_longitude > lon_axis[-1] + 1e-8:
+            # Interpolate across the cyclic seam using the first column as its
+            # next-world copy, rather than rejecting a valid global query.
+            c0, c1 = lon_axis.size - 1, 0
+            seam_width = float(lon_axis[0] + 360.0 - lon_axis[-1])
+            fx = float((wrapped_longitude - lon_axis[-1]) / seam_width)
+        else:
+            c0, c1, fx = _bracket(lon_axis, wrapped_longitude)
+    else:
+        c0, c1, fx = _bracket(lon_axis, query_longitude)
     corners = np.asarray([grid[r0, c0], grid[r0, c1], grid[r1, c0], grid[r1, c1]])
     if not np.all(np.isfinite(corners)):
         return {"valid": False, "latitude": float(latitude), "longitude": float(longitude),
