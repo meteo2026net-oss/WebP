@@ -78,20 +78,16 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         if not np.isfinite(distance[row, col]):
             raise ValueError("Curvilinear grid has no valid geolocation cells.")
         neighbour_steps = []
-        if distance.shape[0] > 1:
-            valid_pairs = geo_valid[:-1, :] & geo_valid[1:, :]
-            steps = _great_circle_distance_degrees(
-                latitudes[:-1, :], longitudes[:-1, :],
-                latitudes[1:, :], longitudes[1:, :]
-            )
-            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
-        if distance.shape[1] > 1:
-            valid_pairs = geo_valid[:, :-1] & geo_valid[:, 1:]
-            steps = _great_circle_distance_degrees(
-                latitudes[:, :-1], longitudes[:, :-1],
-                latitudes[:, 1:], longitudes[:, 1:]
-            )
-            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
+        for nr, nc in ((row - 1, col), (row + 1, col),
+                       (row, col - 1), (row, col + 1)):
+            if (0 <= nr < distance.shape[0] and 0 <= nc < distance.shape[1]
+                    and geo_valid[nr, nc]):
+                step = _great_circle_distance_degrees(
+                    latitudes[row, col], longitudes[row, col],
+                    latitudes[nr, nc], longitudes[nr, nc]
+                )
+                if np.isfinite(step) and step > 0:
+                    neighbour_steps.append(float(step))
         if neighbour_steps and distance[row, col] > float(np.median(neighbour_steps)) * 0.8:
             raise ValueError("The clicked location is outside the data grid coverage.")
         value = float(values[row, col])
