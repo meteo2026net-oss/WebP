@@ -138,13 +138,13 @@ jobs:
                   )
                   if values.ndim != 2 or not (regular_1d or curvilinear_2d):
                       raise SystemExit(f"Unexpected value/geolocation shapes in {layer['data_file']}")
-                  geo_valid = np.isfinite(latitudes) & np.isfinite(longitudes)
                   if latitudes.ndim == 1:
                       geo_valid = (np.isfinite(latitudes)[:, None]
                                    & np.isfinite(longitudes)[None, :]
                                    & (np.abs(latitudes[:, None]) <= 90.0))
                   else:
-                      geo_valid &= np.abs(latitudes) <= 90.0
+                      geo_valid = (np.isfinite(latitudes) & np.isfinite(longitudes)
+                                   & (np.abs(latitudes) <= 90.0))
                   if int(geo_valid.sum()) < 3:
                       raise SystemExit(f"Too few valid geolocation cells in {layer['data_file']}")
                   if int((geo_valid & np.isfinite(values)).sum()) < 3:
