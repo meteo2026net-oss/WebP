@@ -1,13 +1,16 @@
-# ECMWF Data Collector — مشروع تنزيل ومعالجة البيانات الجوية
+# ECMWF Data Collector — نظام تنزيل ومعالجة وعرض البيانات الجوية
 
-## هيكل المشروع
-- `src/ecmwf_collector/`: منطق الاتصال والتنزيل والتحقق وحفظ الحالة.
-- `src/ecmwf_collector/gui/`: الواجهة الرسومية العربية المبنية بـ PySide6.
-- `src/ecmwf_collector/tools/`: أدوات فحص GRIB وتحويل الرياح إلى WebP وفك الترميز ومستكشف الملفات.
-- `tests/`: الاختبارات وخادم FTP الوهمي.
-- `docs/`: توثيق الوصول والترميز والبنية.
-- `config/settings.example.json`: نموذج إعدادات آمن؛ انسخه إلى `config/settings.json` محلياً.
-- `archive/`: نسخة الأرشيف الأصلي للرجوع إليها.
+الهدف هو بناء مسار متكامل: **تنزيل GRIB من ECMWF ← فحص الحقول ← تحويلها إلى طبقات جغرافية ← عرضها على خريطة تفاعلية**.
+
+## مكونات المشروع
+- `src/ecmwf_collector/`: الاتصال بالخادم، استعراض الملفات، التنزيل والاستكمال والتحقق.
+- `src/ecmwf_collector/gui/`: واجهة سطح المكتب العربية.
+- `src/ecmwf_collector/tools/`: فحص GRIB والتحويل والمعالجة الجماعية.
+- `map_viewer/`: واجهة الخريطة التفاعلية المبنية على Leaflet.
+- `tests/`: اختبارات آلية وبيئة FTP وهمية.
+- `docs/`: التوثيق الفني.
+- `config/settings.example.json`: نموذج إعدادات آمن.
+- `archive/`: الأرشيف الأصلي للمرحلة الثانية.
 
 ## التثبيت على Windows
 ```powershell
@@ -19,20 +22,45 @@ Copy-Item config/settings.example.json config/settings.json
 python main.py
 ```
 
-أدخل بيانات الاتصال داخل التطبيق فقط. لا ترفع كلمة المرور أو ملف الإعدادات المحلي أو ملفات GRIB أو قاعدة البيانات إلى GitHub. يفضّل استخدام FTPS؛ الاتصال FTP العادي غير مشفر ومعطل افتراضياً.
+أدخل بيانات ECMWF داخل التطبيق فقط. لا ترفع كلمة المرور أو ملف الإعدادات المحلي أو قاعدة البيانات أو ملفات GRIB المقيدة إلى GitHub. يفضّل FTPS/TLS؛ FTP العادي غير مشفر.
 
-## فحص ملفات GRIB
+## سير العمل الكامل
+
+### 1. تنزيل البيانات
+شغّل `python main.py`، ثم أدخل بيانات اتصال WMO Support، اختبر الاتصال، استعرض المجلدات، وحدد المنتجات والفترة، ثم نزّل الملفات. يحفظ البرنامج الملفات الأصلية محلياً في مجلد التنزيل.
+
+### 2. فحص ملف GRIB
 ```powershell
 $env:PYTHONPATH = "src"
-python -m ecmwf_collector.tools.inspect_grib path/to/input.grib2 --output output/grib_inventory.json
+python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json
 ```
 
-## تحويل الرياح إلى WebP
+### 3. تحويل الحقول إلى طبقات خريطة
 ```powershell
-$env:PYTHONPATH = "src"
-python -m ecmwf_collector.tools.wind_grib_to_webp path/to/input.grib2 --output output/wind.webp
-python -m ecmwf_collector.tools.webp_to_npz output/wind.webp --output output/wind_decoded.npz
+python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
 ```
+يحوّل الحقول العددية ثنائية الأبعاد المتوافقة مع شبكة خطوط طول وعرض منتظمة إلى PNG شفاف، وينشئ ملفات JSON جانبية وقائمة طبقات `manifest.json`.
+
+### 4. معالجة جميع الملفات المنزلة
+```powershell
+python -m ecmwf_collector.tools.process_downloads --downloads downloads --output-dir output/map_data
+```
+
+### 5. تحويل الرياح U/V
+```powershell
+python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output output/wind.webp
+```
+ينتج WebP علمياً مشفراً، وPNG لسرعة الرياح، ويسجل طبقة العرض تلقائياً في manifest.
+
+### 6. فتح الخريطة التفاعلية
+من جذر المستودع:
+```powershell
+python -m http.server 8000
+```
+ثم افتح:
+`http://localhost:8000/map_viewer/`
+
+تستطيع اختيار الطبقة، تغيير شفافيتها، وتكبير نطاقها. يلزم تشغيل الخادم المحلي لأن المتصفح لا يقرأ manifest عبر `file://` مباشرة.
 
 ## الاختبارات
 ```powershell
@@ -40,7 +68,9 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -t . -v
 ```
 
-الاختبارات تستخدم بيانات اصطناعية وخادم FTP وهمياً، ولا تثبت نجاح الاتصال بالخادم الحقيقي.
-
-## حدود محول الرياح الحالي
-يستخدم ترميزاً كمياً بدقة 8-bit ويدعم حالياً إحداثيات latitude/longitude أحادية البعد. احتفظ بملفات GRIB الأصلية للحسابات العلمية، وتحقق من الإسقاط والاتجاه ونطاق خطوط الطول والإسناد الجغرافي قبل عرض الصور على الخريطة.
+## الحدود الحالية
+- محرك الخريطة الأولي يدعم شبكات latitude/longitude أحادية البعد والمنتظمة.
+- شبكات rotated-pole وLambert وpolar stereographic والشبكات المنحنية تحتاج إعادة إسقاط قبل العرض.
+- ليست كل ملفات GRIB قابلة للفتح في مجموعة واحدة؛ بعض الملفات تحوي مجموعات حقول مختلفة، وقد تتطلب تحديد المتغير أو فصل الرسائل.
+- WebP الحالي يستخدم quantization بدقة 8-bit؛ احتفظ بملفات GRIB الأصلية للحسابات العلمية.
+- لم يُختبر الاتصال الحقيقي بـ ECMWF أو عرض بيانات ECMWF فعلية بعد؛ يلزم إجراء اختبار تكاملي باستخدام ملف GRIB مسموح بتداوله.
