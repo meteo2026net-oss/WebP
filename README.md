@@ -1,72 +1,46 @@
-# WebP Weather Data Encoder
+# ECMWF WebP Weather Data Platform
 
-محرك أولي لتحويل مركبتي الرياح U/V من ملفات GRIB أو GRIB2 إلى نسيج RGB بصيغة WebP lossless، مع ملف JSON جانبي يوضح طريقة فك الترميز ومعلومات الشبكة.
+مشروع مفتوح المصدر لتنزيل بيانات ECMWF WMO Support، وفحص ملفات GRIB/BUFR، وتجهيز الحقول الجوية للتحويل إلى صور وطبقات مكانية قابلة للعرض على الخرائط.
 
-## الملفات
-- `wind_grib_to_webp.py`: محول حقول الرياح إلى WebP.
-- `webp_to_npz.py`: فك ترميز WebP إلى مصفوفتَي U/V وقناع الصلاحية بصيغة NPZ.
-- `inspect_grib.py`: فهرسة رسائل GRIB وحقولها ومستوياتها وأوقاتها ومعلومات الشبكة باستخدام ecCodes.
-- `tests/`: اختبارات آلية لفك الترميز والتحقق من الأبعاد والقيم المفقودة.
-- `.github/workflows/tests.yml`: تشغيل الاختبارات تلقائياً عند الدفع أو فتح Pull Request.
-- `requirements.txt`: مكتبات Python المطلوبة.
-- `docs/ENCODING.md`: مواصفات القنوات وفك الترميز.
-- `docs/DATA_ACCESS.md`: ملاحظات الوصول إلى مجموعة WMO Support وتسلسل إدخال البيانات وحماية بيانات الدخول.
-- `.gitignore`: استثناء الملفات المؤقتة والبيانات الكبيرة.
+**الوثائق العربية:** [README_AR.md](README_AR.md)
 
-## المتطلبات والتثبيت
-يتطلب Python 3.10 أو أحدث، ومكتبات ecCodes وcfgrib:
+## Project layout
+- `src/ecmwf_collector/`: desktop collector package and GUI.
+- `src/ecmwf_collector/tools/`: GRIB inspection, WebP encoding/decoding, and GRIB explorer.
+- `tests/`: unit tests and fake FTP server.
+- `docs/`: technical documentation.
+- `config/settings.example.json`: safe local configuration template.
+- `archive/`: original uploaded source archive.
 
-```bash
+Runtime data (`downloads/`, `processed/`, `output/`, `logs/`, and `state/`) is created locally and excluded from Git.
+
+## Install (Windows)
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+Copy-Item config/settings.example.json config/settings.json
+python main.py
 ```
 
-قد يحتاج ecCodes إلى إعداد إضافي حسب نظام التشغيل. إذا تعذر فتح GRIB، راجع توثيق cfgrib وecCodes.
+Never commit local settings, credentials, database files, logs, or downloaded data. Prefer FTPS/TLS; plain FTP is unencrypted and disabled by default.
 
-## التشغيل
-
-```bash
-python wind_grib_to_webp.py path/to/input.grib2 --output output/wind.webp
+## GRIB tools
+```powershell
+$env:PYTHONPATH = "src"
+python -m ecmwf_collector.tools.inspect_grib path/to/input.grib2 --output output/grib_inventory.json
+python -m ecmwf_collector.tools.wind_grib_to_webp path/to/input.grib2 --output output/wind.webp
+python -m ecmwf_collector.tools.webp_to_npz output/wind.webp --output output/wind_decoded.npz
 ```
 
-عند الحاجة إلى تحديد أسماء المتغيرات يدوياً:
-
-```bash
-python wind_grib_to_webp.py input.grib2 --u-var u10 --v-var v10 --output output/wind.webp
+## Tests
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -t . -v
 ```
 
-ينتج ملفا `wind.webp` و`wind.json`.
+Tests use synthetic data and fake FTP sessions; they do not prove compatibility with the live ECMWF service or all GRIB grid projections.
 
-## فحص ملف GRIB قبل المعالجة
-
-```bash
-python inspect_grib.py path/to/input.grib2 --output output/grib_inventory.json
-```
-
-يعرض السكربت ملخصاً لكل رسالة GRIB (اسم الحقل، الوحدة، المستوى، خطوة التنبؤ، وقت الصلاحية، نوع الشبكة وأبعادها). هذه خطوة مهمة لأن أسماء الحقول الفعلية في تسليمات WMO قد تختلف عن الأسماء الافتراضية في محول الرياح.
-
-## فك الترميز
-
-```bash
-python webp_to_npz.py output/wind.webp --output output/wind_decoded.npz
-```
-
-يقرأ السكربت ملف JSON المجاور، ويتحقق من إصدار الترميز وأبعاد الصورة وقناع الصلاحية، ثم يحفظ `u` و`v` و`valid` داخل ملف NPZ مضغوط. القيم المستعادة تبقى مقيدة بدقة الترميز 8-bit.
-
-## الاختبارات
-
-```bash
-python -m pip install numpy Pillow
-python -m unittest discover -s tests -v
-```
-
-يعمل GitHub Actions على تشغيل هذه الاختبارات تلقائياً.
-
-## حدود النسخة الحالية
-- لم يتم اختبارها بعد على ملف حقيقي من WMO Support dataset؛ قد تحتاج أسماء الحقول أو طريقة قراءة رسائل GRIB إلى ضبط.
-- تدعم حالياً إحداثيات latitude/longitude أحادية البعد فقط.
-- ترميز 8-bit يسبب quantization. وضع WebP lossless يحفظ قيم القنوات بعد الترميز دون فقد إضافي، لكنه لا يعيد دقة float الأصلية.
-- احتفظ بملفات GRIB الأصلية للحسابات العلمية، وتحقق من إسقاط الشبكة واتفاقية خطوط الطول قبل عرض الصورة على الخريطة.
-- لا ترفع ملفات GRIB الخاصة أو بيانات الدخول أو كلمات المرور إلى GitHub.
-
-## المرحلة التالية
-اختبار ملف ECMWF حقيقي، إضافة متغيرات الطقس الأخرى، توليد tiles، ثم بناء طبقة WebGL/MapLibre وتحريك التوقعات زمنياً.
+## Scientific limitation
+The current wind encoder uses 8-bit quantization and supports only one-dimensional latitude/longitude coordinates. Lossless WebP preserves encoded channel bytes, not original floating-point precision. Keep original GRIB files for scientific calculations and verify projection, longitude convention, orientation, and georeferencing before map display.
