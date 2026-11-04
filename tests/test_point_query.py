@@ -143,6 +143,29 @@ class PointQueryTests(unittest.TestCase):
                 sample_npz(path, 9.0, 170.0)
 
 
+    def test_curvilinear_nearest_sampling_supports_global_longitude_mesh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = np.tile(np.array([60.0, 0.0, -60.0])[:, None], (1, 4))
+            lon = np.tile(np.array([-180.0, -90.0, 0.0, 90.0])[None, :], (3, 1))
+            values = np.arange(12, dtype=np.float32).reshape(3, 4)
+            path = self._write_grid(tmp, values, lat, lon)
+            result = sample_npz(path, 0.0, 179.0)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 6.0)
+            self.assertEqual(result["longitude"], -180.0)
+            self.assertEqual(result["grid_type"], "curvilinear")
+
+    def test_curvilinear_nearest_uses_great_circle_distance_at_high_latitudes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[80.0, 80.0, 80.0], [79.0, 79.0, 79.0], [78.0, 78.0, 78.0]]
+            lon = [[-120.0, 0.0, 120.0], [-120.0, 0.0, 120.0], [-120.0, 0.0, 120.0]]
+            values = np.arange(9, dtype=np.float32).reshape(3, 3)
+            path = self._write_grid(tmp, values, lat, lon)
+            result = sample_npz(path, 80.0, 179.0)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 0.0)
+            self.assertEqual(result["longitude"], -120.0)
+
 
 if __name__ == "__main__":
     unittest.main()
