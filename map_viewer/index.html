@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECMWF Weather Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>ECMWF Weather Map</strong>
+      <span>عارض طبقات الطقس الجوية</span>
+    </div>
+    <a href="../README_AR.md">توثيق المشروع</a>
+  </header>
+  <main>
+    <aside class="panel">
+      <h1>طبقات الطقس</h1>
+      <label for="layerSelect">المتغير الجوي</label>
+      <select id="layerSelect"><option value="">تحميل قائمة الطبقات…</option></select>
+      <div id="layerInfo" class="info">اختر طبقة بعد تجهيز ملفات GRIB.</div>
+      <label for="opacity">شفافية الطبقة <output id="opacityValue">75%</output></label>
+      <input id="opacity" type="range" min="10" max="100" value="75">
+      <button id="fitButton" type="button">إظهار نطاق الطبقة</button>
+      <button id="reloadButton" type="button">تحديث قائمة الطبقات</button>
+      <p class="hint">الخريطة تستخدم OpenStreetMap كخريطة أساس. طبقات الطقس محلية من ملفات المعالجة.</p>
+      <div id="status" role="status">بانتظار manifest.json</div>
+    </aside>
+    <section id="map" aria-label="خريطة الطقس"></section>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
