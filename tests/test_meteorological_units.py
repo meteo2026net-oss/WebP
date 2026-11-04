@@ -30,6 +30,27 @@ class MeteorologicalUnitTests(unittest.TestCase):
         np.testing.assert_allclose(result[:2], [0.0, 36.0])
         self.assertTrue(np.isnan(result[2]))
 
+    def test_common_grib_pressure_aliases(self):
+        for alias in ("hPa", "hectopascal", "hectopascals", "mbar", "millibar", "millibars"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(1013.25, alias, "Pa"), 101325.0)
+
+    def test_common_cfgrib_temperature_aliases(self):
+        for alias in ("degC", "degree Celsius", "degrees Celsius", "deg C", "°C"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(0, alias, "K"), 273.15)
+
+    def test_common_cfgrib_wind_speed_aliases(self):
+        for alias in ("m s-1", "m s**-1", "m s^-1", "m s**(-1)", "m/s"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(10, alias, "km/h"), 36.0)
+        for alias in ("km h-1", "km h**-1", "km h^-1", "km/h"):
+            with self.subTest(alias=alias):
+                self.assertAlmostEqual(convert_values(36, alias, "m/s"), 10.0)
+
+    def test_unit_aliases_normalize_unicode_minus_and_middle_dot(self):
+        self.assertAlmostEqual(convert_values(10, "m · s−1", "km/h"), 36.0)
+
     def test_equivalent_unit_aliases_have_same_canonical_label(self):
         self.assertEqual(canonical_unit("m/s"), canonical_unit("m s-1"))
         self.assertEqual(canonical_unit("mbar"), canonical_unit("hPa"))
