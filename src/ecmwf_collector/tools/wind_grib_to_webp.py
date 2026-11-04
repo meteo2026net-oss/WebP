@@ -8,6 +8,7 @@ Keep the source GRIB for scientific calculations.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -135,16 +136,21 @@ def main() -> None:
         # Also create a transparent, geographically placed display layer.
         map_dir = Path("output/map_data")
         map_dir.mkdir(parents=True, exist_ok=True)
-        display_path = map_dir / f"{args.input_grib.stem}_wind_speed.png"
+        source_id = hashlib.sha256(str(args.input_grib.resolve()).encode("utf-8")).hexdigest()[:12]
+        display_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_speed.png"
         display_grid = render_wind_speed_png(u, v, lat, lon, display_path)
+        speed_path = display_path.with_suffix(".npz")
+        np.savez_compressed(speed_path, values=np.hypot(u, v), latitudes=lat, longitudes=lon)
         map_record = {
             "source_file": args.input_grib.name,
+            "source_id": source_id,
             "variable": "wind_speed",
             "long_name": "Wind speed",
             "units": "m s-1",
             "valid_time": metadata.get("valid_time") or metadata.get("time"),
             "step": metadata.get("step"),
             "image": display_path.name,
+            "data_file": speed_path.name,
             **display_grid,
         }
         update_manifest(map_dir, [map_record])
