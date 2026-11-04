@@ -1,0 +1,49 @@
+import unittest
+
+import numpy as np
+
+from ecmwf_collector.tools.meteorological_units import (
+    canonical_unit,
+    convert_values,
+)
+
+
+class MeteorologicalUnitTests(unittest.TestCase):
+    def test_pressure_conversions(self):
+        self.assertAlmostEqual(convert_values(101325, "Pa", "hPa"), 1013.25)
+        self.assertAlmostEqual(convert_values(1000, "hPa", "kPa"), 100.0)
+
+    def test_temperature_conversions(self):
+        self.assertAlmostEqual(convert_values(273.15, "K", "degC"), 0.0)
+        self.assertAlmostEqual(convert_values(20, "°C", "K"), 293.15)
+
+    def test_wind_speed_conversions(self):
+        self.assertAlmostEqual(convert_values(10, "m/s", "km/h"), 36.0)
+        self.assertAlmostEqual(convert_values(1, "m s-1", "knots"), 1.9438444924, places=7)
+
+    def test_precipitation_depth_conversions(self):
+        self.assertAlmostEqual(convert_values(12.5, "mm", "m"), 0.0125)
+        self.assertAlmostEqual(convert_values(0.02, "m", "mm"), 20.0)
+
+    def test_array_conversion_preserves_nan(self):
+        result = convert_values(np.array([0.0, 10.0, np.nan]), "m/s", "km/h")
+        np.testing.assert_allclose(result[:2], [0.0, 36.0])
+        self.assertTrue(np.isnan(result[2]))
+
+    def test_equivalent_unit_aliases_have_same_canonical_label(self):
+        self.assertEqual(canonical_unit("m/s"), canonical_unit("m s-1"))
+        self.assertEqual(canonical_unit("mbar"), canonical_unit("hPa"))
+
+    def test_unknown_and_incompatible_units_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported"):
+            convert_values(1, "furlong", "m")
+        with self.assertRaisesRegex(ValueError, "Incompatible"):
+            convert_values(1, "hPa", "km/h")
+
+    def test_missing_unit_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            convert_values(1, "", "Pa")
+
+
+if __name__ == "__main__":
+    unittest.main()

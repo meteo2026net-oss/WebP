@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 from .map_render import render_wind_speed_png
 from .map_manifest import update_manifest
+from .meteorological_units import canonical_unit
 
 U_CANDIDATES = ("u10", "10u", "u_10m", "u")
 V_CANDIDATES = ("v10", "10v", "v_10m", "v")
@@ -92,8 +93,13 @@ def compatible_component_units(u_units: Any, v_units: Any) -> str | None:
     """Validate U/V unit agreement without silently converting physical units."""
     u_text = str(u_units).strip() if u_units not in (None, "") else ""
     v_text = str(v_units).strip() if v_units not in (None, "") else ""
-    if u_text and v_text and " ".join(u_text.lower().split()) != " ".join(v_text.lower().split()):
-        raise ValueError(f"U/V component units differ ({u_text!r} vs {v_text!r}); convert them before encoding.")
+    if u_text and v_text:
+        try:
+            compatible = canonical_unit(u_text) == canonical_unit(v_text)
+        except ValueError:
+            compatible = " ".join(u_text.lower().split()) == " ".join(v_text.lower().split())
+        if not compatible:
+            raise ValueError(f"U/V component units differ ({u_text!r} vs {v_text!r}); convert them before encoding.")
     return u_text or v_text or None
 
 

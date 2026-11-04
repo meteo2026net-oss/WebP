@@ -98,6 +98,7 @@ class WindGridTests(unittest.TestCase):
 
     def test_component_units_must_match(self):
         self.assertEqual(compatible_component_units("m s-1", "m s-1"), "m s-1")
+        self.assertEqual(compatible_component_units("m/s", "m s-1"), "m/s")
         self.assertEqual(compatible_component_units(None, "m/s"), "m/s")
         self.assertIsNone(compatible_component_units(None, None))
         with self.assertRaisesRegex(ValueError, "units differ"):
