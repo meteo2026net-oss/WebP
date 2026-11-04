@@ -11,8 +11,17 @@ SCALAR_STOPS = np.array([
 ], dtype=np.float32)
 
 
+def _regular_steps(values: np.ndarray) -> bool:
+    steps = np.diff(values)
+    return bool(
+        steps.size
+        and np.all(steps > 0)
+        and np.allclose(steps, np.median(steps), rtol=1e-3, atol=1e-6)
+    )
+
+
 def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray):
-    """Return data ordered north-to-south and west-to-east on a -180..180 grid."""
+    """Return data north-to-south and west-to-east, unwrapping grids at ±180°."""
     data = np.asarray(values, dtype=np.float32)
     lat = np.asarray(latitudes, dtype=np.float64)
     lon = np.asarray(longitudes, dtype=np.float64)
@@ -32,26 +41,57 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
     lat_steps = np.abs(lat_diff)
     if not np.allclose(lat_steps, np.median(lat_steps), rtol=1e-3, atol=1e-6):
         raise ValueError("Latitude coordinates are not regularly spaced.")
+
     lat_order = np.argsort(lat)[::-1]
     normalized_lon = ((lon + 180.0) % 360.0) - 180.0
     lon_order = np.argsort(normalized_lon)
-    lat = lat[lat_order]
-    lon = normalized_lon[lon_order]
-    data = data[np.ix_(lat_order, lon_order)]
-    keep = np.ones(lon.size, dtype=bool)
-    if lon.size > 1:
-        keep[1:] = np.diff(lon) > 1e-8
-    if not np.all(keep):
-        lon = lon[keep]
-        data = data[:, keep]
+    ordered_lon = normalized_lon[lon_order]
+    ordered_data = data[np.ix_(lat_order, lon_order)]
+
+    # Prefer the canonical -180..180 ordering for ordinary grids. If sorting
+    # across the antimeridian creates a false 300+ degree gap, retain the
+    # original geographic sequence and unwrap it into one continuous interval.
+    keep = np.ones(ordered_lon.size, dtype=bool)
+    if ordered_lon.size > 1:
+        keep[1:] = np.diff(ordered_lon) > 1e-8
+    canonical_lon = ordered_lon[keep]
+    canonical_data = ordered_data[:, keep]
+
+    if canonical_lon.size >= 2 and _regular_steps(canonical_lon):
+        lon, data = canonical_lon, canonical_data
+        longitude_convention = "-180_to_180"
+    else:
+        unwrapped = np.rad2deg(np.unwrap(np.deg2rad(lon)))
+        unwrapped_diff = np.diff(unwrapped)
+        if np.all(unwrapped_diff < 0):
+            unwrapped = unwrapped[::-1]
+            ordered_indices = np.arange(lon.size - 1, -1, -1)
+        elif np.all(unwrapped_diff > 0):
+            ordered_indices = np.arange(lon.size)
+        else:
+            raise ValueError("Longitude coordinates must be monotonic after antimeridian unwrapping.")
+        lon = unwrapped
+        data = data[np.ix_(lat_order, ordered_indices)]
+        # Remove a repeated cyclic endpoint (for example 180° and -180°).
+        if lon.size > 2 and np.isclose(lon[-1] - lon[0], 360.0, atol=1e-6):
+            lon, data = lon[:-1], data[:, :-1]
+        if lon.size < 2 or not _regular_steps(lon):
+            raise ValueError("Longitude coordinates are not regularly spaced after antimeridian unwrapping.")
+        # Keep the interval near the conventional world copy while allowing
+        # east > 180 or west < -180 when the grid genuinely crosses the seam.
+        center = (float(lon[0]) + float(lon[-1])) / 2.0
+        if center > 180.0:
+            shift = 360.0 * np.floor((center + 180.0) / 360.0)
+        elif center < -180.0:
+            shift = 360.0 * np.ceil((center - 180.0) / 360.0)
+        else:
+            shift = 0.0
+        lon = lon - shift
+        longitude_convention = "continuous_unwrapped"
+
     if lon.size < 2:
         raise ValueError("Longitude grid collapses after removing duplicated cyclic endpoints.")
-    lon_steps = np.diff(lon)
-    if not np.all(lon_steps > 0):
-        raise ValueError("Longitude coordinates are not strictly increasing after normalization.")
-    if not np.allclose(lon_steps, np.median(lon_steps), rtol=1e-3, atol=1e-6):
-        raise ValueError("Longitude coordinates are not regularly spaced.")
-    return data, lat, lon
+    return data, lat[lat_order], lon, longitude_convention
 
 
 def _mercator_y(latitude_degrees: np.ndarray) -> np.ndarray:
@@ -64,13 +104,13 @@ def _inverse_mercator_y(y: np.ndarray) -> np.ndarray:
 
 
 def grid_bounds(lat: np.ndarray, lon: np.ndarray) -> dict:
-    """Estimate pixel-edge bounds and clamp latitude to Web-Mercator's valid range."""
+    """Estimate pixel-edge bounds; preserve unwrapped longitude across ±180°."""
     dlat = float(np.median(np.abs(np.diff(lat))))
     dlon = float(np.median(np.diff(lon)))
     north = min(MAX_MERCATOR_LAT, float(np.max(lat)) + dlat / 2)
     south = max(-MAX_MERCATOR_LAT, float(np.min(lat)) - dlat / 2)
-    west = max(-180.0, float(np.min(lon)) - dlon / 2)
-    east = min(180.0, float(np.max(lon)) + dlon / 2)
+    west = float(np.min(lon)) - dlon / 2
+    east = float(np.max(lon)) + dlon / 2
     if north <= south or east <= west:
         raise ValueError("Grid has no visible area inside Web Mercator bounds.")
     return {"west": west, "south": south, "east": east, "north": north}
@@ -125,7 +165,7 @@ def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) 
 def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray,
                       output_path, vmin: float | None = None, vmax: float | None = None) -> dict:
     """Render a transparent RGBA PNG with rows resampled for Leaflet EPSG:3857."""
-    data, lat, lon = normalize_regular_grid(values, latitudes, longitudes)
+    data, lat, lon, longitude_convention = normalize_regular_grid(values, latitudes, longitudes)
     bounds = grid_bounds(lat, lon)
     data = _resample_rows_to_web_mercator(data, lat, bounds)
     valid = np.isfinite(data)
@@ -150,7 +190,7 @@ def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.
         "missing_cells": int((~valid).sum()),
         "coordinate_order": "north_to_south",
         "render_projection": "EPSG:3857",
-        "longitude_convention": "-180_to_180",
+        "longitude_convention": longitude_convention,
     }
 
 

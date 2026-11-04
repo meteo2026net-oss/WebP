@@ -22,7 +22,12 @@
       <select id="layerSelect"><option value="">تحميل قائمة الطبقات…</option></select>
       <div id="layerInfo" class="info">اختر طبقة بعد تجهيز ملفات GRIB.</div>
       <div class="legend"><div class="legendbar"></div><div class="legendlabels"><span id="legendMin">منخفض</span><span id="legendMax">مرتفع</span></div></div>
-      <div id="pointInfo" class="info point-info">انقر على الخريطة لقراءة قيمة الحقل عند أقرب نقطة شبكية.</div>
+      <label for="samplingMethod">طريقة استخراج القيمة</label>
+      <select id="samplingMethod">
+        <option value="nearest">أقرب خلية شبكية</option>
+        <option value="bilinear">استيفاء ثنائي بين أربع خلايا</option>
+      </select>
+      <div id="pointInfo" class="info point-info">انقر على الخريطة لقراءة قيمة الحقل بالطريقة المختارة.</div>
       <section class="timeline" aria-label="الخط الزمني للتنبؤ">
         <div class="timeline-head"><strong>زمن التنبؤ</strong><output id="timeValue">—</output></div>
         <input id="timeSlider" type="range" min="0" max="0" value="0" step="1" disabled>

@@ -59,7 +59,8 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
             if data_path.parent != MAP_DATA or not data_path.is_file():
                 self._json_response(404, {"error": "Scientific data file is unavailable."})
                 return
-            result = sample_npz(data_path, latitude, longitude)
+            method = query.get("method", ["nearest"])[0]
+            result = sample_npz(data_path, latitude, longitude, method=method)
             result.update({
                 "variable": entry.get("variable"),
                 "long_name": entry.get("long_name"),

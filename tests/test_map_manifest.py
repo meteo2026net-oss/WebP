@@ -27,6 +27,32 @@ class MapManifestTests(unittest.TestCase):
             self.assertIn("surface_new.png", [x["image"] for x in manifest["layers"]])
             self.assertIn("850.png", [x["image"] for x in manifest["layers"]])
 
+    def test_keeps_distinct_grib_groups_and_ensemble_slices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            common = {
+                "source_id": "same-source",
+                "source_file": "ensemble.grib",
+                "variable": "t",
+                "valid_time": "2026-11-04T00:00",
+                "typeOfLevel": "isobaricInhPa",
+                "level": 850,
+                "step": "0 hours",
+                "units": "K",
+            }
+            products = [
+                {**common, "group_index": 0, "extra_coordinates": {"number": 0}, "image": "member0.png"},
+                {**common, "group_index": 0, "extra_coordinates": {"number": 1}, "image": "member1.png"},
+                {**common, "group_index": 1, "extra_coordinates": {"number": 0}, "image": "group1.png"},
+            ]
+            path = update_manifest(root, products)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(manifest["layers"]), 3)
+            self.assertEqual(
+                {item["image"] for item in manifest["layers"]},
+                {"member0.png", "member1.png", "group1.png"},
+            )
+
     def test_accepts_array_valued_time_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

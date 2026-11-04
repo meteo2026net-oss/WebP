@@ -38,3 +38,20 @@ GET /api/point?image=<layer-image>&lat=<latitude>&lon=<longitude>
 ## Forecast timeline
 
 The map viewer groups compatible layers by variable, level, units, and non-time coordinates. If multiple valid times or forecast steps exist, a slider lets the user switch between frames and a play control cycles through them. This is a client-side frame switcher, not a meteorological animation/interpolation engine; each frame is an independently decoded GRIB field.
+
+
+## Antimeridian and global longitude coverage
+
+Regular one-dimensional longitude grids that cross the international date line are kept in a continuous unwrapped interval (for example 170°E through 190°E). The map bounds are not clipped at ±180°, preventing the raster from being squeezed or losing its eastern/western edge. Full-world cyclic grids likewise retain their complete 360° pixel-edge extent. Point sampling continues to use the original GRIB coordinates and unwraps longitude differences around the date line.
+
+
+## Point sampling methods
+
+The local point-query endpoint accepts an optional `method` parameter:
+- `nearest` (default): returns the nearest source grid cell, preserving the original discrete-grid behaviour.
+- `bilinear`: interpolates between the four surrounding cells on a regular 1-D latitude/longitude grid. It refuses extrapolation outside cell centres and returns no numeric value if any required corner is missing.
+
+Example:
+`GET /api/point?image=layer.png&lat=32.5&lon=36.5&method=bilinear`
+
+The map viewer exposes this choice next to the point-value panel. Bilinear output is an interpolation of the decoded field, not an additional observation or a higher-resolution forecast.

@@ -15,9 +15,23 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
     except (OSError, json.JSONDecodeError):
         current = {"version": 1, "layers": []}
     layers = current.get("layers", [])
+
     def identity(product: dict) -> str:
-        fields = ("source_id", "source_file", "variable", "valid_time", "typeOfLevel", "level", "step")
-        return json.dumps([product.get(key) for key in fields], ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+        # A GRIB file may contain multiple groups and ensemble/other slices
+        # for the same variable, level, and valid time. Keep those products
+        # distinct instead of silently replacing one another in the manifest.
+        fields = (
+            "source_id", "source_file", "group_index", "variable", "valid_time",
+            "typeOfLevel", "level", "step", "extra_coordinates", "units",
+        )
+        return json.dumps(
+            [product.get(key) for key in fields],
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+
     keys = {identity(p) for p in products}
     layers = [p for p in layers if identity(p) not in keys]
     layers.extend(products)
