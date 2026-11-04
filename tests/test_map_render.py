@@ -266,6 +266,49 @@ class MapRenderTests(unittest.TestCase):
         self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 181.0)
 
 
+    def test_curvilinear_direction_longitude_span_at_180_degrees_is_supported(self):
+        lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 3))
+        lon = np.tile(np.array([-90.0, 0.0, 90.0])[None, :], (3, 1))
+        direction = np.full((3, 3), 45.0, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(
+                direction, lat, lon, Path(tmp) / "direction-span-180.png"
+            )
+        self.assertAlmostEqual(
+            result["bounds"]["east"] - result["bounds"]["west"], 180.0, places=5
+        )
+        self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+
+    def test_curvilinear_direction_longitude_span_over_180_degrees_is_rejected(self):
+        lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 3))
+        lon = np.tile(np.array([-90.0, 0.0, 90.0002])[None, :], (3, 1))
+        direction = np.full((3, 3), 45.0, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "spanning more than 180 degrees"):
+                render_direction_png(
+                    direction, lat, lon, Path(tmp) / "direction-span-over-180.png"
+                )
+
+    def test_curvilinear_direction_span_ignores_invalid_geolocation_cells(self):
+        lat = np.array([
+            [20.0, 20.0, np.nan],
+            [10.0, 10.0, 10.0],
+            [0.0, 0.0, 0.0],
+        ])
+        lon = np.array([
+            [-90.0, 0.0, 179.0],
+            [-90.0, 0.0, 90.0],
+            [-90.0, 0.0, 90.0],
+        ])
+        direction = np.full((3, 3), 45.0, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(
+                direction, lat, lon, Path(tmp) / "direction-masked-span.png"
+            )
+        self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+        self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 181.0)
+
+
 
 if __name__ == "__main__":
     unittest.main()
