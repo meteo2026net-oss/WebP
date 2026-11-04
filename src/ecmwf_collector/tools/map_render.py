@@ -24,7 +24,12 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
         raise ValueError("At least two latitude and longitude points are required.")
     if not np.all(np.isfinite(lat)) or not np.all(np.isfinite(lon)):
         raise ValueError("Coordinates contain non-finite values.")
-    lat_steps = np.abs(np.diff(lat))
+    if np.any(np.abs(lat) > 90.0):
+        raise ValueError("Latitude coordinates must be within -90..90 degrees.")
+    lat_diff = np.diff(lat)
+    if not (np.all(lat_diff > 0) or np.all(lat_diff < 0)):
+        raise ValueError("Latitude coordinates must be strictly monotonic without duplicates.")
+    lat_steps = np.abs(lat_diff)
     if not np.allclose(lat_steps, np.median(lat_steps), rtol=1e-3, atol=1e-6):
         raise ValueError("Latitude coordinates are not regularly spaced.")
     lat_order = np.argsort(lat)[::-1]
@@ -66,6 +71,8 @@ def grid_bounds(lat: np.ndarray, lon: np.ndarray) -> dict:
     south = max(-MAX_MERCATOR_LAT, float(np.min(lat)) - dlat / 2)
     west = max(-180.0, float(np.min(lon)) - dlon / 2)
     east = min(180.0, float(np.max(lon)) + dlon / 2)
+    if north <= south or east <= west:
+        raise ValueError("Grid has no visible area inside Web Mercator bounds.")
     return {"west": west, "south": south, "east": east, "north": north}
 
 
