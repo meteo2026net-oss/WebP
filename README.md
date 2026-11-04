@@ -1,18 +1,17 @@
 # ECMWF WebP Weather Data Platform
 
-مشروع مفتوح المصدر لتنزيل بيانات ECMWF WMO Support، وفحص ملفات GRIB/BUFR، وتجهيز الحقول الجوية للتحويل إلى صور وطبقات مكانية قابلة للعرض على الخرائط.
+مشروع مفتوح المصدر لتنزيل بيانات ECMWF WMO Support، وفحص ملفات GRIB/BUFR، وتحويل الحقول الجوية المتوافقة إلى طبقات خرائط.
 
-**الوثائق العربية:** [README_AR.md](README_AR.md)
+**الوثائق العربية:** [README_AR.md](README_AR.md) — **مسار GRIB إلى الخريطة:** [MAP_PIPELINE.md](docs/MAP_PIPELINE.md)
 
 ## Project layout
 - `src/ecmwf_collector/`: desktop collector package and GUI.
-- `src/ecmwf_collector/tools/`: GRIB inspection, WebP encoding/decoding, and GRIB explorer.
+- `src/ecmwf_collector/tools/`: GRIB inspection, conversion, batch processing, and WebP encoding/decoding.
+- `map_viewer/`: interactive Leaflet map interface.
 - `tests/`: unit tests and fake FTP server.
 - `docs/`: technical documentation.
 - `config/settings.example.json`: safe local configuration template.
 - `archive/`: original uploaded source archive.
-
-Runtime data (`downloads/`, `processed/`, `output/`, `logs/`, and `state/`) is created locally and excluded from Git.
 
 ## Install (Windows)
 ```powershell
@@ -26,13 +25,31 @@ python main.py
 
 Never commit local settings, credentials, database files, logs, or downloaded data. Prefer FTPS/TLS; plain FTP is unencrypted and disabled by default.
 
-## GRIB tools
+## End-to-end workflow
+
+1. Use the desktop collector to connect to the ECMWF WMO Support server and download GRIB files into `downloads/`.
+2. Inspect a file and identify its actual fields:
 ```powershell
 $env:PYTHONPATH = "src"
-python -m ecmwf_collector.tools.inspect_grib path/to/input.grib2 --output output/grib_inventory.json
-python -m ecmwf_collector.tools.wind_grib_to_webp path/to/input.grib2 --output output/wind.webp
-python -m ecmwf_collector.tools.webp_to_npz output/wind.webp --output output/wind_decoded.npz
-```
+python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json
+``
+3. Convert every compatible 2-D regular latitude/longitude scalar field:
+```powershell
+python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
+``
+4. Or process the downloaded tree in one batch:
+```powershell
+python -m ecmwf_collector.tools.process_downloads --downloads downloads --output-dir output/map_data
+``
+5. For U/V wind components, create both the scientific RGB WebP texture and a wind-speed display overlay:
+```powershell
+python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output output/wind.webp
+``
+6. Start a local web server from the repository root and open the map:
+```powershell
+python -m http.server 8000
+``
+Open `http://localhost:8000/map_viewer/`. The map reads `output/map_data/manifest.json`.
 
 ## Tests
 ```powershell
@@ -40,7 +57,9 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -t . -v
 ```
 
-Tests use synthetic data and fake FTP sessions; they do not prove compatibility with the live ECMWF service or all GRIB grid projections.
+Tests use synthetic arrays and fake FTP sessions; they do not prove compatibility with the live ECMWF service or every GRIB grid projection.
 
-## Scientific limitation
-The current wind encoder uses 8-bit quantization and supports only one-dimensional latitude/longitude coordinates. Lossless WebP preserves encoded channel bytes, not original floating-point precision. Keep original GRIB files for scientific calculations and verify projection, longitude convention, orientation, and georeferencing before map display.
+## Current scientific and geographic limitations
+The initial map renderer supports regular 1-D latitude/longitude grids only. Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids need reprojection before map display. The converter deliberately rejects unsupported grids rather than placing them incorrectly.
+
+The RGB WebP wind texture uses 8-bit quantization. Lossless WebP preserves encoded channel bytes, not original floating-point precision. PNG overlays are display products, not scientific source data. Preserve original GRIB files for scientific calculations.
