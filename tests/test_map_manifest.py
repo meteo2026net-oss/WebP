@@ -63,5 +63,29 @@ class MapManifestTests(unittest.TestCase):
             self.assertEqual(manifest["layers"][0]["step"], [0, 6])
 
 
+    def test_keeps_same_source_layer_in_distinct_display_units(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = {
+                "source_id": "same-source",
+                "source_file": "forecast.grib2",
+                "variable": "t2m",
+                "valid_time": "2026-11-04T00:00",
+                "units": "K",
+                "display_conversion_applied": True,
+            }
+            products = [
+                {**source, "display_units": "K", "image": "temperature-k.png"},
+                {**source, "display_units": "°C", "image": "temperature-c.png"},
+            ]
+            path = update_manifest(root, products)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(manifest["layers"]), 2)
+            self.assertEqual(
+                {item["display_units"] for item in manifest["layers"]},
+                {"K", "°C"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
