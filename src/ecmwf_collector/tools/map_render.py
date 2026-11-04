@@ -80,7 +80,12 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
         # Keep the interval near the conventional world copy while allowing
         # east > 180 or west < -180 when the grid genuinely crosses the seam.
         center = (float(lon[0]) + float(lon[-1])) / 2.0
-        shift = 360.0 * np.floor((center + 180.0) / 360.0)
+        if center > 180.0:
+            shift = 360.0 * np.floor((center + 180.0) / 360.0)
+        elif center < -180.0:
+            shift = 360.0 * np.ceil((center - 180.0) / 360.0)
+        else:
+            shift = 0.0
         lon = lon - shift
         longitude_convention = "continuous_unwrapped"
 
