@@ -53,7 +53,7 @@ python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/
 ```powershell
 python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
 ```
-يحوّل الحقول العددية ثنائية الأبعاد المتوافقة مع شبكة خطوط طول وعرض منتظمة إلى PNG شفاف، وينشئ ملفات JSON جانبية وقائمة طبقات `manifest.json`.
+يحوّل الحقول العددية المتوافقة مع شبكة خطوط طول وعرض منتظمة إلى PNG شفاف، ويفصل أبعاد زمن التنبؤ والمستويات الرأسية إلى طبقات مستقلة متى كانت متاحة، وينشئ ملفات JSON وNPZ وقائمة `manifest.json`.
 
 ### 4. معالجة جميع الملفات المنزلة
 ```powershell
