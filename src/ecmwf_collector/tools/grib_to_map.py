@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -35,6 +36,7 @@ def _json_scalar(value):
 def convert_file(source: Path, output_dir: Path, requested: str | None = None) -> list[dict]:
     """Open all cfgrib hypercube groups; one GRIB may contain multiple level types."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    source_id = hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:12]
     datasets = cfgrib.open_datasets(str(source), backend_kwargs={"indexpath": ""})
     products = []
     errors = []
@@ -54,12 +56,13 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                     values = np.asarray(da.values, dtype=np.float32)
                     lat = np.asarray(da[lat_name].values)
                     lon = np.asarray(da[lon_name].values)
-                    stem = _safe_name(f"{source.stem}_g{group_index}_{variable}")
+                    stem = _safe_name(f"{source.stem}_{source_id}_g{group_index}_{variable}")
                     png_path = output_dir / f"{stem}.png"
                     rendered = render_scalar_png(values, lat, lon, png_path)
                     valid_time = str(ds["valid_time"].values) if "valid_time" in ds.coords else None
                     metadata = {
                         "source_file": source.name,
+                        "source_id": source_id,
                         "group_index": group_index,
                         "variable": variable,
                         "long_name": str(da.attrs.get("long_name", variable)),
