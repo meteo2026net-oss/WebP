@@ -107,6 +107,23 @@ class PointQueryTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual(result["value"], 4.0)
 
+    def test_curvilinear_nearest_rejects_isolated_cell_without_coverage_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = np.array([
+                [10.0, np.nan, 30.0],
+                [np.nan, np.nan, np.nan],
+                [np.nan, np.nan, 50.0],
+            ])
+            lon = np.array([
+                [20.0, np.nan, 40.0],
+                [np.nan, np.nan, np.nan],
+                [np.nan, np.nan, 60.0],
+            ])
+            values = np.arange(9, dtype=np.float32).reshape(3, 3)
+            path = self._write_grid(tmp, values, lat, lon)
+            with self.assertRaisesRegex(ValueError, "coverage cannot be established"):
+                sample_npz(path, 80.0, 100.0)
+
     def test_curvilinear_grid_rejects_bilinear_until_supported(self):
         with tempfile.TemporaryDirectory() as tmp:
             lat = [[10.0, 10.1], [9.0, 9.1]]
