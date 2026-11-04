@@ -69,6 +69,39 @@ class WindGridTests(unittest.TestCase):
         np.testing.assert_array_equal(out_lat, lat)
         np.testing.assert_array_equal(out_lon, lon)
 
+    def test_rejects_regular_wind_longitude_outside_angular_range(self):
+        da = FakeDataArray(
+            ("latitude", "longitude"),
+            {
+                "latitude": FakeCoordinate([10.0, 9.0], ("latitude",)),
+                "longitude": FakeCoordinate([20.0, 361.0], ("longitude",)),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "-360..360"):
+            spatial_layout(da)
+
+    def test_rejects_extreme_finite_curvilinear_wind_longitude(self):
+        da = FakeDataArray(
+            ("y", "x"),
+            {
+                "latitude": FakeCoordinate([[10.0, 10.0], [9.0, 9.0]], ("y", "x")),
+                "longitude": FakeCoordinate([[20.0, 1e308], [21.0, 22.0]], ("y", "x")),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "-360..360"):
+            spatial_layout(da)
+
+    def test_rejects_mismatched_curvilinear_geolocation_validity_masks(self):
+        da = FakeDataArray(
+            ("y", "x"),
+            {
+                "latitude": FakeCoordinate([[10.0, np.nan], [9.0, 9.0]], ("y", "x")),
+                "longitude": FakeCoordinate([[20.0, 21.0], [21.0, 22.0]], ("y", "x")),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "validity masks differ"):
+            spatial_layout(da)
+
     def test_rejects_mismatched_geolocation_shapes(self):
         da = FakeDataArray(
             ("y", "x"),
