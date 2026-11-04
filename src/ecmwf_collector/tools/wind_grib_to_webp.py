@@ -200,9 +200,8 @@ def main() -> None:
                 "B": "validity mask: 0=missing, 255=valid"
             },
             "units": units,
-            "component_frame": ("earth_relative" if rotation_applied or uv_relative_to_grid is False else
-                                "grid_relative" if uv_relative_to_grid is True else "unknown"),
-            "source_component_frame": ("grid_relative" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "component_frame": ("grid_relative" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "direction_component_frame": ("earth_relative" if rotation_applied or uv_relative_to_grid is False else "grid_relative" if uv_relative_to_grid is True else "unknown"),
             "grid_to_earth_rotation": {"applied": rotation_applied, "angle_degrees": args.grid_to_earth_angle_deg if rotation_applied else None, "angle_convention": "counter_clockwise_from_true_east_to_positive_grid_x"},
             "decode": {
                 "formula": "value = vmin + (channel / 255) * (vmax - vmin)",
@@ -264,7 +263,7 @@ def main() -> None:
         display_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_speed.png"
         display_grid = render_wind_speed_png(u, v, lat, lon, display_path)
         speed_path = display_path.with_suffix(".npz")
-        np.savez_compressed(speed_path, values=speed, latitudes=lat, longitudes=lon)
+        np.savez_compressed(speed_path, values=speed, wind_direction_from_degrees=direction_from, latitudes=lat, longitudes=lon)
         map_record = {
             "source_file": args.input_grib.name,
             "source_id": source_id,
