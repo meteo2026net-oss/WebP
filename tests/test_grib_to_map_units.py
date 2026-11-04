@@ -9,10 +9,33 @@ from unittest.mock import patch
 import numpy as np
 import xarray as xr
 
-from ecmwf_collector.tools.grib_to_map import convert_file
+from ecmwf_collector.tools.grib_to_map import _source_id, convert_file
 
 
 class GribMapDisplayUnitTests(unittest.TestCase):
+    def test_source_id_tracks_file_contents_not_just_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "forecast.grib2"
+            source.write_bytes(b"first forecast payload")
+            first_id = _source_id(source)
+            self.assertEqual(first_id, _source_id(source))
+
+            source.write_bytes(b"updated forecast payload")
+            second_id = _source_id(source)
+            self.assertNotEqual(first_id, second_id)
+
+    def test_source_id_is_streamed_and_independent_of_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "a" / "forecast.grib2"
+            second = root / "b" / "forecast.grib2"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            payload = b"same GRIB bytes" * 1000
+            first.write_bytes(payload)
+            second.write_bytes(payload)
+            self.assertEqual(_source_id(first), _source_id(second))
+
     def _dataset(self, units="mm h-1"):
         field = xr.DataArray(
             [[1.0, np.nan], [2.0, 3.0]],
