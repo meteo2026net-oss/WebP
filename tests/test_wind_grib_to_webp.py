@@ -7,6 +7,7 @@ from ecmwf_collector.tools.wind_grib_to_webp import (
     wind_speed_and_direction,
     compatible_component_units,
     optional_bool,
+    rotate_grid_to_earth,
 )
 
 
@@ -77,6 +78,22 @@ class WindGridTests(unittest.TestCase):
         np.testing.assert_allclose(direction[0, :4], [0, 270, 180, 90])
         self.assertTrue(np.isnan(direction[0, 4]))
 
+    def test_grid_rotation_cardinal_vectors(self):
+        east, north = rotate_grid_to_earth(np.array([1.0, 0.0]), np.array([0.0, 1.0]), 90.0)
+        np.testing.assert_allclose(east, [0.0, -1.0], atol=1e-7)
+        np.testing.assert_allclose(north, [1.0, 0.0], atol=1e-7)
+
+    def test_grid_rotation_preserves_wind_speed(self):
+        u = np.array([[3.0, 0.0]], dtype=np.float32)
+        v = np.array([[4.0, 2.0]], dtype=np.float32)
+        east, north = rotate_grid_to_earth(u, v, 37.0)
+        np.testing.assert_allclose(np.hypot(east, north), np.hypot(u, v), atol=1e-6)
+
+    def test_grid_rotation_rejects_invalid_inputs(self):
+        with self.assertRaisesRegex(ValueError, "identical shapes"):
+            rotate_grid_to_earth(np.zeros((2, 2)), np.zeros((2, 3)), 0.0)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            rotate_grid_to_earth(np.zeros(2), np.zeros(2), np.nan)
     def test_missing_component_produces_missing_speed_and_direction(self):
         u = np.array([[np.nan, 1.0]], dtype=np.float32)
         v = np.array([[1.0, np.nan]], dtype=np.float32)
