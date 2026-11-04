@@ -142,5 +142,60 @@ class GribMapDisplayUnitTests(unittest.TestCase):
                         renderer.assert_not_called()
 
 
+    def test_splits_forecast_times_and_pressure_levels_into_independent_layers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            times = np.array(["2026-11-04T00:00", "2026-11-04T06:00"], dtype="datetime64[ns]")
+            field = xr.DataArray(
+                np.arange(16, dtype=np.float32).reshape(2, 2, 2, 2),
+                dims=("time", "isobaricInhPa", "latitude", "longitude"),
+                coords={
+                    "time": [0, 1],
+                    "valid_time": ("time", times),
+                    "step": ("time", np.array([0, 6], dtype="timedelta64[h]")),
+                    "isobaricInhPa": [850, 500],
+                    "latitude": [10.0, 20.0],
+                    "longitude": [30.0, 40.0],
+                },
+                attrs={
+                    "units": "K",
+                    "long_name": "Air temperature",
+                    "GRIB_typeOfLevel": "isobaricInhPa",
+                },
+                name="t",
+            )
+            dataset = xr.Dataset({"t": field})
+            fake_cfgrib = types.SimpleNamespace(
+                open_datasets=lambda *args, **kwargs: [dataset]
+            )
+            with (
+                patch.dict(sys.modules, {"cfgrib": fake_cfgrib}),
+                patch(
+                    "ecmwf_collector.tools.grib_to_map.render_scalar_png",
+                    return_value={"width": 2, "height": 2},
+                ),
+            ):
+                source = output_dir / "multi-level-forecast.grib2"
+                source.touch()
+                products = convert_file(source, output_dir, "t")
+
+            self.assertEqual(len(products), 4)
+            self.assertEqual(
+                {item["level"] for item in products},
+                {850, 500},
+            )
+            self.assertEqual(
+                {item["valid_time"] for item in products},
+                {"2026-11-04T00:00:00.000000000", "2026-11-04T06:00:00.000000000"},
+            )
+            self.assertEqual({item["step"] for item in products}, ["0 hours", "6 hours"] if False else { "0 hours", "6 hours" })
+            self.assertEqual(len({item["image"] for item in products}), 4)
+            manifest = __import__("json").loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(manifest["layers"]), 4)
+            for item in products:
+                with np.load(output_dir / item["data_file"]) as stored:
+                    self.assertEqual(stored["values"].shape, (2, 2))
+
+
 if __name__ == "__main__":
     unittest.main()
