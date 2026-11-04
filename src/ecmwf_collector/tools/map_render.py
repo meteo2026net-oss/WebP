@@ -147,6 +147,17 @@ def _resample_rows_to_web_mercator(data: np.ndarray, lat: np.ndarray, bounds: di
     return output
 
 
+def _web_mercator_bounds(west: float, south: float, east: float, north: float) -> dict:
+    """Convert projected bounds without normalizing unwrapped longitudes at ±180°."""
+    radius = 6378137.0
+    return {
+        "west": float(np.rad2deg(west / radius)),
+        "south": float(_inverse_mercator_y(np.asarray([south]))[0]),
+        "east": float(np.rad2deg(east / radius)),
+        "north": float(_inverse_mercator_y(np.asarray([north]))[0]),
+    }
+
+
 def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
         raise ValueError("Invalid rendering range.")
@@ -196,11 +207,10 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     guessing projection parameters: the decoder-provided geolocation is used.
     """
     try:
-        from pyproj import Transformer
         from scipy.interpolate import griddata
     except ImportError as exc:
         raise RuntimeError(
-            "Curvilinear grid rendering requires pyproj and scipy."
+            "Curvilinear grid rendering requires scipy."
         ) from exc
 
     data = np.asarray(values, dtype=np.float32)
@@ -219,11 +229,12 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     # remain narrow instead of being projected across almost the whole world.
     unwrapped_lon = _unwrap_curvilinear_longitudes(lon, geo_valid)
     lat_for_projection = np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
-    transformer = Transformer.from_crs(
-        "EPSG:4326", "EPSG:3857", always_xy=True, force_over=True
-    )
-    x, y = transformer.transform(unwrapped_lon, lat_for_projection)
-    x, y = np.asarray(x), np.asarray(y)
+    # Apply the spherical Web-Mercator equations directly. PROJ may normalize
+    # longitudes outside [-180, 180] depending on its version/configuration,
+    # which would collapse a regional grid crossing the antimeridian.
+    earth_radius = 6378137.0
+    x = earth_radius * np.deg2rad(unwrapped_lon)
+    y = earth_radius * _mercator_y(lat_for_projection)
     projected_geo_valid = geo_valid & np.isfinite(x) & np.isfinite(y)
     valid = np.isfinite(data) & projected_geo_valid
     if int(valid.sum()) < 3:
@@ -259,12 +270,9 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
                      np.isfinite(sampled), low, high)
     Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
 
-    inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    west_lon, south_lat = inverse.transform(west, south)
-    east_lon, north_lat = inverse.transform(east, north)
+    bounds = _web_mercator_bounds(west, south, east, north)
     return {
-        "bounds": {"west": float(west_lon), "south": float(south_lat),
-                   "east": float(east_lon), "north": float(north_lat)},
+        "bounds": bounds,
         "width": int(width), "height": int(height),
         "value_min": low, "value_max": high,
         "valid_cells": int(np.isfinite(sampled).sum()),
@@ -344,10 +352,9 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
 
     if lat.ndim == 2 or lon.ndim == 2:
         try:
-            from pyproj import Transformer
             from scipy.interpolate import griddata
         except ImportError as exc:
-            raise RuntimeError("Curvilinear direction rendering requires pyproj and scipy.") from exc
+            raise RuntimeError("Curvilinear direction rendering requires scipy.") from exc
         if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape or direction.shape != lat.shape:
             raise ValueError("Curvilinear direction and geolocation arrays must have matching 2-D shapes.")
         geo = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90)
@@ -355,8 +362,10 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
         if int(usable.sum()) < 3:
             raise ValueError("At least three valid direction cells with geolocation are required.")
         unwrapped = _unwrap_curvilinear_longitudes(lon, geo)
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True, force_over=True)
-        x, y = transformer.transform(unwrapped, np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
+        # Keep unwrapped longitude values continuous beyond ±180°.
+        earth_radius = 6378137.0
+        x = earth_radius * np.deg2rad(unwrapped)
+        y = earth_radius * _mercator_y(np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
         projected = geo & np.isfinite(x) & np.isfinite(y)
         usable = usable & projected
         west, east = float(np.min(x[projected])), float(np.max(x[projected]))
@@ -371,11 +380,7 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
             sampled_cos = griddata(points, cosine[usable], (tx, ty), method="linear")
         except Exception as exc:
             raise ValueError("Curvilinear direction grid cannot form an interpolation mesh.") from exc
-        inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-        west_lon, south_lat = inverse.transform(west, south)
-        east_lon, north_lat = inverse.transform(east, north)
-        bounds = {"west": float(west_lon), "south": float(south_lat),
-                  "east": float(east_lon), "north": float(north_lat)}
+        bounds = _web_mercator_bounds(west, south, east, north)
         convention = "curvilinear_unwrapped"
     else:
         sine_grid, out_lat, out_lon, convention = normalize_regular_grid(sine, lat, lon)

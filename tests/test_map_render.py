@@ -211,5 +211,33 @@ class MapRenderTests(unittest.TestCase):
 
 
 
+    def test_reprojects_regional_curvilinear_grid_across_antimeridian(self):
+        lat = np.array([[12.0, 12.0, 12.0], [10.0, 10.0, 10.0], [8.0, 8.0, 8.0]])
+        lon = np.array([[179.0, -180.0, -179.0],
+                        [179.2, -179.8, -178.8],
+                        [179.4, -179.6, -178.6]])
+        values = np.arange(9, dtype=np.float32).reshape(3, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_scalar_png(values, lat, lon, Path(tmp) / "regional-dateline.png")
+        self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 5.0)
+        self.assertLess(result["bounds"]["west"], -180.0)
+        self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+
+    def test_reprojects_curvilinear_direction_across_antimeridian_cyclically(self):
+        lat = np.array([[12.0, 12.0, 12.0], [10.0, 10.0, 10.0], [8.0, 8.0, 8.0]])
+        lon = np.array([[179.0, -180.0, -179.0],
+                        [179.2, -179.8, -178.8],
+                        [179.4, -179.6, -178.6]])
+        direction = np.array([[359.0, 0.0, 1.0], [359.0, 0.0, 1.0],
+                              [359.0, 0.0, 1.0]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(direction, lat, lon, Path(tmp) / "regional-direction-dateline.png")
+        self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 5.0)
+        self.assertLess(result["bounds"]["west"], -180.0)
+        self.assertGreater(result["valid_cells"], 0)
+        self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+
+
+
 if __name__ == "__main__":
     unittest.main()
