@@ -13,10 +13,20 @@
 - `config/settings.example.json`: safe local configuration template.
 - `archive/`: original uploaded source archive.
 
-## Install (Windows)
+## Recommended Windows install (Miniforge / conda-forge)
+
+The GRIB decoder has native binary dependencies. ECMWF documents conda-forge as the easiest installation route for ecCodes and cfgrib with their binary dependencies. Windows support is community-supported rather than ECMWF's primary operational platform.
+
+1. Install Miniforge from [the official project](https://github.com/conda-forge/miniforge).
+2. Open a new terminal in this repository and run `setup_conda.bat`.
+3. Run `run_collector_conda.bat`.
+
+The setup script creates or updates the `ecmwf-webp` environment and runs the ecCodes and cfgrib self-checks.
+
+### Alternative pip install
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\\Scripts\\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 Copy-Item config/settings.example.json config/settings.json
