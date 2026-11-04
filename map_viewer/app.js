@@ -138,7 +138,8 @@
       const params = new URLSearchParams({
         image: activeEntry.image,
         lat: lat.toFixed(6),
-        lon: lon.toFixed(6)
+        lon: lon.toFixed(6),
+        method: samplingMethod.value
       });
       const response = await fetch("/api/point?" + params.toString());
       const result = await response.json();
@@ -150,6 +151,7 @@
       panel.textContent = [
         result.long_name || result.variable || "الحقل الجوي",
         "القيمة: " + valueText,
+        "طريقة الاستخراج: " + (result.method === "bilinear" ? "استيفاء ثنائي" : "أقرب خلية"),
         "طريقة الاستخراج: " + (result.method === "bilinear" ? "استيفاء ثنائي" : "أقرب خلية"),
         "إحداثيات الخلية: " + Number(result.latitude).toFixed(4) + ", " + Number(result.longitude).toFixed(4),
         "الإحداثيات المطلوبة: " + lat.toFixed(4) + ", " + lon.toFixed(4),
