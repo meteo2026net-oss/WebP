@@ -125,7 +125,7 @@ it can connect opposite sides of the world and create false interpolated
 weather fields. Scalar and wind-direction rendering therefore reject
 curvilinear meshes whose shortest circular longitude span exceeds 180
 degrees. This is an intentional safety limit, not global-grid support.
-Seam-aware tiled rendering is still required for global curvilinear products.
+Seam-aware tiled rendering is still required for global curvilinear products. Before triangulation, the renderer also checks the singular-value spread of the projected geolocation points. A mesh that has no meaningful second spatial dimension—including a mathematically collinear mesh with tiny projection round-off—is rejected with an explicit error instead of being passed to Delaunay interpolation. The check uses a relative tolerance because projected coordinates are measured in large metre values; it still permits narrow but numerically resolvable 2-D meshes.
 Regular 1-D global grids continue to use the separate regular-grid path.
 
 ## Validation with an externally sourced GRIB2 file
