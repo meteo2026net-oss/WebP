@@ -24,11 +24,14 @@ def sample_npz(path: Path, latitude: float, longitude: float) -> dict:
         raise ValueError("Grid coordinates contain non-finite values.")
     if np.any(np.abs(latitudes) > 90.0):
         raise ValueError("Grid latitude coordinates are outside -90..90 degrees.")
-    lat_diffs, lon_diffs = np.diff(latitudes), np.diff(longitudes)
+    lat_diffs = np.diff(latitudes)
+    # Unwrap longitudes so a regular grid crossing 180E/180W remains a small step.
+    unwrapped_longitudes = np.rad2deg(np.unwrap(np.deg2rad(longitudes)))
+    lon_diffs = np.diff(unwrapped_longitudes)
     if not (np.all(lat_diffs > 0) or np.all(lat_diffs < 0)):
         raise ValueError("Latitude coordinates are not strictly monotonic.")
     if not (np.all(lon_diffs > 0) or np.all(lon_diffs < 0)):
-        raise ValueError("Longitude coordinates are not strictly monotonic.")
+        raise ValueError("Longitude coordinates are not strictly monotonic after dateline unwrapping.")
     lat_steps, lon_steps = np.abs(lat_diffs), np.abs(lon_diffs)
     if not np.allclose(lat_steps, np.median(lat_steps), rtol=1e-3, atol=1e-6):
         raise ValueError("Latitude coordinates are not regularly spaced.")
@@ -37,7 +40,8 @@ def sample_npz(path: Path, latitude: float, longitude: float) -> dict:
     lat_step = float(np.median(lat_steps))
     lon_step = float(np.median(lon_steps))
     lat_delta = np.abs(latitudes - latitude)
-    lon_delta = np.abs((longitudes - longitude + 180.0) % 360.0 - 180.0)
+    query_longitude = longitude + 360.0 * round((float(np.mean(unwrapped_longitudes)) - longitude) / 360.0)
+    lon_delta = np.abs(unwrapped_longitudes - query_longitude)
     row = int(np.argmin(lat_delta))
     col = int(np.argmin(lon_delta))
     if lat_delta[row] > lat_step / 2.0 + 1e-6 or lon_delta[col] > lon_step / 2.0 + 1e-6:
