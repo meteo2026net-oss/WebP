@@ -193,5 +193,23 @@ class MapRenderTests(unittest.TestCase):
             self.assertGreater(int((alpha == 0).sum()), 0)
 
 
+    def test_rejects_global_curvilinear_scalar_grid_until_seam_aware_rendering(self):
+        lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 4))
+        lon = np.tile(np.array([0.0, 90.0, 180.0, 270.0])[None, :], (3, 1))
+        values = np.arange(12, dtype=np.float32).reshape(3, 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "seam-aware global rendering"):
+                render_scalar_png(values, lat, lon, Path(tmp) / "global-curvilinear.png")
+
+    def test_rejects_global_curvilinear_direction_grid_until_seam_aware_rendering(self):
+        lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 4))
+        lon = np.tile(np.array([0.0, 90.0, 180.0, 270.0])[None, :], (3, 1))
+        direction = np.full((3, 4), 225.0, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "seam-aware global rendering"):
+                render_direction_png(direction, lat, lon, Path(tmp) / "global-direction.png")
+
+
+
 if __name__ == "__main__":
     unittest.main()
