@@ -207,11 +207,10 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     guessing projection parameters: the decoder-provided geolocation is used.
     """
     try:
-        from pyproj import Transformer
         from scipy.interpolate import griddata
     except ImportError as exc:
         raise RuntimeError(
-            "Curvilinear grid rendering requires pyproj and scipy."
+            "Curvilinear grid rendering requires scipy."
         ) from exc
 
     data = np.asarray(values, dtype=np.float32)
@@ -353,10 +352,9 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
 
     if lat.ndim == 2 or lon.ndim == 2:
         try:
-            from pyproj import Transformer
             from scipy.interpolate import griddata
         except ImportError as exc:
-            raise RuntimeError("Curvilinear direction rendering requires pyproj and scipy.") from exc
+            raise RuntimeError("Curvilinear direction rendering requires scipy.") from exc
         if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape or direction.shape != lat.shape:
             raise ValueError("Curvilinear direction and geolocation arrays must have matching 2-D shapes.")
         geo = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90)
