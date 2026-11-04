@@ -26,7 +26,18 @@
     const stableExtra = Object.fromEntries(Object.entries(extra).filter(([key]) =>
       !/^(time|valid_time|step|forecasttime)$/i.test(key)
     ).sort(([a], [b]) => a.localeCompare(b)));
-    return JSON.stringify([entry.variable, entry.typeOfLevel, entry.level, entry.units, stableExtra]);
+    // Keep forecast runs and GRIB groups separate: equal variables from
+    // different source files/runs must not be animated as one timeline.
+    return JSON.stringify([
+      entry.source_id || null,
+      entry.source_file || null,
+      entry.group_index ?? null,
+      entry.variable,
+      entry.typeOfLevel,
+      entry.level,
+      entry.units,
+      stableExtra
+    ]);
   }
   function frameSort(a, b) {
     const at = String(a.valid_time || "");
