@@ -73,6 +73,17 @@ class PointQueryTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertAlmostEqual(result["value"], 140.0)
 
+    def test_nearest_sampling_wraps_across_global_longitude_seam(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            values = [[10, 20, 30, 40], [50, 60, 70, 80]]
+            path = self._write_grid(tmp, values, [10, 0], [0, 90, 180, 270])
+            for longitude in (359.0, -1.0):
+                with self.subTest(longitude=longitude):
+                    result = sample_npz(path, 10.0, longitude)
+                    self.assertTrue(result["valid"])
+                    self.assertEqual(result["value"], 10.0)
+                    self.assertEqual(result["longitude"], 0.0)
+
     def test_nearest_sampling_drops_duplicate_global_endpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             values = [[1, 2, 3, 4, 99], [5, 6, 7, 8, 99]]
