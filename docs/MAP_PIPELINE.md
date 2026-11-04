@@ -127,3 +127,22 @@ curvilinear meshes whose shortest circular longitude span exceeds 180
 degrees. This is an intentional safety limit, not global-grid support.
 Seam-aware tiled rendering is still required for global curvilinear products.
 Regular 1-D global grids continue to use the separate regular-grid path.
+
+## Validation with an externally sourced GRIB2 file
+
+Synthetic xarray tests validate the conversion logic but do not replace testing against an independently produced GRIB message. For a reproducible real-file check, ECMWF publishes a static IFS GRIB2 sample dataset at [data.ecmwf.int/mtg2_sample](https://data.ecmwf.int/mtg2_sample/). ECMWF documents that the sample is available to users without ECMWF HPC/ECS login; its directory tree includes operational forecast surface fields, pressure-level fields, and ensemble examples.
+
+A practical first smoke test is the documented mean-sea-level pressure file in the operational forecast surface directory:
+
+`od/oper/fc/sfc/151_od_oper_fc_sfc_msl_2024_0001_regular_ll.grib2`
+
+Download one file from the official dataset portal, then run:
+
+```bash
+python -m ecmwf_collector.tools.inspect_grib path/to/sample.grib2 --output output/sample-inventory.json
+python -m ecmwf_collector.tools.grib_to_map path/to/sample.grib2 --variable msl --output-dir output/sample-map
+python serve_map.py
+```
+
+Confirm that the inventory identifies the expected GRIB messages, that conversion creates PNG/NPZ/JSON products and a manifest, and that point queries return source-unit values. Record the sample filename and checksum with test results. Do not describe this manual smoke test as completed until it has actually been run. The public sample dataset is a test fixture source, not a live operational feed or a WMO API connection.
+
