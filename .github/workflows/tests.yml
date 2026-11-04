@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip numpy Pillow
+        run: python -m pip install --upgrade pip numpy Pillow pyproj scipy
       - name: Compile Python sources
         run: python -m compileall -q src main.py serve_map.py tests
       - name: Check map viewer JavaScript syntax
