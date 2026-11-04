@@ -97,6 +97,16 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside the data grid"):
                 sample_npz(path, 40.0, 80.0)
 
+    def test_nearest_sampling_ignores_missing_curvilinear_geolocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, 10.1, np.nan], [9.0, 9.1, 9.2], [8.0, 8.1, 8.2]]
+            lon = [[20.0, 21.0, np.nan], [20.1, 21.1, 22.1], [20.2, 21.2, 22.2]]
+            values = np.arange(9, dtype=np.float32).reshape(3, 3)
+            path = self._write_grid(tmp, values, lat, lon)
+            result = sample_npz(path, 9.12, 21.12)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 4.0)
+
     def test_curvilinear_grid_rejects_bilinear_until_supported(self):
         with tempfile.TemporaryDirectory() as tmp:
             lat = [[10.0, 10.1], [9.0, 9.1]]
