@@ -163,6 +163,28 @@ def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) 
 
 
 
+def _unwrap_curvilinear_longitudes(longitudes: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    """Unwrap a regional 2-D longitude mesh and reject ambiguous global spans.
+
+    A single planar triangulation cannot represent a global grid across the
+    antimeridian without introducing false connections between opposite edges.
+    Until seam-aware tiled rendering is implemented, fail closed when the
+    shortest circular longitude interval still exceeds 180 degrees.
+    """
+    radians = np.deg2rad(longitudes[valid])
+    center = float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)),
+                                        np.mean(np.cos(radians)))))
+    unwrapped = np.full(longitudes.shape, np.nan, dtype=np.float64)
+    unwrapped[valid] = center + ((longitudes[valid] - center + 180.0) % 360.0) - 180.0
+    span = float(np.max(unwrapped[valid]) - np.min(unwrapped[valid]))
+    if span > 180.0 + 1e-6:
+        raise ValueError(
+            "Curvilinear grids spanning more than 180 degrees of longitude "
+            "require seam-aware global rendering and are not supported yet."
+        )
+    return unwrapped
+
+
 def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
                                     longitudes: np.ndarray, output_path,
                                     vmin: float | None = None,
@@ -195,11 +217,7 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     # Ignore those cells rather than rejecting an otherwise usable field.
     # Unwrap around the circular-mean longitude so regional grids near ±180°
     # remain narrow instead of being projected across almost the whole world.
-    radians = np.deg2rad(lon[geo_valid])
-    center = float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)),
-                                        np.mean(np.cos(radians)))))
-    unwrapped_lon = np.full(lon.shape, np.nan, dtype=np.float64)
-    unwrapped_lon[geo_valid] = center + ((lon[geo_valid] - center + 180.0) % 360.0) - 180.0
+    unwrapped_lon = _unwrap_curvilinear_longitudes(lon, geo_valid)
     lat_for_projection = np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
     transformer = Transformer.from_crs(
         "EPSG:4326", "EPSG:3857", always_xy=True, force_over=True
@@ -336,10 +354,7 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
         usable = geo & valid
         if int(usable.sum()) < 3:
             raise ValueError("At least three valid direction cells with geolocation are required.")
-        lr = np.deg2rad(lon[geo])
-        center = float(np.rad2deg(np.arctan2(np.mean(np.sin(lr)), np.mean(np.cos(lr)))))
-        unwrapped = np.full(lon.shape, np.nan, dtype=np.float64)
-        unwrapped[geo] = center + ((lon[geo] - center + 180) % 360) - 180
+        unwrapped = _unwrap_curvilinear_longitudes(lon, geo)
         transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True, force_over=True)
         x, y = transformer.transform(unwrapped, np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
         projected = geo & np.isfinite(x) & np.isfinite(y)
