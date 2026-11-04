@@ -184,7 +184,16 @@ def _unwrap_curvilinear_longitudes(longitudes: np.ndarray, valid: np.ndarray) ->
     Until seam-aware tiled rendering is implemented, fail closed when the
     shortest circular longitude interval still exceeds 180 degrees.
     """
-    radians = np.deg2rad(longitudes[valid])
+    valid_longitudes = longitudes[valid]
+    # GRIB geolocation longitudes are conventionally encoded in [-180, 180]
+    # or [0, 360]. Reject implausible magnitudes before degree-to-radian
+    # conversion: very large finite floats can overflow or lose angular
+    # precision and must not be allowed to create a misleading map extent.
+    if np.any(np.abs(valid_longitudes) > 360.0):
+        raise ValueError(
+            "Curvilinear longitude coordinates must be within -360..360 degrees."
+        )
+    radians = np.deg2rad(valid_longitudes)
     mean_sine = float(np.mean(np.sin(radians)))
     mean_cosine = float(np.mean(np.cos(radians)))
     # A near-zero resultant has no stable circular mean. Choosing an arbitrary
