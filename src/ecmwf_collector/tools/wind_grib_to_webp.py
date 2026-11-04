@@ -60,7 +60,7 @@ def spatial_layout(da: xr.DataArray) -> tuple[str, str, np.ndarray, np.ndarray, 
 
 
 def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return speed and meteorological direction FROM (degrees clockwise from north)."""
+    """Return speed and meteorological direction FROM for earth-relative U/V."""
     u_values, v_values = np.asarray(u, dtype=np.float32), np.asarray(v, dtype=np.float32)
     if u_values.shape != v_values.shape:
         raise ValueError("U and V wind arrays must have identical shapes.")
@@ -69,6 +69,15 @@ def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, 
     direction = np.where(speed > 0, direction, np.nan)
     direction[~(np.isfinite(u_values) & np.isfinite(v_values))] = np.nan
     return speed.astype(np.float32), direction.astype(np.float32)
+
+
+def compatible_component_units(u_units: Any, v_units: Any) -> str | None:
+    """Validate U/V unit agreement without silently converting physical units."""
+    u_text = str(u_units).strip() if u_units not in (None, "") else ""
+    v_text = str(v_units).strip() if v_units not in (None, "") else ""
+    if u_text and v_text and " ".join(u_text.lower().split()) != " ".join(v_text.lower().split()):
+        raise ValueError(f"U/V component units differ ({u_text!r} vs {v_text!r}); convert them before encoding.")
+    return u_text or v_text or None
 
 
 def encode_component(values: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
@@ -120,6 +129,10 @@ def main() -> None:
         if min(u.shape) < 2:
             raise ValueError("Wind grid must contain at least 2 rows and 2 columns.")
         speed, direction_from = wind_speed_and_direction(u, v)
+        lat_name = coord_name(u_da, ("latitude", "lat"))
+        lon_name = coord_name(u_da, ("longitude", "lon"))
+        units = compatible_component_units(u_da.attrs.get("units"), v_da.attrs.get("units"))
+        uv_relative_to_grid = bool(u_da.attrs.get("GRIB_uvRelativeToGrid", False))
         valid = np.isfinite(u) & np.isfinite(v)
         rgb = np.zeros((u.shape[0], u.shape[1], 3), dtype=np.uint8)
         rgb[..., 0] = encode_component(np.where(valid, u, args.vmin), args.vmin, args.vmax)
@@ -137,7 +150,8 @@ def main() -> None:
                 "G": "V wind component",
                 "B": "validity mask: 0=missing, 255=valid"
             },
-            "units": json_value(u_da.attrs.get("units", v_da.attrs.get("units", "m s-1"))),
+            "units": units,
+            "component_frame": "grid_relative" if uv_relative_to_grid else "earth_relative_or_unspecified",
             "decode": {
                 "formula": "value = vmin + (channel / 255) * (vmax - vmin)",
                 "vmin": args.vmin,
@@ -148,7 +162,13 @@ def main() -> None:
                 "convention": "meteorological_from",
                 "definition": "degrees clockwise from true north; direction the wind comes from",
                 "formula": "(degrees(atan2(-U, -V)) + 360) % 360",
-                "calm_wind": "undefined (null/NaN)"
+                "calm_wind": "undefined (null/NaN)",
+                "valid_for_earth_bearing": not uv_relative_to_grid,
+                "status": ("requires_grid_to_earth_rotation" if uv_relative_to_grid
+                           else "earth_relative_or_not_declared_by_decoder"),
+                "warning": ("U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
+                            if uv_relative_to_grid else
+                            "Confirm decoder metadata establishes earth-relative U/V before using direction as a true-north bearing.")
             },
             "grid": {
                 "grid_type": grid_type,
@@ -196,7 +216,7 @@ def main() -> None:
             "source_id": source_id,
             "variable": "wind_speed",
             "long_name": "Wind speed",
-            "units": "m s-1",
+            "units": units or "unknown",
             "valid_time": metadata.get("valid_time") or metadata.get("time"),
             "step": metadata.get("step"),
             "image": display_path.name,
@@ -215,7 +235,7 @@ def main() -> None:
         print(f"Created map overlay: {display_path}")
         print(f"Updated map manifest: {map_dir / 'manifest.json'}")
         print(f"Grid: {u.shape[1]} x {u.shape[0]} ({grid_type}); valid cells: {int(valid.sum())}")
-        print(f"Encoding range: {args.vmin} .. {args.vmax} m/s")
+        print(f"Encoding range: {args.vmin} .. {args.vmax} {units or 'unknown units'}")
     finally:
         ds.close()
 

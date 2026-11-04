@@ -5,6 +5,7 @@ import numpy as np
 from ecmwf_collector.tools.wind_grib_to_webp import (
     spatial_layout,
     wind_speed_and_direction,
+    compatible_component_units,
 )
 
 
@@ -81,6 +82,13 @@ class WindGridTests(unittest.TestCase):
         speed, direction = wind_speed_and_direction(u, v)
         self.assertTrue(np.all(np.isnan(speed)))
         self.assertTrue(np.all(np.isnan(direction)))
+
+    def test_component_units_must_match(self):
+        self.assertEqual(compatible_component_units("m s-1", "m s-1"), "m s-1")
+        self.assertEqual(compatible_component_units(None, "m/s"), "m/s")
+        self.assertIsNone(compatible_component_units(None, None))
+        with self.assertRaisesRegex(ValueError, "units differ"):
+            compatible_component_units("m s-1", "knots")
 
     def test_rejects_different_component_shapes(self):
         with self.assertRaisesRegex(ValueError, "identical shapes"):
