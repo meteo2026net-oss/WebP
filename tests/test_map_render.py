@@ -244,6 +244,14 @@ class MapRenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "circular-mean longitude is ambiguous"):
             _unwrap_curvilinear_longitudes(longitudes, valid)
 
+    def test_rejects_curvilinear_longitudes_outside_angular_range(self):
+        from ecmwf_collector.tools.map_render import _unwrap_curvilinear_longitudes
+
+        longitudes = np.full((2, 2), 1e308, dtype=np.float64)
+        valid = np.ones(longitudes.shape, dtype=bool)
+        with self.assertRaisesRegex(ValueError, "within -360..360 degrees"):
+            _unwrap_curvilinear_longitudes(longitudes, valid)
+
     def test_rejects_global_curvilinear_scalar_grid_until_seam_aware_rendering(self):
         lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 4))
         lon = np.tile(np.array([0.0, 90.0, 180.0, 270.0])[None, :], (3, 1))
