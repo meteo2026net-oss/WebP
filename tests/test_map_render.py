@@ -252,6 +252,15 @@ class MapRenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "within -360..360 degrees"):
             _unwrap_curvilinear_longitudes(longitudes, valid)
 
+    def test_accepts_curvilinear_longitude_convention_boundaries(self):
+        from ecmwf_collector.tools.map_render import _unwrap_curvilinear_longitudes
+
+        longitudes = np.array([[-360.0, 0.0], [360.0, 1.0]])
+        valid = np.ones(longitudes.shape, dtype=bool)
+        unwrapped = _unwrap_curvilinear_longitudes(longitudes, valid)
+        self.assertTrue(np.all(np.isfinite(unwrapped)))
+        self.assertLess(float(np.ptp(unwrapped)), 5.0)
+
     def test_rejects_global_curvilinear_scalar_grid_until_seam_aware_rendering(self):
         lat = np.tile(np.array([20.0, 10.0, 0.0])[:, None], (1, 4))
         lon = np.tile(np.array([0.0, 90.0, 180.0, 270.0])[None, :], (3, 1))
