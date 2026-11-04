@@ -106,7 +106,17 @@ jobs:
                   values = data["values"]
                   latitudes = data["latitudes"]
                   longitudes = data["longitudes"]
-                  if values.ndim != 2 or latitudes.shape != values.shape or longitudes.shape != values.shape:
+                  regular_1d = (
+                      latitudes.ndim == 1 and longitudes.ndim == 1
+                      and len(latitudes) == values.shape[0]
+                      and len(longitudes) == values.shape[1]
+                  )
+                  curvilinear_2d = (
+                      latitudes.ndim == 2 and longitudes.ndim == 2
+                      and latitudes.shape == values.shape
+                      and longitudes.shape == values.shape
+                  )
+                  if values.ndim != 2 or not (regular_1d or curvilinear_2d):
                       raise SystemExit(f"Unexpected value/geolocation shapes in {layer['data_file']}")
                   if not np.isfinite(values).any():
                       raise SystemExit(f"No finite source values in {layer['data_file']}")
