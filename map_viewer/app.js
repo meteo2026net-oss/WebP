@@ -18,6 +18,7 @@
   function showEntry(entry) {
     if (activeLayer) map.removeLayer(activeLayer);
     activeEntry = entry;
+    document.getElementById("pointInfo").textContent = "انقر على الخريطة لاستخراج قيمة أقرب خلية شبكية.";
     const b = entry.bounds;
     const bounds = [[b.south, b.west], [b.north, b.east]];
     activeLayer = L.imageOverlay("../output/map_data/" + encodeURIComponent(entry.image), bounds, {
