@@ -5,6 +5,7 @@
 ## الملفات
 - `wind_grib_to_webp.py`: محول حقول الرياح إلى WebP.
 - `webp_to_npz.py`: فك ترميز WebP إلى مصفوفتَي U/V وقناع الصلاحية بصيغة NPZ.
+- `inspect_grib.py`: فهرسة رسائل GRIB وحقولها ومستوياتها وأوقاتها ومعلومات الشبكة باستخدام ecCodes.
 - `tests/`: اختبارات آلية لفك الترميز والتحقق من الأبعاد والقيم المفقودة.
 - `.github/workflows/tests.yml`: تشغيل الاختبارات تلقائياً عند الدفع أو فتح Pull Request.
 - `requirements.txt`: مكتبات Python المطلوبة.
@@ -33,6 +34,14 @@ python wind_grib_to_webp.py input.grib2 --u-var u10 --v-var v10 --output output/
 ```
 
 ينتج ملفا `wind.webp` و`wind.json`.
+
+## فحص ملف GRIB قبل المعالجة
+
+```bash
+python inspect_grib.py path/to/input.grib2 --output output/grib_inventory.json
+```
+
+يعرض السكربت ملخصاً لكل رسالة GRIB (اسم الحقل، الوحدة، المستوى، خطوة التنبؤ، وقت الصلاحية، نوع الشبكة وأبعادها). هذه خطوة مهمة لأن أسماء الحقول الفعلية في تسليمات WMO قد تختلف عن الأسماء الافتراضية في محول الرياح.
 
 ## فك الترميز
 
