@@ -1,0 +1,26 @@
+{
+  "host": "diss.ecmwf.int",
+  "port": 21,
+  "username": "wmo_sy",
+  "passive": true,
+  "protocol": "auto",
+  "allow_plain_ftp": true,
+  "timeout_seconds": 30,
+  "max_retries": 4,
+  "download_root": "C:/Users/LENOVO/Desktop/ECMWF_Data_Collector_phase2/ECMWF_Data_Collector/downloads/download",
+  "remember_password": true,
+  "selected_kinds": [
+    "AN",
+    "FM",
+    "FP",
+    "FS"
+  ],
+  "selected_cycles": [
+    "00",
+    "06",
+    "12",
+    "18"
+  ],
+  "max_parallel": 1,
+  "min_free_gb": 5
+}
