@@ -11,7 +11,7 @@
    Then browse to `http://127.0.0.1:8765/map_viewer/`.
 
 ## Map format
-The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
+The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. Layer source identity is derived from a streaming SHA-256 digest of the input GRIB bytes, so replacing a forecast at the same local path creates a distinct layer identity. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
 
 ## Grid limitations
 The renderer supports regular 1-D latitude/longitude grids and 2-D geolocation grids. For 2-D geolocation, it transforms decoder-provided latitude/longitude cell centres to EPSG:3857 and interpolates onto a regular display raster. This makes regional rotated-pole, Lambert, polar-stereographic and other projected GRIB grids renderable when cfgrib exposes matching 2-D latitude/longitude coordinates. It does not guess projection parameters. Curvilinear interpolation currently uses linear triangulation and is limited to regional extents. Regional grids may cross ±180° when their shortest circular longitude span is at most 180 degrees; wider/global meshes are rejected until a dedicated seam-aware tiling path is implemented. Missing geolocation outside a projected grid's valid domain is masked and ignored rather than invalidating the entire field. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products.
@@ -64,7 +64,7 @@ When cfgrib exposes matching two-dimensional `latitude(y, x)` and `longitude(y, 
 
 ## Wind vectors and direction convention
 
-The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. The two components must share the same spatial dimensions and are aligned with an exact xarray join before encoding.
+The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. The two components must share the same spatial dimensions, coordinate layout, and identical latitude/longitude coordinate values; equal array shapes alone are not sufficient. They are aligned with an exact xarray join before encoding, and the decoded geolocation arrays are compared explicitly because 2-D auxiliary coordinates are not necessarily xarray indexes. A mismatch is rejected before speed, direction, or display layers are generated.
 
 Wind speed is computed as `sqrt(U² + V²)`. The reported meteorological direction is the direction **from which** the wind blows, in degrees clockwise from true north:
 `(degrees(atan2(-U, -V)) + 360) % 360`.
