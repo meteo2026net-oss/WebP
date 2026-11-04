@@ -13,7 +13,7 @@ CYCLES = ("00", "06", "12", "18")
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 class ConfigError(ValueError):
