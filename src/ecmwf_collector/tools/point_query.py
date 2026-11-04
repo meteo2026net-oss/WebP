@@ -38,7 +38,9 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         longitudes = np.asarray(archive["longitudes"], dtype=np.float64)
     if values.ndim != 2 or latitudes.ndim != longitudes.ndim or latitudes.ndim not in (1, 2):
         raise ValueError("Scientific layer must contain a 2-D field and matching 1-D or 2-D geolocation.")
-    if values.shape != latitudes.shape or latitudes.shape != longitudes.shape:
+    expected_shape = ((latitudes.size, longitudes.size) if latitudes.ndim == 1
+                      else latitudes.shape)
+    if values.shape != expected_shape or latitudes.shape != longitudes.shape:
         raise ValueError("Scientific layer has inconsistent grid dimensions.")
     if min(latitudes.shape) < 2:
         raise ValueError("At least a 2x2 latitude/longitude grid is required.")
