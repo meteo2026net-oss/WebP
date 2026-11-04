@@ -52,6 +52,20 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "strictly monotonic"):
                 sample_npz(path, 10, 20)
 
+    def test_rejects_regular_grid_longitude_outside_angular_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_grid(tmp, np.ones((2, 2)), [10, 9], [20, 361])
+            with self.assertRaisesRegex(ValueError, "-360..360"):
+                sample_npz(path, 10, 20)
+
+    def test_rejects_extreme_finite_curvilinear_longitude(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = np.array([[10, 10], [9, 9]], dtype=np.float64)
+            lon = np.array([[20, 1e308], [21, 22]], dtype=np.float64)
+            path = self._write_grid(tmp, np.ones((2, 2)), lat, lon)
+            with self.assertRaisesRegex(ValueError, "-360..360"):
+                sample_npz(path, 10, 20)
+
     def test_rejects_invalid_latitude(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_grid(tmp, np.ones((2, 2)), [10, 0], [20, 21])
