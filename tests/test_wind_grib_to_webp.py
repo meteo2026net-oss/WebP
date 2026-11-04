@@ -1,4 +1,12 @@
 import unittest
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import xarray as xr
 
 import numpy as np
 
@@ -8,6 +16,7 @@ from ecmwf_collector.tools.wind_grib_to_webp import (
     compatible_component_units,
     optional_bool,
     rotate_grid_to_earth,
+    main,
 )
 
 
@@ -124,6 +133,117 @@ class WindGridTests(unittest.TestCase):
     def test_rejects_different_component_shapes(self):
         with self.assertRaisesRegex(ValueError, "identical shapes"):
             wind_speed_and_direction(np.zeros((2, 2)), np.zeros((2, 3)))
+
+
+    def _run_wind_cli(self, root, frame_flag, angle=None):
+        lat = [10.0, 9.0]
+        lon = [20.0, 21.0]
+        coords = {"latitude": lat, "longitude": lon}
+        attrs = {"units": "m s-1"}
+        if frame_flag is not None:
+            attrs["GRIB_uvRelativeToGrid"] = frame_flag
+        dataset = xr.Dataset({
+            "u10": xr.DataArray([[1.0, 2.0], [3.0, 4.0]],
+                                dims=("latitude", "longitude"), coords=coords,
+                                attrs=dict(attrs)),
+            "v10": xr.DataArray([[2.0, 1.0], [4.0, 3.0]],
+                                dims=("latitude", "longitude"), coords=coords,
+                                attrs=dict(attrs)),
+        })
+        output = Path(root) / "wind.webp"
+        argv = ["wind_grib_to_webp.py", str(Path(root) / "wind.grib2"),
+                "--output", str(output)]
+        if angle is not None:
+            argv.extend(["--grid-to-earth-angle-deg", str(angle)])
+        (Path(root) / "wind.grib2").touch()
+        previous = os.getcwd()
+        try:
+            os.chdir(root)
+            with (
+                patch.object(sys, "argv", argv),
+                patch("xarray.open_dataset", return_value=dataset),
+                patch("ecmwf_collector.tools.wind_grib_to_webp.render_wind_speed_png",
+                      return_value={"bounds": {"west": 20, "east": 21, "south": 9, "north": 10}}),
+                patch("ecmwf_collector.tools.wind_grib_to_webp.render_direction_png",
+                      return_value={"bounds": {"west": 20, "east": 21, "south": 9, "north": 10}}),
+            ):
+                main()
+        finally:
+            os.chdir(previous)
+        return json.loads(output.with_suffix(".json").read_text(encoding="utf-8")), Path(root) / "output" / "map_data"
+
+    def test_grid_relative_wind_does_not_publish_true_north_direction_layer(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(root, "1")
+            self.assertEqual(metadata["component_frame"], "grid_relative")
+            self.assertFalse(metadata["wind_direction"]["valid_for_earth_bearing"])
+            self.assertFalse(metadata["direction_display_layer"]["published"])
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual([item["variable"] for item in manifest["layers"]], ["wind_speed"])
+
+    def test_unknown_wind_reference_frame_does_not_publish_direction_layer(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(root, None)
+            self.assertEqual(metadata["component_frame"], "unknown")
+            self.assertIsNone(metadata["wind_direction"]["valid_for_earth_bearing"])
+            self.assertFalse(metadata["direction_display_layer"]["published"])
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual([item["variable"] for item in manifest["layers"]], ["wind_speed"])
+
+    def test_earth_relative_wind_publishes_true_north_direction_layer(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(root, "0")
+            self.assertEqual(metadata["component_frame"], "earth_relative")
+            self.assertTrue(metadata["wind_direction"]["valid_for_earth_bearing"])
+            self.assertEqual(metadata["direction_display_layer"]["bearing_validity"],
+                             "valid_true_north_bearing")
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                {item["variable"] for item in manifest["layers"]},
+                {"wind_speed", "wind_direction"},
+            )
+
+    def test_explicit_rotation_enables_direction_only_for_grid_relative_components(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(root, "1", angle=90)
+            self.assertEqual(metadata["component_frame"], "grid_relative")
+            self.assertEqual(metadata["direction_component_frame"], "earth_relative")
+            self.assertTrue(metadata["grid_to_earth_rotation"]["applied"])
+            self.assertTrue(metadata["wind_direction"]["valid_for_earth_bearing"])
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                {item["variable"] for item in manifest["layers"]},
+                {"wind_speed", "wind_direction"},
+            )
+
+    def test_rotation_argument_is_rejected_for_unknown_or_earth_relative_components(self):
+        for frame in (None, "0"):
+            with self.subTest(frame=frame), tempfile.TemporaryDirectory() as root:
+                lat, lon = [10.0, 9.0], [20.0, 21.0]
+                coords = {"latitude": lat, "longitude": lon}
+                attrs = {"units": "m s-1"}
+                if frame is not None:
+                    attrs["GRIB_uvRelativeToGrid"] = frame
+                dataset = xr.Dataset({
+                    "u10": xr.DataArray(np.ones((2, 2)), dims=("latitude", "longitude"),
+                                        coords=coords, attrs=dict(attrs)),
+                    "v10": xr.DataArray(np.ones((2, 2)), dims=("latitude", "longitude"),
+                                        coords=coords, attrs=dict(attrs)),
+                })
+                previous = os.getcwd()
+                try:
+                    os.chdir(root)
+                    source = Path(root) / "wind.grib2"
+                    source.touch()
+                    with (patch.object(sys, "argv", ["wind.py", str(source), "--output",
+                                                      str(Path(root) / "wind.webp"),
+                                                      "--grid-to-earth-angle-deg", "45"]),
+                          patch("xarray.open_dataset", return_value=dataset)):
+                        with self.assertRaisesRegex(ValueError, "explicitly marking U/V as grid-relative"):
+                            main()
+                finally:
+                    os.chdir(previous)
+
 
 
 if __name__ == "__main__":
