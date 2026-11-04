@@ -209,7 +209,7 @@ class MapRenderTests(unittest.TestCase):
 
     def test_curvilinear_scalar_rejects_collinear_projected_cells(self):
         lat = np.tile(np.array([10.0, 9.0, 8.0])[:, None], (1, 3))
-        lon = np.tile(np.array([20.0, 21.0, 22.0])[None, :], (3, 1))
+        lon = np.tile(np.array([20.0, 21.0, 22.0])[:, None], (1, 3))
         values = np.arange(9, dtype=np.float32).reshape(3, 3)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "collinear"):
@@ -217,7 +217,7 @@ class MapRenderTests(unittest.TestCase):
 
     def test_curvilinear_direction_rejects_collinear_projected_cells(self):
         lat = np.tile(np.array([10.0, 9.0, 8.0])[:, None], (1, 3))
-        lon = np.tile(np.array([20.0, 21.0, 22.0])[None, :], (3, 1))
+        lon = np.tile(np.array([20.0, 21.0, 22.0])[:, None], (1, 3))
         direction = np.full((3, 3), 225.0, dtype=np.float32)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "collinear"):
