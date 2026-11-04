@@ -143,6 +143,7 @@ def main() -> None:
     parser.add_argument("--v-var", help="V component variable name")
     parser.add_argument("--vmin", type=float, default=-100.0)
     parser.add_argument("--vmax", type=float, default=100.0)
+    parser.add_argument("--grid-to-earth-angle-deg", type=float, help="Explicit counter-clockwise angle from true east to positive grid-x; only accepted when GRIB metadata marks U/V as grid-relative.")
     args = parser.parse_args()
     if not args.input_grib.is_file():
         raise FileNotFoundError(args.input_grib)
@@ -169,11 +170,18 @@ def main() -> None:
             raise ValueError("Wind arrays and coordinate dimensions do not match.")
         if min(u.shape) < 2:
             raise ValueError("Wind grid must contain at least 2 rows and 2 columns.")
-        speed, direction_from = wind_speed_and_direction(u, v)
+        uv_relative_to_grid = optional_bool(u_da.attrs.get("GRIB_uvRelativeToGrid"))
+        rotation_applied = args.grid_to_earth_angle_deg is not None
+        if rotation_applied and uv_relative_to_grid is not True:
+            raise ValueError("--grid-to-earth-angle-deg requires GRIB metadata explicitly marking U/V as grid-relative.")
+        if rotation_applied:
+            u_earth, v_earth = rotate_grid_to_earth(u, v, args.grid_to_earth_angle_deg)
+        else:
+            u_earth, v_earth = u, v
+        speed, direction_from = wind_speed_and_direction(u_earth, v_earth)
         lat_name = coord_name(u_da, ("latitude", "lat"))
         lon_name = coord_name(u_da, ("longitude", "lon"))
         units = compatible_component_units(u_da.attrs.get("units"), v_da.attrs.get("units"))
-        uv_relative_to_grid = optional_bool(u_da.attrs.get("GRIB_uvRelativeToGrid"))
         valid = np.isfinite(u) & np.isfinite(v)
         rgb = np.zeros((u.shape[0], u.shape[1], 3), dtype=np.uint8)
         rgb[..., 0] = encode_component(np.where(valid, u, args.vmin), args.vmin, args.vmax)
@@ -192,8 +200,10 @@ def main() -> None:
                 "B": "validity mask: 0=missing, 255=valid"
             },
             "units": units,
-            "component_frame": ("grid_relative" if uv_relative_to_grid is True else
-                                "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "component_frame": ("earth_relative" if rotation_applied or uv_relative_to_grid is False else
+                                "grid_relative" if uv_relative_to_grid is True else "unknown"),
+            "source_component_frame": ("grid_relative" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "grid_to_earth_rotation": {"applied": rotation_applied, "angle_degrees": args.grid_to_earth_angle_deg if rotation_applied else None, "angle_convention": "counter_clockwise_from_true_east_to_positive_grid_x"},
             "decode": {
                 "formula": "value = vmin + (channel / 255) * (vmax - vmin)",
                 "vmin": args.vmin,
@@ -205,12 +215,11 @@ def main() -> None:
                 "definition": "degrees clockwise from true north; direction the wind comes from",
                 "formula": "(degrees(atan2(-U, -V)) + 360) % 360",
                 "calm_wind": "undefined (null/NaN)",
-                "valid_for_earth_bearing": (False if uv_relative_to_grid is True else
-                                            True if uv_relative_to_grid is False else None),
-                "status": ("requires_grid_to_earth_rotation" if uv_relative_to_grid is True else
-                           "earth_relative" if uv_relative_to_grid is False else
-                           "unknown_reference_frame"),
-                "warning": ("U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
+                "valid_for_earth_bearing": (True if rotation_applied or uv_relative_to_grid is False else
+                                            False if uv_relative_to_grid is True else None),
+                "status": ("earth_relative_after_explicit_rotation" if rotation_applied else "requires_grid_to_earth_rotation" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown_reference_frame"),
+                "warning": ("Grid-relative U/V were rotated using the explicitly supplied angle."
+                            if rotation_applied else "U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
                             if uv_relative_to_grid is True else
                             "Decoder confirms earth-relative U/V." if uv_relative_to_grid is False else
                             "Reference frame is not declared; verify whether U/V are earth-relative before using direction as a true-north bearing.")
