@@ -170,6 +170,10 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         # first column. Drop only that duplicate before seam interpolation.
         lon_axis = lon_axis[:-1]
         grid = grid[:, :-1]
+        if lon_axis.size < 2:
+            raise ValueError(
+                "Global bilinear sampling requires at least two unique longitude columns."
+            )
     if is_cyclic_global_grid:
         wrapped_longitude = float(
             lon_axis[0] + ((query_longitude - lon_axis[0]) % 360.0)
