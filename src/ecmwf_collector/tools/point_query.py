@@ -103,7 +103,11 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
             coverage_radius = 0.5 * float(np.median(local_steps))
         else:
             coverage_radius = None
-        if coverage_radius is not None and distance[row, col] > coverage_radius:
+        if coverage_radius is None:
+            raise ValueError(
+                "The nearest curvilinear cell has no valid local neighbours; grid coverage cannot be established."
+            )
+        if distance[row, col] > coverage_radius:
             raise ValueError("The clicked location is outside the data grid coverage.")
         value = float(values[row, col])
         result = {"valid": bool(np.isfinite(value)),
