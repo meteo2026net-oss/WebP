@@ -64,7 +64,7 @@ python -m ecmwf_collector.tools.process_downloads --downloads downloads --output
 ```powershell
 python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output output/wind.webp
 ```
-ينتج WebP علمياً مشفراً، وPNG لسرعة الرياح، ويسجل طبقة العرض تلقائياً في manifest.
+ينتج WebP علمياً مشفراً، وPNG لسرعة الرياح، ويسجل طبقة العرض تلقائياً في manifest. يدعم شبكات 1-D المنتظمة وشبكات geolocation ثنائية الأبعاد عندما يوفرها cfgrib. يسجل اتجاه الرياح وفق اصطلاح الأرصاد (الاتجاه الذي تأتي منه الرياح، درجات مع عقارب الساعة من الشمال)؛ اتجاه الرياح الساكنة غير معرّف. WebP ذو 8-bit منتج مضغوط للعرض/النقل وليس بديلاً عن GRIB للحسابات الدقيقة.
 
 ### 6. فتح الخريطة التفاعلية
 من جذر المستودع:
