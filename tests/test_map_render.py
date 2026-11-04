@@ -180,5 +180,18 @@ class MapRenderTests(unittest.TestCase):
                                      Path(tmp) / "empty-direction.png")
 
 
+    def test_opposing_interpolated_bearings_are_marked_ambiguous(self):
+        lat = np.array([[12, 12.1, 12.2], [11, 11.1, 11.2], [10, 10.1, 10.2]])
+        lon = np.array([[30, 31, 32], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]])
+        direction = np.array([[0, 0, 180], [0, 0, 180], [0, 0, 180]], dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ambiguous.png"
+            result = render_direction_png(direction, lat, lon, path)
+            with Image.open(path) as image:
+                alpha = np.asarray(image)[..., 3]
+            self.assertGreater(result["missing_cells"], 0)
+            self.assertGreater(int((alpha == 0).sum()), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
