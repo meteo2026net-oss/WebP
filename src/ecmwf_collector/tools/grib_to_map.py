@@ -10,7 +10,6 @@ import re
 from pathlib import Path
 
 import numpy as np
-import cfgrib
 
 from .map_render import render_scalar_png
 from .map_manifest import update_manifest
@@ -29,9 +28,18 @@ def _coordinate(da, names):
 
 
 def _json_scalar(value):
+    """Convert NumPy/xarray scalar metadata to stable JSON-safe values."""
+    if isinstance(value, np.datetime64):
+        return None if np.isnat(value) else np.datetime_as_string(value, unit="auto")
+    if isinstance(value, np.timedelta64):
+        return None if np.isnat(value) else np.timedelta_as_string(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
     if hasattr(value, "item"):
         value = value.item()
-    return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def _json_value(value):
@@ -49,6 +57,13 @@ def _coordinate_value(data_array, name):
 
 def convert_file(source: Path, output_dir: Path, requested: str | None = None) -> list[dict]:
     """Decode all cfgrib groups and every non-spatial forecast/level slice."""
+    try:
+        import cfgrib
+    except ImportError as exc:
+        raise RuntimeError(
+            "GRIB conversion requires cfgrib and ecCodes; install the project dependencies first."
+        ) from exc
+
     output_dir.mkdir(parents=True, exist_ok=True)
     source_id = hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:12]
     datasets = cfgrib.open_datasets(str(source), backend_kwargs={"indexpath": ""})
