@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from webp_to_npz import decode_component, decode_texture
+from ecmwf_collector.tools.webp_to_npz import decode_component, decode_texture
 
 
 class WindTextureTests(unittest.TestCase):
