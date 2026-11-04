@@ -1,0 +1,101 @@
+name: ECMWF real GRIB2 smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      variable:
+        description: "Exact cfgrib variable to convert"
+        required: true
+        default: "msl"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  real-grib2-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install GRIB decoding and map dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy Pillow pyproj scipy xarray cfgrib eccodes
+
+      - name: Download the pinned public ECMWF GRIB2 sample
+        run: |
+          mkdir -p output/ecmwf-real
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://data.ecmwf.int/mtg2_sample/od/oper/fc/sfc/151_od_oper_fc_sfc_msl_2024_0001_regular_ll.grib2" \
+            --output output/ecmwf-real/sample.grib2
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("output/ecmwf-real/sample.grib2")
+          data = p.read_bytes()
+          if len(data) < 1_000_000:
+              raise SystemExit(f"Downloaded file is unexpectedly small: {len(data)} bytes")
+          if b"GRIB" not in data[:64]:
+              raise SystemExit("GRIB magic marker was not found near the beginning of the file")
+          if b"7777" not in data[-64:]:
+              raise SystemExit("GRIB end marker was not found near the end of the file")
+          print(f"Validated GRIB2 container: {p.stat().st_size:,} bytes")
+          PY
+          sha256sum output/ecmwf-real/sample.grib2 | tee output/ecmwf-real/SHA256SUMS.txt
+
+      - name: Inventory real GRIB messages
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m ecmwf_collector.tools.inspect_grib \
+            output/ecmwf-real/sample.grib2 \
+            --output output/ecmwf-real/inventory.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("output/ecmwf-real/inventory.json").read_text())
+          if report["message_count"] < 1:
+              raise SystemExit("No GRIB messages were decoded")
+          print(f"ecCodes decoded {report['message_count']} GRIB message(s)")
+          print("Short names:", sorted({m.get("shortName") for m in report["messages"] if m.get("shortName")}))
+          PY
+
+      - name: Convert the selected real field into map products
+        env:
+          PYTHONPATH: src
+          SELECTED_VARIABLE: ${{ inputs.variable }}
+        run: |
+          python -m ecmwf_collector.tools.grib_to_map \
+            output/ecmwf-real/sample.grib2 \
+            --variable "${SELECTED_VARIABLE}" \
+            --output-dir output/ecmwf-real/map
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("output/ecmwf-real/map")
+          manifest = json.loads((root / "manifest.json").read_text())
+          layers = manifest.get("layers", [])
+          if not layers:
+              raise SystemExit("Conversion produced no manifest layers")
+          for layer in layers:
+              for key in ("image", "data_file"):
+                  name = layer.get(key)
+                  if not name or not (root / name).is_file():
+                      raise SystemExit(f"Missing {key} output for layer: {layer}")
+          print(f"Validated {len(layers)} real-GRIB map layer(s), PNG and NPZ outputs")
+          PY
+
+      - name: Upload inventory, checksum and generated map products
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecmwf-real-grib2-smoke-${{ github.run_id }}
+          path: output/ecmwf-real/
+          if-no-files-found: warn
+          retention-days: 14
