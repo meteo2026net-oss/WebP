@@ -230,11 +230,12 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     # remain narrow instead of being projected across almost the whole world.
     unwrapped_lon = _unwrap_curvilinear_longitudes(lon, geo_valid)
     lat_for_projection = np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
-    transformer = Transformer.from_crs(
-        "EPSG:4326", "EPSG:3857", always_xy=True, force_over=True
-    )
-    x, y = transformer.transform(unwrapped_lon, lat_for_projection)
-    x, y = np.asarray(x), np.asarray(y)
+    # Apply the spherical Web-Mercator equations directly. PROJ may normalize
+    # longitudes outside [-180, 180] depending on its version/configuration,
+    # which would collapse a regional grid crossing the antimeridian.
+    earth_radius = 6378137.0
+    x = earth_radius * np.deg2rad(unwrapped_lon)
+    y = earth_radius * _mercator_y(lat_for_projection)
     projected_geo_valid = geo_valid & np.isfinite(x) & np.isfinite(y)
     valid = np.isfinite(data) & projected_geo_valid
     if int(valid.sum()) < 3:
@@ -363,8 +364,10 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
         if int(usable.sum()) < 3:
             raise ValueError("At least three valid direction cells with geolocation are required.")
         unwrapped = _unwrap_curvilinear_longitudes(lon, geo)
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True, force_over=True)
-        x, y = transformer.transform(unwrapped, np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
+        # Keep unwrapped longitude values continuous beyond ±180°.
+        earth_radius = 6378137.0
+        x = earth_radius * np.deg2rad(unwrapped)
+        y = earth_radius * _mercator_y(np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
         projected = geo & np.isfinite(x) & np.isfinite(y)
         usable = usable & projected
         west, east = float(np.min(x[projected])), float(np.max(x[projected]))
