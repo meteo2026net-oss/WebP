@@ -198,6 +198,16 @@ def _unwrap_curvilinear_longitudes(longitudes: np.ndarray, valid: np.ndarray) ->
     return unwrapped
 
 
+
+def _has_two_dimensional_spread(points: np.ndarray) -> bool:
+    """Return whether projected points span a 2-D plane (not a line)."""
+    coordinates = np.asarray(points, dtype=np.float64)
+    if coordinates.ndim != 2 or coordinates.shape[1] != 2 or coordinates.shape[0] < 3:
+        return False
+    centered = coordinates - np.mean(coordinates, axis=0)
+    return int(np.linalg.matrix_rank(centered)) == 2
+
+
 def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
                                     longitudes: np.ndarray, output_path,
                                     vmin: float | None = None,
@@ -253,6 +263,8 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
     target_y = np.linspace(north, south, height)
     mesh_x, mesh_y = np.meshgrid(target_x, target_y)
     points = np.column_stack((x[valid], y[valid]))
+    if not _has_two_dimensional_spread(points):
+        raise ValueError("Curvilinear geolocation points are collinear and cannot form a 2-D interpolation mesh.")
     try:
         sampled = griddata(points, data[valid], (mesh_x, mesh_y), method="linear")
     except Exception as exc:
@@ -381,6 +393,8 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
         height, width = direction.shape
         tx, ty = np.meshgrid(np.linspace(west, east, width), np.linspace(north, south, height))
         points = np.column_stack((x[usable], y[usable]))
+        if not _has_two_dimensional_spread(points):
+            raise ValueError("Curvilinear direction coordinates are collinear and cannot form a 2-D interpolation mesh.")
         try:
             sampled_sin = griddata(points, sine[usable], (tx, ty), method="linear")
             sampled_cos = griddata(points, cosine[usable], (tx, ty), method="linear")
