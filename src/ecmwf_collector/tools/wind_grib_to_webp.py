@@ -72,6 +72,24 @@ def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, 
     return speed.astype(np.float32), direction.astype(np.float32)
 
 
+def rotate_grid_to_earth(u: np.ndarray, v: np.ndarray, angle_degrees: float) -> tuple[np.ndarray, np.ndarray]:
+    """Rotate grid-axis components into east/north components.
+
+    Angle is counter-clockwise from true east to positive grid-x. The caller
+    must supply a trusted angle; it is never inferred from projection names.
+    """
+    u_values = np.asarray(u, dtype=np.float64)
+    v_values = np.asarray(v, dtype=np.float64)
+    if u_values.shape != v_values.shape:
+        raise ValueError("U and V wind arrays must have identical shapes.")
+    if not np.isfinite(angle_degrees):
+        raise ValueError("Grid-to-earth rotation angle must be finite.")
+    angle = np.deg2rad(float(angle_degrees))
+    cosine, sine = np.cos(angle), np.sin(angle)
+    east = u_values * cosine - v_values * sine
+    north = u_values * sine + v_values * cosine
+    return east.astype(np.float32), north.astype(np.float32)
+
 def optional_bool(value: Any) -> bool | None:
     """Parse decoder boolean metadata without treating the string '0' as true."""
     if value is None:
@@ -125,6 +143,7 @@ def main() -> None:
     parser.add_argument("--v-var", help="V component variable name")
     parser.add_argument("--vmin", type=float, default=-100.0)
     parser.add_argument("--vmax", type=float, default=100.0)
+    parser.add_argument("--grid-to-earth-angle-deg", type=float, help="Explicit counter-clockwise angle from true east to positive grid-x; only accepted when GRIB metadata marks U/V as grid-relative.")
     args = parser.parse_args()
     if not args.input_grib.is_file():
         raise FileNotFoundError(args.input_grib)
@@ -151,11 +170,18 @@ def main() -> None:
             raise ValueError("Wind arrays and coordinate dimensions do not match.")
         if min(u.shape) < 2:
             raise ValueError("Wind grid must contain at least 2 rows and 2 columns.")
-        speed, direction_from = wind_speed_and_direction(u, v)
+        uv_relative_to_grid = optional_bool(u_da.attrs.get("GRIB_uvRelativeToGrid"))
+        rotation_applied = args.grid_to_earth_angle_deg is not None
+        if rotation_applied and uv_relative_to_grid is not True:
+            raise ValueError("--grid-to-earth-angle-deg requires GRIB metadata explicitly marking U/V as grid-relative.")
+        if rotation_applied:
+            u_earth, v_earth = rotate_grid_to_earth(u, v, args.grid_to_earth_angle_deg)
+        else:
+            u_earth, v_earth = u, v
+        speed, direction_from = wind_speed_and_direction(u_earth, v_earth)
         lat_name = coord_name(u_da, ("latitude", "lat"))
         lon_name = coord_name(u_da, ("longitude", "lon"))
         units = compatible_component_units(u_da.attrs.get("units"), v_da.attrs.get("units"))
-        uv_relative_to_grid = optional_bool(u_da.attrs.get("GRIB_uvRelativeToGrid"))
         valid = np.isfinite(u) & np.isfinite(v)
         rgb = np.zeros((u.shape[0], u.shape[1], 3), dtype=np.uint8)
         rgb[..., 0] = encode_component(np.where(valid, u, args.vmin), args.vmin, args.vmax)
@@ -174,8 +200,9 @@ def main() -> None:
                 "B": "validity mask: 0=missing, 255=valid"
             },
             "units": units,
-            "component_frame": ("grid_relative" if uv_relative_to_grid is True else
-                                "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "component_frame": ("grid_relative" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown"),
+            "direction_component_frame": ("earth_relative" if rotation_applied or uv_relative_to_grid is False else "grid_relative" if uv_relative_to_grid is True else "unknown"),
+            "grid_to_earth_rotation": {"applied": rotation_applied, "angle_degrees": args.grid_to_earth_angle_deg if rotation_applied else None, "angle_convention": "counter_clockwise_from_true_east_to_positive_grid_x"},
             "decode": {
                 "formula": "value = vmin + (channel / 255) * (vmax - vmin)",
                 "vmin": args.vmin,
@@ -187,12 +214,11 @@ def main() -> None:
                 "definition": "degrees clockwise from true north; direction the wind comes from",
                 "formula": "(degrees(atan2(-U, -V)) + 360) % 360",
                 "calm_wind": "undefined (null/NaN)",
-                "valid_for_earth_bearing": (False if uv_relative_to_grid is True else
-                                            True if uv_relative_to_grid is False else None),
-                "status": ("requires_grid_to_earth_rotation" if uv_relative_to_grid is True else
-                           "earth_relative" if uv_relative_to_grid is False else
-                           "unknown_reference_frame"),
-                "warning": ("U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
+                "valid_for_earth_bearing": (True if rotation_applied or uv_relative_to_grid is False else
+                                            False if uv_relative_to_grid is True else None),
+                "status": ("earth_relative_after_explicit_rotation" if rotation_applied else "requires_grid_to_earth_rotation" if uv_relative_to_grid is True else "earth_relative" if uv_relative_to_grid is False else "unknown_reference_frame"),
+                "warning": ("Grid-relative U/V were rotated using the explicitly supplied angle."
+                            if rotation_applied else "U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
                             if uv_relative_to_grid is True else
                             "Decoder confirms earth-relative U/V." if uv_relative_to_grid is False else
                             "Reference frame is not declared; verify whether U/V are earth-relative before using direction as a true-north bearing.")
@@ -237,7 +263,7 @@ def main() -> None:
         display_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_speed.png"
         display_grid = render_wind_speed_png(u, v, lat, lon, display_path)
         speed_path = display_path.with_suffix(".npz")
-        np.savez_compressed(speed_path, values=speed, latitudes=lat, longitudes=lon)
+        np.savez_compressed(speed_path, values=speed, wind_direction_from_degrees=direction_from, latitudes=lat, longitudes=lon)
         map_record = {
             "source_file": args.input_grib.name,
             "source_id": source_id,
