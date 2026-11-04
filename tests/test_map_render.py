@@ -5,7 +5,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ecmwf_collector.tools.map_render import normalize_regular_grid, render_scalar_png, render_direction_png
+from ecmwf_collector.tools.map_render import (
+    _has_two_dimensional_spread,
+    normalize_regular_grid,
+    render_scalar_png,
+    render_direction_png,
+)
 
 
 class MapRenderTests(unittest.TestCase):
@@ -344,6 +349,26 @@ class MapRenderTests(unittest.TestCase):
         self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
         self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 181.0)
 
+
+    def test_projected_spread_accepts_narrow_but_resolvable_two_dimensional_mesh(self):
+        # A high-aspect-ratio mesh is still 2-D when its minor singular value
+        # remains above the documented relative geometric tolerance.
+        points = np.array([
+            [1.0e7, 1.0e7],
+            [1.1e7, 1.0e7],
+            [1.2e7, 1.0e7 + 1.0e-3],
+        ])
+        self.assertTrue(_has_two_dimensional_spread(points))
+
+    def test_projected_spread_rejects_roundoff_scale_collinearity(self):
+        # Large projected coordinates can acquire tiny transverse noise after
+        # inverse/forward projection; it must not masquerade as a 2-D mesh.
+        points = np.array([
+            [1.0e7, 1.0e7],
+            [1.1e7, 1.0e7 + 1.0e-6],
+            [1.2e7, 1.0e7 + 2.0e-6],
+        ])
+        self.assertFalse(_has_two_dimensional_spread(points))
 
 
 if __name__ == "__main__":
