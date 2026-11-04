@@ -52,12 +52,14 @@ jobs:
       - name: Inventory real GRIB messages
         env:
           PYTHONPATH: src
+          SELECTED_VARIABLE: ${{ inputs.variable }}
         run: |
           python -m ecmwf_collector.tools.inspect_grib \
             output/ecmwf-real/sample.grib2 \
             --output output/ecmwf-real/inventory.json
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           report = json.loads(Path("output/ecmwf-real/inventory.json").read_text())
           messages = report["messages"]
@@ -67,8 +69,14 @@ jobs:
           if editions != {2}:
               raise SystemExit(f"Expected a GRIB2-only fixture, found editions: {sorted(str(x) for x in editions)}")
           short_names = {m.get("shortName") for m in messages if m.get("shortName")}
+          selected_variable = os.environ.get("SELECTED_VARIABLE", "msl")
           if "msl" not in short_names:
               raise SystemExit(f"Expected mean-sea-level pressure shortName 'msl'; found: {sorted(short_names)}")
+          if selected_variable not in short_names:
+              raise SystemExit(
+                  f"Requested variable {selected_variable!r} is not present in this pinned sample; "
+                  f"available short names: {sorted(short_names)}"
+              )
           print(f"ecCodes decoded {report['message_count']} GRIB2 message(s)")
           print("Short names:", sorted(short_names))
           print("Grid types:", sorted({str(m.get("gridType")) for m in messages}))
@@ -103,7 +111,7 @@ jobs:
                   if not name or not (root / name).is_file():
                       raise SystemExit(f"Missing {key} output for layer: {layer}")
               if layer.get("units") in (None, "", "unknown"):
-                  raise SystemExit(f"Real msl layer has no declared source unit: {layer}")
+                  raise SystemExit(f"Real {selected_variable} layer has no declared source unit: {layer}")
               with np.load(root / layer["data_file"]) as data:
                   values = data["values"]
                   latitudes = data["latitudes"]
@@ -127,7 +135,7 @@ jobs:
                   "fixture": "ECMWF static GRIB2 sample",
                   "requested_variable": selected_variable,
                   "manifest_layer_count": len(layers),
-                  "validated_msl_layer_count": len(selected),
+                  "validated_selected_layer_count": len(selected),
                   "validated_outputs": ["PNG", "NPZ", "manifest"],
               }, indent=2) + "\n",
               encoding="utf-8",
