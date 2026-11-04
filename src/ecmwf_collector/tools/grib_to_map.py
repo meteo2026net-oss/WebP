@@ -30,9 +30,9 @@ def _coordinate(da, names):
 def _json_scalar(value):
     """Convert NumPy/xarray scalar metadata to stable JSON-safe values."""
     if isinstance(value, np.datetime64):
-        return None if np.isnat(value) else np.datetime_as_string(value, unit="auto")
+        return None if np.isnat(value) else np.datetime_as_string(value, unit="ns")
     if isinstance(value, np.timedelta64):
-        return None if np.isnat(value) else np.timedelta_as_string(value)
+        return None if np.isnat(value) else str(value)
     if hasattr(value, "isoformat"):
         return value.isoformat()
     if hasattr(value, "item"):
