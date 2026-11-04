@@ -117,6 +117,8 @@ class MapRenderTests(unittest.TestCase):
             self.assertEqual(metadata["source_grid_type"], "curvilinear_geolocation")
             self.assertEqual(metadata["render_projection"], "EPSG:3857")
             self.assertGreater(metadata["bounds"]["east"], metadata["bounds"]["west"])
+            self.assertAlmostEqual(metadata["bounds"]["south"], 10.0, places=5)
+            self.assertAlmostEqual(metadata["bounds"]["north"], 12.2, places=5)
             with Image.open(path) as image:
                 self.assertEqual(image.mode, "RGBA")
                 self.assertEqual(image.size, (3, 3))
@@ -172,6 +174,8 @@ class MapRenderTests(unittest.TestCase):
             self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
             self.assertEqual(result["resampling"], "circular_sine_cosine")
             self.assertGreater(result["valid_cells"], 0)
+            self.assertAlmostEqual(result["bounds"]["south"], 10.0, places=5)
+            self.assertAlmostEqual(result["bounds"]["north"], 12.2, places=5)
 
     def test_direction_renderer_rejects_all_missing_bearings(self):
         with tempfile.TemporaryDirectory() as tmp:

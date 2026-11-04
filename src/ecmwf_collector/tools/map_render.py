@@ -152,9 +152,11 @@ def _web_mercator_bounds(west: float, south: float, east: float, north: float) -
     radius = 6378137.0
     return {
         "west": float(np.rad2deg(west / radius)),
-        "south": float(_inverse_mercator_y(np.asarray([south]))[0]),
+        # _inverse_mercator_y expects dimensionless Mercator coordinates,
+        # while south/north are projected metres (EPSG:3857).
+        "south": float(_inverse_mercator_y(np.asarray([south / radius]))[0]),
         "east": float(np.rad2deg(east / radius)),
-        "north": float(_inverse_mercator_y(np.asarray([north]))[0]),
+        "north": float(_inverse_mercator_y(np.asarray([north / radius]))[0]),
     }
 
 
