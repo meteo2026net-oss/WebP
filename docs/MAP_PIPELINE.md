@@ -60,3 +60,12 @@ The map viewer exposes this choice next to the point-value panel. Bilinear outpu
 ## Curvilinear and projected grids
 
 When cfgrib exposes matching two-dimensional `latitude(y, x)` and `longitude(y, x)` coordinates, the converter preserves those arrays and sends the field through a geolocation-based reprojection to EPSG:3857. This supports regional Lambert, polar stereographic and rotated-pole products without inferring projection parameters from incomplete metadata. The renderer uses linear triangulation; cells outside the geolocation convex hull remain transparent. For these 2-D grids, point queries use the nearest geolocated cell. Bilinear sampling remains limited to regular 1-D grids. Global or seam-spanning curvilinear fields are explicitly outside this initial implementation.
+
+
+## Wind vectors and direction convention
+
+The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. The two components must share the same spatial dimensions and are aligned with an exact xarray join before encoding.
+
+Wind speed is computed as `sqrt(U² + V²)`. The reported meteorological direction is the direction **from which** the wind blows, in degrees clockwise from true north:
+`(degrees(atan2(-U, -V)) + 360) % 360`.
+For calm wind (zero speed), direction is undefined and stored as NaN rather than assigning a misleading bearing. Missing U or V produces a missing vector. The RGB WebP texture remains an 8-bit quantized transport/display encoding; preserve original GRIB for scientific calculations.
