@@ -24,6 +24,9 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
         raise ValueError("At least two latitude and longitude points are required.")
     if not np.all(np.isfinite(lat)) or not np.all(np.isfinite(lon)):
         raise ValueError("Coordinates contain non-finite values.")
+    lat_steps = np.abs(np.diff(lat))
+    if not np.allclose(lat_steps, np.median(lat_steps), rtol=1e-3, atol=1e-6):
+        raise ValueError("Latitude coordinates are not regularly spaced.")
     lat_order = np.argsort(lat)[::-1]
     normalized_lon = ((lon + 180.0) % 360.0) - 180.0
     lon_order = np.argsort(normalized_lon)
@@ -40,8 +43,11 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
         data = data[:, keep]
     if lon.size < 2:
         raise ValueError("Longitude grid collapses after removing duplicated cyclic endpoints.")
-    if not np.all(np.diff(lon) > 0):
+    lon_steps = np.diff(lon)
+    if not np.all(lon_steps > 0):
         raise ValueError("Longitude coordinates are not strictly increasing after normalization.")
+    if not np.allclose(lon_steps, np.median(lon_steps), rtol=1e-3, atol=1e-6):
+        raise ValueError("Longitude coordinates are not regularly spaced.")
     return data, lat, lon
 
 
