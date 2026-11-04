@@ -33,3 +33,8 @@ GET /api/point?image=<layer-image>&lat=<latitude>&lon=<longitude>
 يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها ويعيد أقرب خلية شبكية صالحة مع الإحداثيات والقيمة والوحدة ووقت الصلاحية. اختيار أقرب خلية هو الطريقة الحالية؛ الاستيفاء الثنائي بين الخلايا غير مفعّل بعد. يدعم البحث عن أقرب خط طول الالتفاف حول خط التاريخ الدولي.
 
 ملفات NPZ تحفظ بيانات الشبكة بعد فك GRIB إلى float32. احتفظ بملف GRIB الأصلي لأي حسابات تحتاج دقة المصدر الكاملة.
+
+
+## Forecast timeline
+
+The map viewer groups compatible layers by variable, level, units, and non-time coordinates. If multiple valid times or forecast steps exist, a slider lets the user switch between frames and a play control cycles through them. This is a client-side frame switcher, not a meteorological animation/interpolation engine; each frame is an independently decoded GRIB field.
