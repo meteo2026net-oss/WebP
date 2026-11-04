@@ -146,3 +146,10 @@ python serve_map.py
 
 Confirm that the inventory identifies the expected GRIB messages, that conversion creates PNG/NPZ/JSON products and a manifest, and that point queries return source-unit values. Record the sample filename and checksum with test results. Do not describe this manual smoke test as completed until it has actually been run. The public sample dataset is a test fixture source, not a live operational feed or a WMO API connection.
 
+
+
+## Automated real-GRIB2 smoke workflow
+
+A network-dependent integration check is available separately from the normal unit-test workflow. After the workflow file is merged into the default branch, open **Actions → ECMWF real GRIB2 smoke test → Run workflow** and keep the default variable `msl` for the documented mean-sea-level pressure fixture. The workflow downloads the approximately 11 MB public ECMWF sample, checks the GRIB container markers, records a SHA-256 checksum, inventories messages with ecCodes, converts the selected cfgrib variable, verifies the generated manifest/PNG/NPZ files, and uploads the inventory and outputs as a short-lived Actions artifact.
+
+This workflow is deliberately manual: the regular pull-request and push test suite remains independent of external data-host availability. A successful run is evidence for this exact sample and conversion path only; it does not establish support for every GRIB product, global curvilinear grids, or a live WMO/ECMWF feed.
