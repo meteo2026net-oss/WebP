@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.idx
+*.grib
+*.grib2
+*.grb
+*.grb2
+output/
+data/raw/
+data/processed/
+.DS_Store
