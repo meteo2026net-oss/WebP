@@ -12,10 +12,19 @@
 - `config/settings.example.json`: نموذج إعدادات آمن.
 - `archive/`: الأرشيف الأصلي للمرحلة الثانية.
 
-## التثبيت على Windows
+## التثبيت الموصى به على Windows
+
+لأن ecCodes وcfgrib يعتمدان على مكتبات ثنائية، أضفت بيئة conda جاهزة لتسهيل التثبيت:
+
+1. ثبّت Miniforge من [المشروع الرسمي](https://github.com/conda-forge/miniforge).
+2. افتح طرفية جديدة داخل مجلد المستودع.
+3. شغّل `setup_conda.bat` لإنشاء البيئة وفحص ecCodes وcfgrib.
+4. شغّل `run_collector_conda.bat` لفتح البرنامج.
+
+### بديل التثبيت باستخدام pip
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\\Scripts\\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 Copy-Item config/settings.example.json config/settings.json
