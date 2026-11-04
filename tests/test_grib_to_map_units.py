@@ -188,7 +188,7 @@ class GribMapDisplayUnitTests(unittest.TestCase):
                 {item["valid_time"] for item in products},
                 {"2026-11-04T00:00:00.000000000", "2026-11-04T06:00:00.000000000"},
             )
-            self.assertEqual({item["step"] for item in products}, ["0 hours", "6 hours"] if False else { "0 hours", "6 hours" })
+            self.assertEqual({item["step"] for item in products}, {"0 seconds", "21600 seconds"})
             self.assertEqual(len({item["image"] for item in products}), 4)
             manifest = __import__("json").loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(len(manifest["layers"]), 4)
