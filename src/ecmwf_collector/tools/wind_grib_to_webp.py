@@ -49,14 +49,31 @@ def spatial_layout(da: xr.DataArray) -> tuple[str, str, np.ndarray, np.ndarray, 
         lat_dim, lon_dim = lat_coord.dims[0], lon_coord.dims[0]
         if lat_dim == lon_dim or lat_dim not in da.dims or lon_dim not in da.dims:
             raise ValueError("1-D latitude and longitude must map to distinct data dimensions.")
-        return lat_dim, lon_dim, np.asarray(lat_coord.values), np.asarray(lon_coord.values), "regular_latitude_longitude"
+        lat = np.asarray(lat_coord.values, dtype=np.float64)
+        lon = np.asarray(lon_coord.values, dtype=np.float64)
+        if not np.all(np.isfinite(lat)) or not np.all(np.isfinite(lon)):
+            raise ValueError("Regular wind geolocation coordinates must be finite.")
+        if np.any(np.abs(lat) > 90.0):
+            raise ValueError("Wind latitude coordinates must be within -90..90 degrees.")
+        if np.any(np.abs(lon) > 360.0):
+            raise ValueError("Wind longitude coordinates must be within -360..360 degrees.")
+        return lat_dim, lon_dim, lat, lon, "regular_latitude_longitude"
     if (lat_coord.ndim == lon_coord.ndim == 2
             and lat_coord.dims == lon_coord.dims
             and lat_coord.shape == lon_coord.shape):
         dims = tuple(lat_coord.dims)
         if len(dims) != 2 or any(dim not in da.dims for dim in dims):
             raise ValueError("2-D geolocation must map to two data dimensions.")
-        return dims[0], dims[1], np.asarray(lat_coord.values), np.asarray(lon_coord.values), "curvilinear_geolocation"
+        lat = np.asarray(lat_coord.values, dtype=np.float64)
+        lon = np.asarray(lon_coord.values, dtype=np.float64)
+        lat_finite, lon_finite = np.isfinite(lat), np.isfinite(lon)
+        if np.any(lat_finite != lon_finite):
+            raise ValueError("Curvilinear wind latitude/longitude validity masks differ.")
+        if np.any(np.abs(lat[lat_finite]) > 90.0):
+            raise ValueError("Wind latitude coordinates must be within -90..90 degrees.")
+        if np.any(np.abs(lon[lon_finite]) > 360.0):
+            raise ValueError("Wind longitude coordinates must be within -360..360 degrees.")
+        return dims[0], dims[1], lat, lon, "curvilinear_geolocation"
     raise ValueError("Latitude/longitude coordinates must both be 1-D or matching 2-D arrays.")
 
 

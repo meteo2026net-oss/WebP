@@ -64,7 +64,7 @@ When cfgrib exposes matching two-dimensional `latitude(y, x)` and `longitude(y, 
 
 ## Wind vectors and direction convention
 
-The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. The two components must share the same spatial dimensions, coordinate layout, and identical latitude/longitude coordinate values; equal array shapes alone are not sufficient. They are aligned with an exact xarray join before encoding, and the decoded geolocation arrays are compared explicitly because 2-D auxiliary coordinates are not necessarily xarray indexes. A mismatch is rejected before speed, direction, or display layers are generated.
+The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. It rejects source latitudes outside -90..90 degrees, source longitudes outside -360..360 degrees, non-finite regular coordinates, and mismatched curvilinear latitude/longitude validity masks before creating wind products. The two components must share the same spatial dimensions, coordinate layout, and identical latitude/longitude coordinate values; equal array shapes alone are not sufficient. They are aligned with an exact xarray join before encoding, and the decoded geolocation arrays are compared explicitly because 2-D auxiliary coordinates are not necessarily xarray indexes. A mismatch is rejected before speed, direction, or display layers are generated.
 
 Wind speed is computed as `sqrt(U² + V²)`. The reported meteorological direction is the direction **from which** the wind blows, in degrees clockwise from true north:
 `(degrees(atan2(-U, -V)) + 360) % 360`.
