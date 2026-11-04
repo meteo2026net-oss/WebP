@@ -172,6 +172,17 @@ class WindGridTests(unittest.TestCase):
             os.chdir(previous)
         return json.loads(output.with_suffix(".json").read_text(encoding="utf-8")), Path(root) / "output" / "map_data"
 
+    def test_wind_manifest_source_id_is_content_derived(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(root, "0")
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            source_ids = {item["source_id"] for item in manifest["layers"]}
+            self.assertEqual(len(source_ids), 1)
+            expected = __import__(
+                "ecmwf_collector.tools.grib_to_map", fromlist=["_source_id"]
+            )._source_id(Path(root) / "wind.grib2")
+            self.assertEqual(source_ids, {expected})
+
     def test_grid_relative_wind_does_not_publish_true_north_direction_layer(self):
         with tempfile.TemporaryDirectory() as root:
             metadata, map_dir = self._run_wind_cli(root, "1")
