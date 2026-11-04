@@ -370,6 +370,10 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
         y = earth_radius * _mercator_y(np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
         projected = geo & np.isfinite(x) & np.isfinite(y)
         usable = usable & projected
+        if int(usable.sum()) < 3:
+            raise ValueError("At least three valid projected direction cells are required.")
+        if np.unique(np.column_stack((x[usable], y[usable])), axis=0).shape[0] < 3:
+            raise ValueError("Curvilinear direction grid has fewer than three distinct projected cells.")
         west, east = float(np.min(x[projected])), float(np.max(x[projected]))
         south, north = float(np.min(y[projected])), float(np.max(y[projected]))
         if east <= west or north <= south:
