@@ -51,6 +51,17 @@ class MeteorologicalUnitTests(unittest.TestCase):
     def test_unit_aliases_normalize_unicode_minus_and_middle_dot(self):
         self.assertAlmostEqual(convert_values(10, "m · s−1", "km/h"), 36.0)
 
+    def test_precipitation_rates_are_a_separate_dimension(self):
+        self.assertAlmostEqual(convert_values(1, "mm h-1", "mm s-1"), 1 / 3600)
+        self.assertAlmostEqual(convert_values(24, "mm day-1", "mm h-1"), 1.0)
+        self.assertAlmostEqual(convert_values(2, "mm/s", "mm h-1"), 7200.0)
+        with self.assertRaisesRegex(ValueError, "Incompatible"):
+            convert_values(1, "mm h-1", "mm")
+
+    def test_mass_flux_is_not_assumed_to_be_depth_rate(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported"):
+            convert_values(1, "kg m-2 s-1", "mm h-1")
+
     def test_equivalent_unit_aliases_have_same_canonical_label(self):
         self.assertEqual(canonical_unit("m/s"), canonical_unit("m s-1"))
         self.assertEqual(canonical_unit("mbar"), canonical_unit("hPa"))
