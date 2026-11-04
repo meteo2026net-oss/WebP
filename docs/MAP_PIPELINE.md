@@ -96,3 +96,21 @@ The NPZ `values` array remains in the source GRIB unit and is used by point quer
 ## Explicit grid-relative wind rotation
 
 The wind converter accepts `--grid-to-earth-angle-deg` only when cfgrib explicitly marks the components as grid-relative. The angle convention is counter-clockwise from true east to the positive grid-x axis. The conversion is `U_e = U_g cos(a) - V_g sin(a)` and `V_n = U_g sin(a) + V_g cos(a)`. The angle must come from a trusted product specification or independently validated GRIB metadata; the converter does not infer it from grid type or projection names. Without the argument, grid-relative wind directions remain flagged as invalid for true-north bearings. The encoded RGB WebP texture retains the original source U/V channels. The wind-speed NPZ stores the derived `wind_direction_from_degrees` array alongside speed; this bearing is earth-relative only after a valid explicit rotation or when the source frame is already earth-relative. The metadata distinguishes the source component frame from the direction calculation frame.
+
+
+## Wind direction display layer
+
+The wind converter writes a separate `wind_direction` PNG/NPZ layer only when
+the U/V reference frame is confirmed earth-relative, or when an explicitly
+trusted `--grid-to-earth-angle-deg` rotation has been applied to grid-relative
+components. Unknown or unrotated grid-relative components do not publish a
+true-north bearing layer; the wind-speed layer remains available.
+
+Direction colours use a cyclic HSV hue wheel (0° and 360° meet) and the map
+renderer reprojects sine and cosine components separately before recovering
+the bearing with `atan2`. It does not interpolate raw degree values. Calm or
+missing directions remain transparent, as do interpolated cells whose
+circular resultant is too small to define a stable bearing. Curvilinear grids
+use the decoder-provided 2-D geolocation and the same circular-component
+interpolation. The viewer labels the legend as meteorological direction FROM
+true north, clockwise.
