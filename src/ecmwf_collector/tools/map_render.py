@@ -185,8 +185,17 @@ def _unwrap_curvilinear_longitudes(longitudes: np.ndarray, valid: np.ndarray) ->
     shortest circular longitude interval still exceeds 180 degrees.
     """
     radians = np.deg2rad(longitudes[valid])
-    center = float(np.rad2deg(np.arctan2(np.mean(np.sin(radians)),
-                                        np.mean(np.cos(radians)))))
+    mean_sine = float(np.mean(np.sin(radians)))
+    mean_cosine = float(np.mean(np.cos(radians)))
+    # A near-zero resultant has no stable circular mean. Choosing an arbitrary
+    # centre can make a global/ambiguous mesh appear to be a narrow regional one.
+    if np.hypot(mean_sine, mean_cosine) <= 1e-8:
+        raise ValueError(
+            "Curvilinear grids spanning more than 180 degrees of longitude "
+            "require seam-aware global rendering and are not supported yet "
+            "(circular-mean longitude is ambiguous)."
+        )
+    center = float(np.rad2deg(np.arctan2(mean_sine, mean_cosine)))
     unwrapped = np.full(longitudes.shape, np.nan, dtype=np.float64)
     unwrapped[valid] = center + ((longitudes[valid] - center + 180.0) % 360.0) - 180.0
     span = float(np.max(unwrapped[valid]) - np.min(unwrapped[valid]))
