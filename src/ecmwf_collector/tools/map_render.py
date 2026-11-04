@@ -204,8 +204,19 @@ def _has_two_dimensional_spread(points: np.ndarray) -> bool:
     coordinates = np.asarray(points, dtype=np.float64)
     if coordinates.ndim != 2 or coordinates.shape[1] != 2 or coordinates.shape[0] < 3:
         return False
-    centered = coordinates - np.mean(coordinates, axis=0)
-    singular_values = np.linalg.svd(centered, compute_uv=False)
+    if not np.all(np.isfinite(coordinates)):
+        return False
+    # Scale before centering so large projected coordinates cannot overflow
+    # the mean/subtraction operations or dominate the SVD numerically.
+    scale = float(np.max(np.abs(coordinates)))
+    if scale <= 0.0:
+        return False
+    normalized = coordinates / scale
+    centered = normalized - np.mean(normalized, axis=0)
+    try:
+        singular_values = np.linalg.svd(centered, compute_uv=False)
+    except np.linalg.LinAlgError:
+        return False
     if singular_values.size < 2 or singular_values[0] <= 0:
         return False
     # Projected coordinates are large (metres); inverse-projection round-off
