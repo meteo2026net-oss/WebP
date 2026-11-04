@@ -65,6 +65,36 @@ class PointQueryTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertAlmostEqual(result["value"], 15.0)
 
+    def test_bilinear_interpolates_across_global_longitude_seam(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            values = [[0, 90, 180, 270], [10, 100, 190, 280]]
+            path = self._write_grid(tmp, values, [10, 0], [0, 90, 180, 270])
+            result = sample_npz(path, 5.0, 315.0, method="bilinear")
+            self.assertTrue(result["valid"])
+            self.assertAlmostEqual(result["value"], 140.0)
+
+    def test_nearest_sampling_drops_duplicate_global_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            values = [[1, 2, 3, 4, 99], [5, 6, 7, 8, 99]]
+            path = self._write_grid(tmp, values, [10, 0], [0, 90, 180, 270, 360])
+            result = sample_npz(path, 10.0, 0.0)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 1.0)
+
+    def test_bilinear_rejects_global_axis_with_only_one_unique_longitude(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_grid(tmp, [[1, 1], [2, 2]], [10, 0], [0, 360])
+            with self.assertRaisesRegex(ValueError, "at least two unique longitude columns"):
+                sample_npz(path, 5.0, 180.0, method="bilinear")
+
+    def test_bilinear_global_seam_drops_duplicate_cyclic_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            values = [[0, 90, 180, 270, 0], [10, 100, 190, 280, 10]]
+            path = self._write_grid(tmp, values, [10, 0], [0, 90, 180, 270, 360])
+            result = sample_npz(path, 5.0, -45.0, method="bilinear")
+            self.assertTrue(result["valid"])
+            self.assertAlmostEqual(result["value"], 140.0)
+
     def test_bilinear_refuses_missing_corner_instead_of_inventing_value(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_grid(tmp, [[0, np.nan], [20, 30]], [1, 0], [10, 11])

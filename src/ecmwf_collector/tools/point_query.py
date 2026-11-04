@@ -52,7 +52,9 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         raise ValueError("Scientific layer must contain a 2-D field and matching 1-D or 2-D geolocation.")
     expected_shape = ((latitudes.size, longitudes.size) if latitudes.ndim == 1
                       else latitudes.shape)
-    if values.shape != expected_shape or latitudes.shape != longitudes.shape:
+    if values.shape != expected_shape or (
+        latitudes.ndim == 2 and latitudes.shape != longitudes.shape
+    ):
         raise ValueError("Scientific layer has inconsistent grid dimensions.")
     if min(latitudes.shape) < 2:
         raise ValueError("At least a 2x2 latitude/longitude grid is required.")
@@ -120,7 +122,19 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         return result
 
     lat_diffs = np.diff(latitudes)
-    unwrapped_longitudes = np.rad2deg(np.unwrap(np.deg2rad(longitudes)))
+    raw_lon_diffs = np.diff(longitudes)
+    raw_lon_span = float(longitudes[-1] - longitudes[0])
+    raw_lon_is_monotonic = bool(
+        np.all(raw_lon_diffs > 0) or np.all(raw_lon_diffs < 0)
+    )
+    if raw_lon_is_monotonic and np.isclose(
+        abs(raw_lon_span), 360.0, rtol=0.0, atol=1e-6
+    ):
+        # Preserve an explicit full-cycle endpoint (0/360 or -180/180);
+        # np.unwrap would collapse that 360-degree step to a duplicate value.
+        unwrapped_longitudes = longitudes.copy()
+    else:
+        unwrapped_longitudes = np.rad2deg(np.unwrap(np.deg2rad(longitudes)))
     lon_diffs = np.diff(unwrapped_longitudes)
     if not (np.all(lat_diffs > 0) or np.all(lat_diffs < 0)):
         raise ValueError("Latitude coordinates are not strictly monotonic.")
@@ -130,6 +144,17 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         raise ValueError("Latitude coordinates are not regularly spaced.")
     if not np.allclose(np.abs(lon_diffs), np.median(np.abs(lon_diffs)), rtol=1e-3, atol=1e-6):
         raise ValueError("Longitude coordinates are not regularly spaced.")
+
+    if np.isclose(abs(float(unwrapped_longitudes[-1] - unwrapped_longitudes[0])),
+                  360.0, rtol=0.0, atol=1e-6):
+        # The first and last columns refer to the same meridian. Keep one copy
+        # so nearest and bilinear sampling cannot disagree at the seam.
+        unwrapped_longitudes = unwrapped_longitudes[:-1]
+        values = values[:, :-1]
+        if unwrapped_longitudes.size < 2:
+            raise ValueError(
+                "Global bilinear sampling requires at least two unique longitude columns."
+            )
 
     query_longitude = longitude + 360.0 * round(
         (float(np.mean(unwrapped_longitudes)) - longitude) / 360.0
@@ -155,7 +180,39 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
     if lon_axis[0] > lon_axis[-1]:
         lon_axis, grid = lon_axis[::-1], grid[:, ::-1]
     r0, r1, fy = _bracket(lat_axis, latitude)
-    c0, c1, fx = _bracket(lon_axis, query_longitude)
+    longitude_step = float(np.median(np.abs(np.diff(lon_axis))))
+    longitude_span = float(lon_axis[-1] - lon_axis[0])
+    cyclic_tolerance = max(1e-6, longitude_step * 1e-6)
+    has_duplicate_cyclic_endpoint = np.isclose(
+        longitude_span, 360.0, rtol=0.0, atol=cyclic_tolerance
+    )
+    is_cyclic_global_grid = has_duplicate_cyclic_endpoint or np.isclose(
+        longitude_span + longitude_step, 360.0,
+        rtol=0.0, atol=cyclic_tolerance,
+    )
+    if has_duplicate_cyclic_endpoint:
+        # A repeated 360-degree endpoint represents the same meridian as the
+        # first column. Drop only that duplicate before seam interpolation.
+        lon_axis = lon_axis[:-1]
+        grid = grid[:, :-1]
+        if lon_axis.size < 2:
+            raise ValueError(
+                "Global bilinear sampling requires at least two unique longitude columns."
+            )
+    if is_cyclic_global_grid:
+        wrapped_longitude = float(
+            lon_axis[0] + ((query_longitude - lon_axis[0]) % 360.0)
+        )
+        if wrapped_longitude > lon_axis[-1] + 1e-8:
+            # Interpolate across the cyclic seam using the first column as its
+            # next-world copy, rather than rejecting a valid global query.
+            c0, c1 = lon_axis.size - 1, 0
+            seam_width = float(lon_axis[0] + 360.0 - lon_axis[-1])
+            fx = float((wrapped_longitude - lon_axis[-1]) / seam_width)
+        else:
+            c0, c1, fx = _bracket(lon_axis, wrapped_longitude)
+    else:
+        c0, c1, fx = _bracket(lon_axis, query_longitude)
     corners = np.asarray([grid[r0, c0], grid[r0, c1], grid[r1, c0], grid[r1, c1]])
     if not np.all(np.isfinite(corners)):
         return {"valid": False, "latitude": float(latitude), "longitude": float(longitude),
