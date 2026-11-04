@@ -119,7 +119,9 @@ true north, clockwise.
 ## Curvilinear longitude seam safety
 
 Regional 2-D latitude/longitude grids are unwrapped around their circular-mean
-longitude before Web-Mercator reprojection. A single planar Delaunay
+longitude before Web-Mercator reprojection. If the circular-mean resultant is near
+zero, the centre is mathematically ambiguous and rendering is rejected rather
+than selecting an arbitrary longitude branch. A single planar Delaunay
 triangulation is not valid for a global mesh that crosses the antimeridian:
 it can connect opposite sides of the world and create false interpolated
 weather fields. Scalar and wind-direction rendering therefore reject
