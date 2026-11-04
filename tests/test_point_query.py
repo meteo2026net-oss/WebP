@@ -115,5 +115,34 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "limited to regular 1-D"):
                 sample_npz(path, 9.5, 20.5, method="bilinear")
 
+    def test_curvilinear_nearest_sampling_crosses_antimeridian(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, 10.0, 10.0], [9.0, 9.0, 9.0], [8.0, 8.0, 8.0]]
+            lon = [[179.8, -180.0, -179.8],
+                   [179.8, -180.0, -179.8],
+                   [179.8, -180.0, -179.8]]
+            values = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+            path = self._write_grid(tmp, values, lat, lon)
+            east = sample_npz(path, 9.1, 179.9)
+            west = sample_npz(path, 9.1, -179.9)
+            across = sample_npz(path, 9.1, 180.1)
+            self.assertEqual(east["value"], 4.0)
+            self.assertEqual(west["value"], 6.0)
+            self.assertEqual(across["value"], 6.0)
+            self.assertEqual(west["longitude"], -179.8)
+            self.assertEqual(west["grid_type"], "curvilinear")
+
+    def test_curvilinear_nearest_sampling_rejects_far_side_of_dateline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, 10.0, 10.0], [9.0, 9.0, 9.0], [8.0, 8.0, 8.0]]
+            lon = [[179.8, -180.0, -179.8],
+                   [179.8, -180.0, -179.8],
+                   [179.8, -180.0, -179.8]]
+            path = self._write_grid(tmp, np.arange(9).reshape(3, 3), lat, lon)
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 9.0, 170.0)
+
+
+
 if __name__ == "__main__":
     unittest.main()
