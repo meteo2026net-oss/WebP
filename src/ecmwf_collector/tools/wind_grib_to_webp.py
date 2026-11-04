@@ -71,6 +71,23 @@ def wind_speed_and_direction(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, 
     return speed.astype(np.float32), direction.astype(np.float32)
 
 
+def optional_bool(value: Any) -> bool | None:
+    """Parse decoder boolean metadata without treating the string '0' as true."""
+    if value is None:
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes"}:
+            return True
+        if normalized in {"0", "false", "no"}:
+            return False
+    return None
+
+
 def compatible_component_units(u_units: Any, v_units: Any) -> str | None:
     """Validate U/V unit agreement without silently converting physical units."""
     u_text = str(u_units).strip() if u_units not in (None, "") else ""
@@ -132,7 +149,7 @@ def main() -> None:
         lat_name = coord_name(u_da, ("latitude", "lat"))
         lon_name = coord_name(u_da, ("longitude", "lon"))
         units = compatible_component_units(u_da.attrs.get("units"), v_da.attrs.get("units"))
-        uv_relative_to_grid = bool(u_da.attrs.get("GRIB_uvRelativeToGrid", False))
+        uv_relative_to_grid = optional_bool(u_da.attrs.get("GRIB_uvRelativeToGrid"))
         valid = np.isfinite(u) & np.isfinite(v)
         rgb = np.zeros((u.shape[0], u.shape[1], 3), dtype=np.uint8)
         rgb[..., 0] = encode_component(np.where(valid, u, args.vmin), args.vmin, args.vmax)
@@ -151,7 +168,8 @@ def main() -> None:
                 "B": "validity mask: 0=missing, 255=valid"
             },
             "units": units,
-            "component_frame": "grid_relative" if uv_relative_to_grid else "earth_relative_or_unspecified",
+            "component_frame": ("grid_relative" if uv_relative_to_grid is True else
+                                "earth_relative" if uv_relative_to_grid is False else "unknown"),
             "decode": {
                 "formula": "value = vmin + (channel / 255) * (vmax - vmin)",
                 "vmin": args.vmin,
@@ -163,12 +181,15 @@ def main() -> None:
                 "definition": "degrees clockwise from true north; direction the wind comes from",
                 "formula": "(degrees(atan2(-U, -V)) + 360) % 360",
                 "calm_wind": "undefined (null/NaN)",
-                "valid_for_earth_bearing": not uv_relative_to_grid,
-                "status": ("requires_grid_to_earth_rotation" if uv_relative_to_grid
-                           else "earth_relative_or_not_declared_by_decoder"),
+                "valid_for_earth_bearing": (False if uv_relative_to_grid is True else
+                                            True if uv_relative_to_grid is False else None),
+                "status": ("requires_grid_to_earth_rotation" if uv_relative_to_grid is True else
+                           "earth_relative" if uv_relative_to_grid is False else
+                           "unknown_reference_frame"),
                 "warning": ("U/V are grid-relative; rotate vectors to earth-relative before interpreting direction."
-                            if uv_relative_to_grid else
-                            "Confirm decoder metadata establishes earth-relative U/V before using direction as a true-north bearing.")
+                            if uv_relative_to_grid is True else
+                            "Decoder confirms earth-relative U/V." if uv_relative_to_grid is False else
+                            "Reference frame is not declared; verify whether U/V are earth-relative before using direction as a true-north bearing.")
             },
             "grid": {
                 "grid_type": grid_type,

@@ -11,11 +11,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from eccodes import codes_get, codes_grib_new_from_file, codes_release
 
 KEYS = (
     "edition", "centre", "dataDate", "dataTime", "validityDate", "validityTime",
     "dataType", "shortName", "name", "units", "paramId", "typeOfLevel",
+    "uvRelativeToGrid", "resolutionAndComponentFlags",
     "level", "stepType", "stepRange", "gridType", "Ni", "Nj",
     "latitudeOfFirstGridPointInDegrees", "longitudeOfFirstGridPointInDegrees",
     "latitudeOfLastGridPointInDegrees", "longitudeOfLastGridPointInDegrees",
@@ -36,6 +36,12 @@ def safe_get(gid: Any, key: str) -> Any:
 
 
 def inspect_file(path: Path) -> list[dict[str, Any]]:
+    try:
+        from eccodes import codes_get, codes_grib_new_from_file, codes_release
+    except ImportError as exc:
+        raise RuntimeError(
+            "GRIB inventory requires the ecCodes Python bindings; install eccodes first."
+        ) from exc
     messages: list[dict[str, Any]] = []
     with path.open("rb") as stream:
         index = 0

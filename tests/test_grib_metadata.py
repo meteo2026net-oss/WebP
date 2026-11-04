@@ -3,9 +3,14 @@ import unittest
 import numpy as np
 
 from ecmwf_collector.tools.grib_to_map import _json_scalar, _json_value
+from ecmwf_collector.tools.inspect_grib import KEYS
 
 
 class GribMetadataSerializationTests(unittest.TestCase):
+    def test_inventory_includes_wind_reference_frame_flags(self):
+        self.assertIn("uvRelativeToGrid", KEYS)
+        self.assertIn("resolutionAndComponentFlags", KEYS)
+
     def test_datetime64_is_serialized_as_iso8601(self):
         value = np.datetime64("2026-11-04T00:00:00", "ns")
         self.assertEqual(_json_scalar(value), "2026-11-04T00:00:00.000000000")

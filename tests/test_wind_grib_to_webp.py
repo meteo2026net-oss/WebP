@@ -6,6 +6,7 @@ from ecmwf_collector.tools.wind_grib_to_webp import (
     spatial_layout,
     wind_speed_and_direction,
     compatible_component_units,
+    optional_bool,
 )
 
 
@@ -82,6 +83,18 @@ class WindGridTests(unittest.TestCase):
         speed, direction = wind_speed_and_direction(u, v)
         self.assertTrue(np.all(np.isnan(speed)))
         self.assertTrue(np.all(np.isnan(direction)))
+
+    def test_optional_bool_parses_ec_codes_values_without_truthiness_traps(self):
+        self.assertIs(optional_bool(True), True)
+        self.assertIs(optional_bool(1), True)
+        self.assertIs(optional_bool("1"), True)
+        self.assertIs(optional_bool("true"), True)
+        self.assertIs(optional_bool(False), False)
+        self.assertIs(optional_bool(0), False)
+        self.assertIs(optional_bool("0"), False)
+        self.assertIs(optional_bool("false"), False)
+        self.assertIsNone(optional_bool(None))
+        self.assertIsNone(optional_bool("unknown"))
 
     def test_component_units_must_match(self):
         self.assertEqual(compatible_component_units("m s-1", "m s-1"), "m s-1")
