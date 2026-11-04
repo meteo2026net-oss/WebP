@@ -18,6 +18,11 @@ class MapRenderTests(unittest.TestCase):
         self.assertTrue(np.all(np.diff(out_lon) > 0))
         self.assertEqual(data.shape, (2, 3))
 
+    def test_rejects_irregular_longitude_grid(self):
+        values = np.ones((2, 3), dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "regularly spaced"):
+            normalize_regular_grid(values, np.array([10, 0]), np.array([0, 1, 4]))
+
     def test_writes_transparent_georeferenced_png(self):
         values = np.array([[1, np.nan], [3, 4]], dtype=np.float32)
         lat = np.array([10, 0])
