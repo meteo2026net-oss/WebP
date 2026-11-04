@@ -15,8 +15,9 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
     except (OSError, json.JSONDecodeError):
         current = {"version": 1, "layers": []}
     layers = current.get("layers", [])
-    keys = {(p.get("source_file"), p.get("variable"), p.get("valid_time")) for p in products}
-    layers = [p for p in layers if (p.get("source_file"), p.get("variable"), p.get("valid_time")) not in keys]
+    identity = lambda p: (p.get("source_file"), p.get("variable"), p.get("valid_time"), p.get("typeOfLevel"), p.get("level"), p.get("step"))
+    keys = {identity(p) for p in products}
+    layers = [p for p in layers if identity(p) not in keys]
     layers.extend(products)
     payload = {"version": 1, "layers": layers}
     fd, tmp = tempfile.mkstemp(dir=output_dir, suffix=".tmp")
