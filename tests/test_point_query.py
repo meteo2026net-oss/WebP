@@ -84,6 +84,22 @@ class PointQueryTests(unittest.TestCase):
                     self.assertEqual(result["value"], 10.0)
                     self.assertEqual(result["longitude"], 0.0)
 
+    def test_nearest_sampling_wraps_duplicate_endpoint_global_grid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            values = [[10, 20, 30, 40, 999], [50, 60, 70, 80, 999]]
+            path = self._write_grid(tmp, values, [10, 0], [0, 90, 180, 270, 360])
+            result = sample_npz(path, 10.0, 359.0)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 10.0)
+            self.assertEqual(result["longitude"], 0.0)
+
+    def test_nearest_sampling_does_not_wrap_regional_longitude_axis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_grid(tmp, [[1, 2, 3], [4, 5, 6]],
+                                    [10, 0], [0, 1, 2])
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 10.0, 359.0)
+
     def test_nearest_sampling_drops_duplicate_global_endpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             values = [[1, 2, 3, 4, 99], [5, 6, 7, 8, 99]]
