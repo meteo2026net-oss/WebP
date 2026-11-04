@@ -360,6 +360,22 @@ class MapRenderTests(unittest.TestCase):
         ])
         self.assertTrue(_has_two_dimensional_spread(points))
 
+    def test_projected_spread_rejects_non_finite_coordinates(self):
+        for points in (
+            np.array([[0.0, 0.0], [1.0, np.nan], [0.0, 1.0]]),
+            np.array([[0.0, 0.0], [1.0, np.inf], [0.0, 1.0]]),
+        ):
+            with self.subTest(points=points):
+                self.assertFalse(_has_two_dimensional_spread(points))
+
+    def test_projected_spread_handles_large_finite_coordinate_magnitudes(self):
+        points = np.array([
+            [1.0e200, 1.0e200],
+            [1.1e200, 1.0e200],
+            [1.0e200, 1.1e200],
+        ])
+        self.assertTrue(_has_two_dimensional_spread(points))
+
     def test_projected_spread_rejects_roundoff_scale_collinearity(self):
         # Large projected coordinates can acquire tiny transverse noise after
         # inverse/forward projection; it must not masquerade as a 2-D mesh.
