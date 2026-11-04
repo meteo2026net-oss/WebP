@@ -72,7 +72,7 @@ class WindGridTests(unittest.TestCase):
         v = np.array([[-10.0, 0.0, 10.0, 0.0, 0.0]], dtype=np.float32)
         speed, direction = wind_speed_and_direction(u, v)
         np.testing.assert_allclose(speed[0, :4], [10, 10, 10, 10])
-        np.testing.assert_allclose(direction[0, :4], [180, 270, 0, 90])
+        np.testing.assert_allclose(direction[0, :4], [0, 270, 180, 90])
         self.assertTrue(np.isnan(direction[0, 4]))
 
     def test_missing_component_produces_missing_speed_and_direction(self):
