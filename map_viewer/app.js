@@ -64,6 +64,40 @@
     }
   }
 
+
+  let pointRequest = 0;
+  map.on("click", async (event) => {
+    if (!activeEntry) return;
+    const panel = document.getElementById("pointInfo");
+    const requestId = ++pointRequest;
+    const lat = event.latlng.lat;
+    const lon = event.latlng.lng;
+    panel.textContent = "جارٍ استخراج أقرب قيمة شبكية…";
+    try {
+      const params = new URLSearchParams({
+        image: activeEntry.image,
+        lat: lat.toFixed(6),
+        lon: lon.toFixed(6)
+      });
+      const response = await fetch("/api/point?" + params.toString());
+      const result = await response.json();
+      if (requestId !== pointRequest) return;
+      if (!response.ok) throw new Error(result.error || "تعذّر استخراج القيمة.");
+      const valueText = result.valid
+        ? Number(result.value).toFixed(3) + " " + (result.units || "")
+        : (result.message || "لا توجد قيمة صالحة في أقرب خلية.");
+      panel.textContent = [
+        result.long_name || result.variable || "الحقل الجوي",
+        "القيمة: " + valueText,
+        "إحداثيات الخلية: " + Number(result.latitude).toFixed(4) + ", " + Number(result.longitude).toFixed(4),
+        "الإحداثيات المطلوبة: " + lat.toFixed(4) + ", " + lon.toFixed(4),
+        "الصلاحية: " + (result.valid_time || "غير محددة")
+      ].join(" | ");
+    } catch (error) {
+      if (requestId === pointRequest) panel.textContent = error.message;
+    }
+  });
+
   select.addEventListener("change", () => {
     const entry = entries[Number(select.value)];
     if (entry) showEntry(entry);
