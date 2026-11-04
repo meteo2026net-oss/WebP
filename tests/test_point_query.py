@@ -47,6 +47,18 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside the data grid"):
                 sample_npz(path, 30.0, 40.0)
 
+    def test_rejects_non_monotonic_grid_coordinates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "field.npz"
+            np.savez_compressed(
+                path,
+                values=np.ones((2, 2), dtype=np.float32),
+                latitudes=np.array([10.0, 10.0]),
+                longitudes=np.array([20.0, 21.0]),
+            )
+            with self.assertRaisesRegex(ValueError, "strictly monotonic"):
+                sample_npz(path, 10.0, 20.0)
+
     def test_rejects_invalid_latitude(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "field.npz"
