@@ -18,6 +18,25 @@ class MapRenderTests(unittest.TestCase):
         self.assertTrue(np.all(np.diff(out_lon) > 0))
         self.assertEqual(data.shape, (2, 3))
 
+    def test_longitude_wrap_preserves_data_cell_alignment(self):
+        values = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+        lat = np.array([-10, 10])
+        lon = np.array([0, 120, 240])
+        data, out_lat, out_lon = normalize_regular_grid(values, lat, lon)
+        np.testing.assert_array_equal(out_lat, [10, -10])
+        np.testing.assert_array_equal(out_lon, [-120, 0, 120])
+        np.testing.assert_array_equal(data, [[6, 4, 5], [3, 1, 2]])
+
+    def test_removes_duplicate_cyclic_longitude_endpoint(self):
+        values = np.array([[1, 2, 3, 4, 99], [5, 6, 7, 8, 100]], dtype=np.float32)
+        lat = np.array([10, 0])
+        lon = np.array([0, 90, 180, 270, 360])
+        data, _, out_lon = normalize_regular_grid(values, lat, lon)
+        self.assertEqual(out_lon.size, 4)
+        self.assertEqual(data.shape, (2, 4))
+        self.assertNotIn(99, data)
+        self.assertNotIn(100, data)
+
     def test_rejects_duplicate_or_non_monotonic_latitudes(self):
         values = np.ones((3, 2), dtype=np.float32)
         with self.assertRaisesRegex(ValueError, "strictly monotonic"):
