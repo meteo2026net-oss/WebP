@@ -13,11 +13,59 @@
   let entries = [];
   let activeLayer = null;
   let activeEntry = null;
+  let timelineFrames = [];
+  let playbackTimer = null;
+  const timeSlider = document.getElementById("timeSlider");
+  const timeValue = document.getElementById("timeValue");
+  const playButton = document.getElementById("playButton");
+  const frameCount = document.getElementById("frameCount");
 
   function setStatus(message) { status.textContent = message; }
-  function showEntry(entry) {
+  function timelineIdentity(entry) {
+    const extra = entry.extra_coordinates || {};
+    const stableExtra = Object.fromEntries(Object.entries(extra).filter(([key]) =>
+      !/^(time|valid_time|step|forecasttime)$/i.test(key)
+    ).sort(([a], [b]) => a.localeCompare(b)));
+    return JSON.stringify([entry.variable, entry.typeOfLevel, entry.level, entry.units, stableExtra]);
+  }
+  function frameSort(a, b) {
+    const at = String(a.valid_time || "");
+    const bt = String(b.valid_time || "");
+    if (at !== bt) return at.localeCompare(bt);
+    return Number(a.step ?? 0) - Number(b.step ?? 0);
+  }
+  function stopPlayback() {
+    if (playbackTimer !== null) window.clearInterval(playbackTimer);
+    playbackTimer = null;
+    playButton.textContent = "تشغيل الحركة";
+  }
+  function renderTimeline(entry) {
+    const identity = timelineIdentity(entry);
+    timelineFrames = entries.filter(item => timelineIdentity(item) === identity).slice().sort(frameSort);
+    const unique = [];
+    const seen = new Set();
+    for (const item of timelineFrames) {
+      const key = JSON.stringify([item.valid_time ?? null, item.step ?? null]);
+      if (!seen.has(key)) { seen.add(key); unique.push(item); }
+    }
+    timelineFrames = unique;
+    const index = Math.max(0, timelineFrames.findIndex(item => item.image === entry.image));
+    timeSlider.min = "0";
+    timeSlider.max = String(Math.max(0, timelineFrames.length - 1));
+    timeSlider.value = String(index);
+    timeSlider.disabled = timelineFrames.length < 2;
+    playButton.disabled = timelineFrames.length < 2;
+    frameCount.textContent = timelineFrames.length > 1
+      ? timelineFrames.length + " إطاراً متاحاً"
+      : "لا توجد أزمنة متعددة لهذا الحقل";
+    timeValue.textContent = [entry.valid_time || "وقت غير محدد",
+      entry.step !== undefined ? "الخطوة " + entry.step : ""].filter(Boolean).join(" · ");
+    stopPlayback();
+  }
+  function showEntry(entry, updateTimeline = true) {
     if (activeLayer) map.removeLayer(activeLayer);
     activeEntry = entry;
+    if (updateTimeline) renderTimeline(entry);
     document.getElementById("pointInfo").textContent = "انقر على الخريطة لاستخراج قيمة أقرب خلية شبكية.";
     const b = entry.bounds;
     const bounds = [[b.south, b.west], [b.north, b.east]];
@@ -99,6 +147,26 @@
     }
   });
 
+  timeSlider.addEventListener("input", () => {
+    const entry = timelineFrames[Number(timeSlider.value)];
+    if (!entry) return;
+    showEntry(entry, false);
+    timeValue.textContent = [entry.valid_time || "وقت غير محدد",
+      entry.step !== undefined ? "الخطوة " + entry.step : ""].filter(Boolean).join(" · ");
+  });
+  playButton.addEventListener("click", () => {
+    if (playbackTimer !== null) { stopPlayback(); return; }
+    if (timelineFrames.length < 2) return;
+    playButton.textContent = "إيقاف الحركة";
+    playbackTimer = window.setInterval(() => {
+      const next = (Number(timeSlider.value) + 1) % timelineFrames.length;
+      timeSlider.value = String(next);
+      const entry = timelineFrames[next];
+      showEntry(entry, false);
+      timeValue.textContent = [entry.valid_time || "وقت غير محدد",
+        entry.step !== undefined ? "الخطوة " + entry.step : ""].filter(Boolean).join(" · ");
+    }, 1100);
+  });
   select.addEventListener("change", () => {
     const entry = entries[Number(select.value)];
     if (entry) showEntry(entry);
