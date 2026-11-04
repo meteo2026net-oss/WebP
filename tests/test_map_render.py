@@ -233,6 +233,7 @@ class MapRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = render_direction_png(direction, lat, lon, Path(tmp) / "regional-direction-dateline.png")
         self.assertLess(result["bounds"]["east"] - result["bounds"]["west"], 5.0)
+        self.assertGreater(result["bounds"]["east"], 180.0)
         self.assertGreater(result["valid_cells"], 0)
         self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
 
