@@ -300,3 +300,94 @@ def render_wind_speed_png(u: np.ndarray, v: np.ndarray, latitudes: np.ndarray,
         raise ValueError("U and V wind arrays must have identical shapes.")
     speed = np.hypot(np.asarray(u, dtype=np.float32), np.asarray(v, dtype=np.float32))
     return render_scalar_png(speed, latitudes, longitudes, output_path, 0.0, 40.0)
+
+
+def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
+                         longitudes: np.ndarray, output_path,
+                         resultant_threshold: float = 1e-3) -> dict:
+    """Render meteorological FROM bearings with cyclic HSV colours.
+
+    Interpolation is performed on sine/cosine components, never on raw
+    degree values, so bearings around 0/360 degrees remain continuous.
+    """
+    direction = np.asarray(direction_degrees, dtype=np.float32)
+    if not 0.0 <= resultant_threshold < 1.0:
+        raise ValueError("resultant_threshold must be in [0, 1).")
+    lat = np.asarray(latitudes, dtype=np.float64)
+    lon = np.asarray(longitudes, dtype=np.float64)
+    if direction.shape != lat.shape if lat.ndim == 2 else direction.shape != (lat.size, lon.size):
+        raise ValueError("Direction values do not match latitude/longitude grid.")
+    valid = np.isfinite(direction)
+    if not np.any(valid):
+        raise ValueError("The selected direction field contains no valid bearings.")
+    radians = np.deg2rad(np.mod(direction, 360.0))
+    sine = np.where(valid, np.sin(radians), np.nan).astype(np.float32)
+    cosine = np.where(valid, np.cos(radians), np.nan).astype(np.float32)
+
+    if lat.ndim == 2 or lon.ndim == 2:
+        try:
+            from pyproj import Transformer
+            from scipy.interpolate import griddata
+        except ImportError as exc:
+            raise RuntimeError("Curvilinear direction rendering requires pyproj and scipy.") from exc
+        if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape or direction.shape != lat.shape:
+            raise ValueError("Curvilinear direction and geolocation arrays must have matching 2-D shapes.")
+        geo = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90)
+        usable = geo & valid
+        if int(usable.sum()) < 3:
+            raise ValueError("At least three valid direction cells with geolocation are required.")
+        lr = np.deg2rad(lon[geo])
+        center = float(np.rad2deg(np.arctan2(np.mean(np.sin(lr)), np.mean(np.cos(lr)))))
+        unwrapped = np.full(lon.shape, np.nan, dtype=np.float64)
+        unwrapped[geo] = center + ((lon[geo] - center + 180) % 360) - 180
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True, force_over=True)
+        x, y = transformer.transform(unwrapped, np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT))
+        projected = geo & np.isfinite(x) & np.isfinite(y)
+        usable = usable & projected
+        west, east = float(np.min(x[projected])), float(np.max(x[projected]))
+        south, north = float(np.min(y[projected])), float(np.max(y[projected]))
+        if east <= west or north <= south:
+            raise ValueError("Curvilinear direction grid has no 2-D projected extent.")
+        height, width = direction.shape
+        tx, ty = np.meshgrid(np.linspace(west, east, width), np.linspace(north, south, height))
+        points = np.column_stack((x[usable], y[usable]))
+        try:
+            sampled_sin = griddata(points, sine[usable], (tx, ty), method="linear")
+            sampled_cos = griddata(points, cosine[usable], (tx, ty), method="linear")
+        except Exception as exc:
+            raise ValueError("Curvilinear direction grid cannot form an interpolation mesh.") from exc
+        inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        west_lon, south_lat = inverse.transform(west, south)
+        east_lon, north_lat = inverse.transform(east, north)
+        bounds = {"west": float(west_lon), "south": float(south_lat),
+                  "east": float(east_lon), "north": float(north_lat)}
+        convention = "curvilinear_unwrapped"
+    else:
+        sine_grid, out_lat, out_lon, convention = normalize_regular_grid(sine, lat, lon)
+        cosine_grid, _, _, _ = normalize_regular_grid(cosine, lat, lon)
+        bounds = grid_bounds(out_lat, out_lon)
+        sampled_sin = _resample_rows_to_web_mercator(sine_grid, out_lat, bounds)
+        sampled_cos = _resample_rows_to_web_mercator(cosine_grid, out_lat, bounds)
+        height, width = sampled_sin.shape
+
+    magnitude = np.hypot(sampled_sin, sampled_cos)
+    usable = np.isfinite(magnitude) & (magnitude >= resultant_threshold)
+    angle = np.mod(np.rad2deg(np.arctan2(sampled_sin, sampled_cos)), 360.0)
+    hue = np.zeros(angle.shape, dtype=np.uint8)
+    hue[usable] = np.rint(angle[usable] / 360.0 * 255.0).astype(np.uint8)
+    hsv = np.zeros((*angle.shape, 3), dtype=np.uint8)
+    hsv[..., 0] = hue
+    hsv[..., 1] = 255
+    hsv[..., 2] = 255
+    rgba = np.asarray(Image.fromarray(hsv, mode="HSV").convert("RGBA")).copy()
+    rgba[..., 3] = np.where(usable, 220, 0).astype(np.uint8)
+    Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
+    return {
+        "bounds": bounds, "width": int(width), "height": int(height),
+        "value_min": 0.0, "value_max": 360.0,
+        "valid_cells": int(usable.sum()), "missing_cells": int((~usable).sum()),
+        "coordinate_order": "north_to_south", "render_projection": "EPSG:3857",
+        "longitude_convention": convention, "resampling": "circular_sine_cosine",
+        "color_encoding": "HSV_hue_bearing_degrees_clockwise_from_true_north",
+        "resultant_threshold": float(resultant_threshold),
+    }
