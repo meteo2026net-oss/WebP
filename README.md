@@ -55,7 +55,7 @@ python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output ou
 ```powershell
 python serve_map.py
 ``
-Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`.
+Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`. Click the map to query the nearest original GRIB grid cell; this requires the matching `.npz` data file.
 
 ## Tests
 ```powershell
@@ -66,6 +66,6 @@ python -m unittest discover -s tests -t . -v
 Tests use synthetic arrays and fake FTP sessions; they do not prove compatibility with the live ECMWF service or every GRIB grid projection.
 
 ## Current scientific and geographic limitations
-The initial map renderer supports regular 1-D latitude/longitude grids only. Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids need reprojection before map display. The converter deliberately rejects unsupported grids rather than placing them incorrectly.
+The initial map renderer and nearest-point sampler support regular 1-D latitude/longitude grids only. Click a map location to retrieve the nearest stored value, units, and valid time (nearest-neighbour only; no bilinear interpolation yet). Rotated-pole, Lambert, polar stereographic, curvilinear, and other projected grids need reprojection before map display. The converter deliberately rejects unsupported grids rather than placing them incorrectly.
 
 The RGB WebP wind texture uses 8-bit quantization. Lossless WebP preserves encoded channel bytes, not original floating-point precision. PNG overlays are display products, not scientific source data. Preserve original GRIB files for scientific calculations.
