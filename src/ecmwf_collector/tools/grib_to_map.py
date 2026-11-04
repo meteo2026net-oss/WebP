@@ -11,6 +11,7 @@ import numpy as np
 import xarray as xr
 
 from .map_render import render_scalar_png
+from .map_manifest import update_manifest
 
 
 def _safe_name(value: str) -> str:
@@ -63,6 +64,8 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
         ds.close()
     if not products:
         raise ValueError("No compatible 2-D regular latitude/longitude fields were found. Inspect the GRIB inventory and grid type.")
+    manifest = update_manifest(output_dir, products)
+    print(f"Updated map manifest: {manifest}")
     return products
 
 
