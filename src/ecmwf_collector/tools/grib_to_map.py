@@ -74,6 +74,9 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None) -
                         **rendered,
                         "image": png_path.name,
                     }
+                    data_path = png_path.with_suffix(".npz")
+                    np.savez_compressed(data_path, values=values, latitudes=lat, longitudes=lon)
+                    metadata["data_file"] = data_path.name
                     sidecar = png_path.with_suffix(".json")
                     sidecar.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
                     products.append(metadata)
