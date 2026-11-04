@@ -25,6 +25,12 @@ python main.py
 
 Never commit local settings, credentials, database files, logs, or downloaded data. Prefer FTPS/TLS; plain FTP is unencrypted and disabled by default.
 
+## Windows shortcuts
+
+- `run_collector.bat`: start the desktop downloader.
+- `process_downloads.bat`: scan downloaded GRIB files and build map layers.
+- `start_map.bat`: start the restricted localhost map viewer.
+
 ## End-to-end workflow
 
 1. Use the desktop collector to connect to the ECMWF WMO Support server and download GRIB files into `downloads/`.
