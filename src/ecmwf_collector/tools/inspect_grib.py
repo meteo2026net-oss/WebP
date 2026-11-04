@@ -20,6 +20,11 @@ KEYS = (
     "latitudeOfFirstGridPointInDegrees", "longitudeOfFirstGridPointInDegrees",
     "latitudeOfLastGridPointInDegrees", "longitudeOfLastGridPointInDegrees",
     "iDirectionIncrementInDegrees", "jDirectionIncrementInDegrees",
+    "LaDInDegrees", "LoVInDegrees", "Latin1InDegrees", "Latin2InDegrees",
+    "DxInMetres", "DyInMetres", "orientationOfTheGridInDegrees",
+    "projectionCentreFlag", "latitudeOfSouthernPoleInDegrees",
+    "longitudeOfSouthernPoleInDegrees", "iScansNegatively",
+    "jScansPositively", "jPointsAreConsecutive", "alternativeRowScanning",
 )
 
 

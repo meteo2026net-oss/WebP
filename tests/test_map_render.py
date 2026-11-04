@@ -106,5 +106,29 @@ class MapRenderTests(unittest.TestCase):
                 self.assertEqual(int((alpha == 0).sum()), 1)
 
 
+    def test_reprojects_curvilinear_geolocation_grid(self):
+        values = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+        lat = np.array([[12, 12.1, 12.2], [11, 11.1, 11.2], [10, 10.1, 10.2]])
+        lon = np.array([[30, 31, 32], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "curvilinear.png"
+            metadata = render_scalar_png(values, lat, lon, path)
+            self.assertTrue(path.exists())
+            self.assertEqual(metadata["source_grid_type"], "curvilinear_geolocation")
+            self.assertEqual(metadata["render_projection"], "EPSG:3857")
+            self.assertGreater(metadata["bounds"]["east"], metadata["bounds"]["west"])
+            with Image.open(path) as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (3, 3))
+
+    def test_rejects_curvilinear_grid_with_insufficient_valid_points(self):
+        values = np.array([[1, np.nan], [np.nan, np.nan]], dtype=np.float32)
+        lat = np.array([[10, 10], [9, 9]], dtype=float)
+        lon = np.array([[20, 21], [20, 21]], dtype=float)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "three valid geolocated"):
+                render_scalar_png(values, lat, lon, Path(tmp) / "invalid.png")
+
+
 if __name__ == "__main__":
     unittest.main()

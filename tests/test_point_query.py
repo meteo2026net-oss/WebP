@@ -84,6 +84,26 @@ class PointQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Sampling method"):
                 sample_npz(path, 0.5, 10.5, method="cubic")
 
+    def test_samples_nearest_cell_on_curvilinear_geolocation_grid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, 10.1, 10.2], [9.0, 9.1, 9.2], [8.0, 8.1, 8.2]]
+            lon = [[20.0, 21.0, 22.0], [20.1, 21.1, 22.1], [20.2, 21.2, 22.2]]
+            values = np.arange(9, dtype=np.float32).reshape(3, 3)
+            path = self._write_grid(tmp, values, lat, lon)
+            result = sample_npz(path, 9.12, 21.12)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["value"], 4.0)
+            self.assertEqual(result["grid_type"], "curvilinear")
+            with self.assertRaisesRegex(ValueError, "outside the data grid"):
+                sample_npz(path, 40.0, 80.0)
+
+    def test_curvilinear_grid_rejects_bilinear_until_supported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, 10.1], [9.0, 9.1]]
+            lon = [[20.0, 21.0], [20.1, 21.1]]
+            path = self._write_grid(tmp, [[1, 2], [3, 4]], lat, lon)
+            with self.assertRaisesRegex(ValueError, "limited to regular 1-D"):
+                sample_npz(path, 9.5, 20.5, method="bilinear")
 
 if __name__ == "__main__":
     unittest.main()
