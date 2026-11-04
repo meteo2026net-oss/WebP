@@ -86,8 +86,27 @@
       interactive: false
     }).addTo(map);
     map.fitBounds(bounds);
-    document.getElementById("legendMin").textContent = Number(entry.value_min).toPrecision(3) + " " + (entry.display_units || entry.units || "");
-    document.getElementById("legendMax").textContent = Number(entry.value_max).toPrecision(3) + " " + (entry.display_units || entry.units || "");
+    const directionLayer = entry.variable === "wind_direction";
+    const legend = document.querySelector(".legendbar");
+    const legendMin = document.getElementById("legendMin");
+    const legendMax = document.getElementById("legendMax");
+    if (directionLayer) {
+      legend.style.background = "linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)";
+      legendMin.textContent = "N · 0°";
+      legendMax.textContent = "N · 360°";
+      document.querySelector(".legendlabels").style.fontSize = "10px";
+      document.querySelector(".legendlabels").style.flexWrap = "wrap";
+      document.querySelector(".legendlabels").style.gap = "4px";
+      document.querySelector(".legendlabels").style.justifyContent = "center";
+      document.querySelector(".legendlabels").style.width = "100%";
+      legendMin.textContent = "N · NE · E · SE · S · SW · W · NW · N";
+      legendMax.textContent = "اتجاه قادم من الشمال مع عقارب الساعة";
+    } else {
+      legend.style.background = "";
+      document.querySelector(".legendlabels").style = "";
+      legendMin.textContent = Number(entry.value_min).toPrecision(3) + " " + (entry.display_units || entry.units || "");
+      legendMax.textContent = Number(entry.value_max).toPrecision(3) + " " + (entry.display_units || entry.units || "");
+    }
     info.textContent = [
       entry.long_name || entry.variable || "Weather field",
       "وحدة العرض: " + (entry.display_units || entry.units || "غير معروفة"),
