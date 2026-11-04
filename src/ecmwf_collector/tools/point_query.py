@@ -5,6 +5,18 @@ from pathlib import Path
 import numpy as np
 
 
+def _great_circle_distance_degrees(lat1, lon1, lat2, lon2):
+    """Return spherical angular distance in degrees with stable dateline wrapping."""
+    lat1 = np.deg2rad(np.asarray(lat1, dtype=np.float64))
+    lat2 = np.deg2rad(np.asarray(lat2, dtype=np.float64))
+    dlat = lat2 - lat1
+    dlon = np.deg2rad((np.asarray(lon2, dtype=np.float64)
+                       - np.asarray(lon1, dtype=np.float64) + 180.0) % 360.0 - 180.0)
+    hav = (np.sin(dlat / 2.0) ** 2
+           + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2)
+    return np.rad2deg(2.0 * np.arcsin(np.sqrt(np.clip(hav, 0.0, 1.0))))
+
+
 def _bracket(axis: np.ndarray, value: float):
     """Return lower/upper indices and interpolation fraction on an ascending axis."""
     if value < axis[0] - 1e-8 or value > axis[-1] + 1e-8:
@@ -58,27 +70,40 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
     if latitudes.ndim == 2:
         if method == "bilinear":
             raise ValueError("Bilinear sampling is currently limited to regular 1-D latitude/longitude grids.")
-        lon_delta = ((longitudes - longitude + 180.0) % 360.0) - 180.0
-        distance = np.hypot(latitudes - latitude,
-                            lon_delta * np.cos(np.deg2rad(latitude)))
+        distance = _great_circle_distance_degrees(
+            latitude, longitude, latitudes, longitudes
+        )
         distance[~geo_valid] = np.inf
         row, col = np.unravel_index(int(np.argmin(distance)), distance.shape)
         if not np.isfinite(distance[row, col]):
             raise ValueError("Curvilinear grid has no valid geolocation cells.")
-        neighbour_steps = []
-        if distance.shape[0] > 1:
-            dlat = np.diff(latitudes, axis=0)
-            dlon = ((np.diff(longitudes, axis=0) + 180.0) % 360.0) - 180.0
-            valid_pairs = (geo_valid[:-1, :] & geo_valid[1:, :])
-            steps = np.hypot(dlat, dlon * np.cos(np.deg2rad(latitudes[:-1])))
-            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
-        if distance.shape[1] > 1:
-            dlat = np.diff(latitudes, axis=1)
-            dlon = ((np.diff(longitudes, axis=1) + 180.0) % 360.0) - 180.0
-            valid_pairs = (geo_valid[:, :-1] & geo_valid[:, 1:])
-            steps = np.hypot(dlat, dlon * np.cos(np.deg2rad(latitudes[:, :-1])))
-            neighbour_steps.extend(steps[valid_pairs & np.isfinite(steps) & (steps > 0)].tolist())
-        if neighbour_steps and distance[row, col] > float(np.median(neighbour_steps)) * 0.8:
+        row_steps, column_steps = [], []
+        for nr in (row - 1, row + 1):
+            if 0 <= nr < distance.shape[0] and geo_valid[nr, col]:
+                step = _great_circle_distance_degrees(
+                    latitudes[row, col], longitudes[row, col],
+                    latitudes[nr, col], longitudes[nr, col]
+                )
+                if np.isfinite(step) and step > 0:
+                    row_steps.append(float(step))
+        for nc in (col - 1, col + 1):
+            if 0 <= nc < distance.shape[1] and geo_valid[row, nc]:
+                step = _great_circle_distance_degrees(
+                    latitudes[row, col], longitudes[row, col],
+                    latitudes[row, nc], longitudes[row, nc]
+                )
+                if np.isfinite(step) and step > 0:
+                    column_steps.append(float(step))
+        local_steps = row_steps + column_steps
+        if row_steps and column_steps:
+            coverage_radius = 0.5 * np.hypot(
+                float(np.median(row_steps)), float(np.median(column_steps))
+            )
+        elif local_steps:
+            coverage_radius = 0.5 * float(np.median(local_steps))
+        else:
+            coverage_radius = None
+        if coverage_radius is not None and distance[row, col] > coverage_radius:
             raise ValueError("The clicked location is outside the data grid coverage.")
         value = float(values[row, col])
         result = {"valid": bool(np.isfinite(value)),
