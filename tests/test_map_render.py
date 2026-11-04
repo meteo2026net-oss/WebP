@@ -89,6 +89,16 @@ class MapRenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "-90..90"):
             normalize_regular_grid(values, np.array([91, 90]), np.array([0, 1]))
 
+    def test_rejects_regular_longitude_outside_angular_range(self):
+        values = np.ones((2, 2), dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "-360..360"):
+            normalize_regular_grid(values, np.array([10, 0]), np.array([0, 361]))
+
+    def test_rejects_extreme_finite_regular_longitude(self):
+        values = np.ones((2, 2), dtype=np.float32)
+        with self.assertRaisesRegex(ValueError, "-360..360"):
+            normalize_regular_grid(values, np.array([10, 0]), np.array([0, 1e308]))
+
     def test_rejects_irregular_longitude_grid(self):
         values = np.ones((2, 3), dtype=np.float32)
         with self.assertRaisesRegex(ValueError, "regularly spaced"):
