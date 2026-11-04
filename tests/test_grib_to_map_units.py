@@ -69,7 +69,7 @@ class GribMapDisplayUnitTests(unittest.TestCase):
             output_dir = Path(directory)
             dataset = self._dataset()
             dataset["prate"].attrs.pop("units")
-            with self.assertRaisesRegex(KeyError, "not converted"):
+            with self.assertRaisesRegex(ValueError, "source unit metadata is missing"):
                 self._run(dataset, output_dir)
 
 
