@@ -74,3 +74,8 @@ For calm wind (zero speed), direction is undefined and stored as NaN rather than
 ## Wind component validation and reference frame
 
 The U/V wind encoder checks that both components declare matching units when units are present. It does not silently convert between units and does not invent a default unit when metadata is absent; the map manifest then labels the unit as unknown. The speed magnitude is invariant under an orthogonal rotation, but wind direction is not. If cfgrib marks `GRIB_uvRelativeToGrid` as true, metadata explicitly flags the direction as requiring grid-to-earth rotation. If the decoder explicitly marks it false, the metadata records earth-relative components. If the flag is absent or unrecognized, the reference frame remains unknown; the converter does not silently assume that missing metadata means earth-relative. The GRIB inventory also records `uvRelativeToGrid` and `resolutionAndComponentFlags` when available.
+
+
+## Meteorological unit conversions
+
+The `meteorological_units` helper provides explicit conversions for pressure (Pa, hPa/mbar, kPa), temperature (K, °C), wind speed (m s-1, km h-1, knots), and precipitation depth (mm, m). It accepts scalar or NumPy-array values and preserves missing values. Unknown units and conversions across physical dimensions are rejected. The GRIB wind encoder uses canonical unit aliases when checking U/V compatibility; it still does not silently convert source fields, so their declared source unit remains recorded.
