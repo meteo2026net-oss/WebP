@@ -1,10 +1,10 @@
-"""Geographic normalization and PNG rendering helpers for regular lat/lon grids."""
+"""Geographic normalization and Web-Mercator raster rendering helpers."""
 from __future__ import annotations
 
 import numpy as np
 from PIL import Image
 
-# A readable sequential palette for scalar weather fields.
+MAX_MERCATOR_LAT = 85.05112878
 SCALAR_STOPS = np.array([
     [35, 45, 110], [45, 95, 170], [45, 155, 190], [75, 185, 120],
     [205, 205, 65], [235, 145, 45], [195, 65, 55], [245, 235, 225],
@@ -33,8 +33,6 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
     lat = lat[lat_order]
     lon = normalized_lon[lon_order]
     data = data[np.ix_(lat_order, lon_order)]
-
-    # Remove a duplicated cyclic endpoint (commonly 0 and 360 degrees).
     keep = np.ones(lon.size, dtype=bool)
     if lon.size > 1:
         keep[1:] = np.diff(lon) > 1e-8
@@ -51,15 +49,55 @@ def normalize_regular_grid(values: np.ndarray, latitudes: np.ndarray, longitudes
     return data, lat, lon
 
 
+def _mercator_y(latitude_degrees: np.ndarray) -> np.ndarray:
+    lat = np.clip(np.deg2rad(latitude_degrees), -np.deg2rad(MAX_MERCATOR_LAT), np.deg2rad(MAX_MERCATOR_LAT))
+    return np.log(np.tan(np.pi / 4.0 + lat / 2.0))
+
+
+def _inverse_mercator_y(y: np.ndarray) -> np.ndarray:
+    return np.rad2deg(2.0 * np.arctan(np.exp(y)) - np.pi / 2.0)
+
+
 def grid_bounds(lat: np.ndarray, lon: np.ndarray) -> dict:
-    """Estimate outer pixel edges from regularly spaced coordinate centres."""
+    """Estimate pixel-edge bounds and clamp latitude to Web-Mercator's valid range."""
     dlat = float(np.median(np.abs(np.diff(lat))))
     dlon = float(np.median(np.diff(lon)))
-    north = min(90.0, float(np.max(lat)) + dlat / 2)
-    south = max(-90.0, float(np.min(lat)) - dlat / 2)
+    north = min(MAX_MERCATOR_LAT, float(np.max(lat)) + dlat / 2)
+    south = max(-MAX_MERCATOR_LAT, float(np.min(lat)) - dlat / 2)
     west = max(-180.0, float(np.min(lon)) - dlon / 2)
     east = min(180.0, float(np.max(lon)) + dlon / 2)
     return {"west": west, "south": south, "east": east, "north": north}
+
+
+def _resample_rows_to_web_mercator(data: np.ndarray, lat: np.ndarray, bounds: dict) -> np.ndarray:
+    """Resample equally spaced latitude rows to equally spaced EPSG:3857 rows."""
+    source_lat = lat[::-1]  # ascending
+    source = data[::-1, :]
+    north_y = _mercator_y(np.array([bounds["north"]]))[0]
+    south_y = _mercator_y(np.array([bounds["south"]]))[0]
+    target_y = np.linspace(north_y, south_y, data.shape[0])
+    target_lat = _inverse_mercator_y(target_y)
+    output = np.full(data.shape, np.nan, dtype=np.float32)
+    for row, latitude in enumerate(target_lat):
+        hi = int(np.searchsorted(source_lat, latitude, side="left"))
+        if hi <= 0:
+            lo = hi = 0
+        elif hi >= source_lat.size:
+            lo = hi = source_lat.size - 1
+        else:
+            lo = hi - 1
+        if lo == hi:
+            output[row] = source[lo]
+            continue
+        fraction = float((latitude - source_lat[lo]) / (source_lat[hi] - source_lat[lo]))
+        v0, v1 = source[lo], source[hi]
+        valid0, valid1 = np.isfinite(v0), np.isfinite(v1)
+        w0 = (1.0 - fraction) * valid0
+        w1 = fraction * valid1
+        weight = w0 + w1
+        numerator = np.where(valid0, v0, 0.0) * w0 + np.where(valid1, v1, 0.0) * w1
+        output[row] = np.divide(numerator, weight, out=np.full_like(numerator, np.nan), where=weight > 0)
+    return output
 
 
 def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
@@ -79,8 +117,10 @@ def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) 
 
 def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray,
                       output_path, vmin: float | None = None, vmax: float | None = None) -> dict:
-    """Render a scalar field as a transparent RGBA PNG and return geographic metadata."""
+    """Render a transparent RGBA PNG with rows resampled for Leaflet EPSG:3857."""
     data, lat, lon = normalize_regular_grid(values, latitudes, longitudes)
+    bounds = grid_bounds(lat, lon)
+    data = _resample_rows_to_web_mercator(data, lat, bounds)
     valid = np.isfinite(data)
     if not np.any(valid):
         raise ValueError("The selected field contains no valid numeric cells.")
@@ -94,14 +134,15 @@ def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.
     rgba = _colourize(safe, valid, low, high)
     Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
     return {
-        "bounds": grid_bounds(lat, lon),
+        "bounds": bounds,
         "width": int(lon.size),
         "height": int(lat.size),
         "value_min": low,
         "value_max": high,
         "valid_cells": int(valid.sum()),
         "missing_cells": int((~valid).sum()),
-        "coordinate_order": "north_to_south/west_to_east",
+        "coordinate_order": "north_to_south",
+        "render_projection": "EPSG:3857",
         "longitude_convention": "-180_to_180",
     }
 
