@@ -73,6 +73,12 @@ class PointQueryTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertAlmostEqual(result["value"], 140.0)
 
+    def test_bilinear_rejects_global_axis_with_only_one_unique_longitude(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_grid(tmp, [[1, 1], [2, 2]], [10, 0], [0, 360])
+            with self.assertRaisesRegex(ValueError, "at least two unique longitude columns"):
+                sample_npz(path, 5.0, 180.0, method="bilinear")
+
     def test_bilinear_global_seam_drops_duplicate_cyclic_endpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             values = [[0, 90, 180, 270, 0], [10, 100, 190, 280, 10]]
