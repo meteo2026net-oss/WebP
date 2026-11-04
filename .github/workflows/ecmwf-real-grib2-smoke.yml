@@ -127,7 +127,7 @@ jobs:
                   "manifest_layer_count": len(layers),
                   "validated_msl_layer_count": len(selected),
                   "validated_outputs": ["PNG", "NPZ", "manifest"],
-              }, indent=2) + "\\n",
+              }, indent=2) + "\n",
               encoding="utf-8",
           )
           print(f"Validated {len(selected)} real msl layer(s), source values, geolocation, PNG and NPZ outputs")
