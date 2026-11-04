@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self.btn_pause = QPushButton("إيقاف مؤقت")
         self.btn_stop = QPushButton("إيقاف آمن")
         self.btn_manifest = QPushButton("تصدير سجل الملفات CSV")
+        self.btn_process = QPushButton("معالجة الملفات المنزلة للخرائط")
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.btn_preview.clicked.connect(self._on_preview)
@@ -199,7 +200,8 @@ class MainWindow(QMainWindow):
         self.btn_pause.clicked.connect(self._on_pause)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_manifest.clicked.connect(self._on_manifest)
-        for b in (self.btn_preview, self.btn_start, self.btn_pause, self.btn_stop, self.btn_manifest):
+        self.btn_process.clicked.connect(self._on_process_downloads)
+        for b in (self.btn_preview, self.btn_start, self.btn_pause, self.btn_stop, self.btn_manifest, self.btn_process):
             act.addWidget(b)
         act.addStretch()
         dform.addRow(act)
@@ -314,7 +316,7 @@ class MainWindow(QMainWindow):
     def _busy(self, busy: bool):
         locked = busy or self._downloading
         for b in (self.btn_test, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
-                  self.btn_preview, self.btn_start):
+                  self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
     def _on_test(self):
@@ -474,6 +476,30 @@ class MainWindow(QMainWindow):
         if self._manager:
             self._manager.stop()
             self._log("جارٍ الإيقاف الآمن… تبقى الملفات الجزئية (.part) وتُستكمل لاحقًا.")
+
+    def _on_process_downloads(self):
+        download_root = self._download_root()
+        output_root = project_root() / "output" / "map_data"
+        self._log(f"بدء فحص ملفات GRIB المنزلة وتحويل الحقول المتوافقة: {download_root}")
+
+        def work():
+            from ..tools.process_downloads import process_tree
+            return process_tree(download_root, output_root)
+
+        self._run(work, self._process_downloads_done)
+
+    def _process_downloads_done(self, report):
+        converted = report.get("converted", [])
+        failed = report.get("failed", [])
+        layer_count = sum(item.get("layers", 0) for item in converted)
+        self._log(
+            f"انتهت المعالجة: ملفات حُوّلت={len(converted)}، طبقات={layer_count}، "
+            f"ملفات لم تُحوّل أو تعذّر فحصها={len(failed)}.\n"
+            f"قائمة الطبقات: {project_root() / 'output' / 'map_data' / 'manifest.json'}\n"
+            "لعرضها شغّل serve_map.py من مجلد المشروع ثم افتح الرابط الذي يظهر."
+        )
+        for item in failed[:10]:
+            self._log(f"لم تتم معالجة {item.get('source')}: {item.get('error')}")
 
     def _on_manifest(self):
         out = project_root() / "state" / "manifest.csv"
