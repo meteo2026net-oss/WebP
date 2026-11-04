@@ -12,6 +12,7 @@ import numpy as np
 
 from ecmwf_collector.tools.wind_grib_to_webp import (
     spatial_layout,
+    validate_component_geolocation,
     wind_speed_and_direction,
     compatible_component_units,
     optional_bool,
@@ -78,6 +79,30 @@ class WindGridTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "matching 2-D"):
             spatial_layout(da)
+
+    def test_component_geolocation_requires_identical_curvilinear_coordinates(self):
+        coords_u = {
+            "latitude": (("y", "x"), [[10.0, 10.0], [9.0, 9.0]]),
+            "longitude": (("y", "x"), [[20.0, 21.0], [20.0, 21.0]]),
+        }
+        coords_v = {
+            "latitude": (("y", "x"), [[10.0, 10.0], [9.0, 9.0]]),
+            "longitude": (("y", "x"), [[20.1, 21.1], [20.1, 21.1]]),
+        }
+        u_da = xr.DataArray(np.ones((2, 2)), dims=("y", "x"), coords=coords_u)
+        v_da = xr.DataArray(np.ones((2, 2)), dims=("y", "x"), coords=coords_v)
+        with self.assertRaisesRegex(ValueError, "different longitude coordinates"):
+            validate_component_geolocation(u_da, v_da)
+
+    def test_component_geolocation_accepts_matching_curvilinear_coordinates(self):
+        coords = {
+            "latitude": (("y", "x"), [[10.0, 10.0], [9.0, 9.0]]),
+            "longitude": (("y", "x"), [[20.0, 21.0], [20.0, 21.0]]),
+        }
+        u_da = xr.DataArray(np.ones((2, 2)), dims=("y", "x"), coords=coords)
+        v_da = xr.DataArray(np.ones((2, 2)), dims=("y", "x"), coords=coords)
+        layout = validate_component_geolocation(u_da, v_da)
+        self.assertEqual(layout[4], "curvilinear_geolocation")
 
     def test_speed_and_meteorological_direction_from(self):
         u = np.array([[0.0, 10.0, 0.0, -10.0, 0.0]], dtype=np.float32)
