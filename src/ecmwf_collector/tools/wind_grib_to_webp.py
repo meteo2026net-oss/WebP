@@ -14,6 +14,8 @@ from typing import Any
 import numpy as np
 import xarray as xr
 from PIL import Image
+from .map_render import render_wind_speed_png
+from .map_manifest import update_manifest
 
 U_CANDIDATES = ("u10", "10u", "u_10m", "u")
 V_CANDIDATES = ("v10", "10v", "v_10m", "v")
@@ -129,8 +131,33 @@ def main() -> None:
                 metadata[name] = json_value(value) if value.ndim == 0 else [json_value(x) for x in value.ravel()]
         metadata_path = args.output.with_suffix(".json")
         metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"Created texture: {args.output}")
+
+        # Also create a transparent, geographically placed display layer.
+        map_dir = Path("output/map_data")
+        map_dir.mkdir(parents=True, exist_ok=True)
+        display_path = map_dir / f"{args.input_grib.stem}_wind_speed.png"
+        display_grid = render_wind_speed_png(u, v, lat, lon, display_path)
+        map_record = {
+            "source_file": args.input_grib.name,
+            "variable": "wind_speed",
+            "long_name": "Wind speed",
+            "units": "m s-1",
+            "valid_time": metadata.get("valid_time") or metadata.get("time"),
+            "step": metadata.get("step"),
+            "image": display_path.name,
+            **display_grid,
+        }
+        update_manifest(map_dir, [map_record])
+        metadata["display_layer"] = {
+            "image": display_path.name,
+            "manifest": str(map_dir / "manifest.json"),
+            "bounds": display_grid["bounds"],
+        }
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Created scientific texture: {args.output}")
         print(f"Created metadata: {metadata_path}")
+        print(f"Created map overlay: {display_path}")
+        print(f"Updated map manifest: {map_dir / 'manifest.json'}")
         print(f"Grid: {lon.size} x {lat.size}; valid cells: {int(valid.sum())}")
         print(f"Encoding range: {args.vmin} .. {args.vmax} m/s")
     finally:
