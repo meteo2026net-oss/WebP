@@ -63,9 +63,13 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
             raise ValueError("Grid coordinates contain non-finite values.")
         if np.any(np.abs(latitudes) > 90.0):
             raise ValueError("Grid latitude coordinates are outside -90..90 degrees.")
+        if np.any(np.abs(longitudes) > 360.0):
+            raise ValueError("Grid longitude coordinates are outside -360..360 degrees.")
     else:
         geo_valid = (np.isfinite(latitudes) & np.isfinite(longitudes)
                      & (np.abs(latitudes) <= 90.0))
+        if np.any(np.abs(longitudes[geo_valid]) > 360.0):
+            raise ValueError("Grid longitude coordinates are outside -360..360 degrees.")
         if int(geo_valid.sum()) < 3:
             raise ValueError("Curvilinear grid has fewer than three valid geolocation cells.")
 
