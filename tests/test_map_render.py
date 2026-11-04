@@ -55,6 +55,15 @@ class MapRenderTests(unittest.TestCase):
             self.assertEqual(metadata["longitude_convention"], "continuous_unwrapped")
             self.assertTrue(path.exists())
 
+    def test_global_grid_bounds_keep_the_full_world_width(self):
+        values = np.arange(8, dtype=np.float32).reshape(2, 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "global.png"
+            metadata = render_scalar_png(values, [10, 0], [0, 90, 180, 270], path)
+            bounds = metadata["bounds"]
+            self.assertAlmostEqual(bounds["east"] - bounds["west"], 360.0)
+            self.assertEqual(metadata["width"], 4)
+
     def test_removes_duplicate_cyclic_longitude_endpoint(self):
         values = np.array([[1, 2, 3, 4, 99], [5, 6, 7, 8, 100]], dtype=np.float32)
         lat = np.array([10, 0])
