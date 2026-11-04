@@ -162,10 +162,98 @@ def _colourize(values: np.ndarray, valid: np.ndarray, vmin: float, vmax: float) 
     return rgba
 
 
+
+def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
+                                    longitudes: np.ndarray, output_path,
+                                    vmin: float | None = None,
+                                    vmax: float | None = None) -> dict:
+    """Reproject a 2-D geolocation grid to a regular Web-Mercator raster.
+
+    This path handles GRIB grids whose latitude/longitude coordinates are 2-D
+    (including rotated-pole, Lambert and polar-stereographic grids) without
+    guessing projection parameters: the decoder-provided geolocation is used.
+    """
+    try:
+        from pyproj import Transformer
+        from scipy.interpolate import griddata
+    except ImportError as exc:
+        raise RuntimeError(
+            "Curvilinear grid rendering requires pyproj and scipy."
+        ) from exc
+
+    data = np.asarray(values, dtype=np.float32)
+    lat = np.asarray(latitudes, dtype=np.float64)
+    lon = np.asarray(longitudes, dtype=np.float64)
+    if lat.ndim != 2 or lon.ndim != 2 or data.shape != lat.shape or data.shape != lon.shape:
+        raise ValueError("Curvilinear values, latitude and longitude must be matching 2-D arrays.")
+    if min(data.shape) < 2:
+        raise ValueError("Curvilinear grids must contain at least 2 rows and 2 columns.")
+    if not np.all(np.isfinite(lat)) or not np.all(np.isfinite(lon)):
+        raise ValueError("Curvilinear geolocation contains non-finite coordinates.")
+    if np.any(np.abs(lat) > 90.0):
+        raise ValueError("Curvilinear latitude coordinates must be within -90..90 degrees.")
+
+    # Unwrap around the circular-mean longitude so regional grids near ±180°
+    # remain narrow instead of being projected across almost the whole world.
+    radians = np.deg2rad(lon)
+    center = float(np.rad2deg(np.arctan2(np.nanmean(np.sin(radians)),
+                                        np.nanmean(np.cos(radians)))))
+    unwrapped_lon = center + ((lon - center + 180.0) % 360.0) - 180.0
+    lat_for_projection = np.clip(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
+    transformer = Transformer.from_crs(
+        "EPSG:4326", "EPSG:3857", always_xy=True, force_over=True
+    )
+    x, y = transformer.transform(unwrapped_lon, lat_for_projection)
+    x, y = np.asarray(x), np.asarray(y)
+    valid = np.isfinite(data) & np.isfinite(x) & np.isfinite(y)
+    if int(valid.sum()) < 3:
+        raise ValueError("At least three valid geolocated cells are required for reprojection.")
+
+    west, east = float(np.min(x[valid])), float(np.max(x[valid]))
+    south, north = float(np.min(y[valid])), float(np.max(y[valid]))
+    if not (east > west and north > south):
+        raise ValueError("Curvilinear grid has no two-dimensional map extent.")
+    height, width = data.shape
+    target_x = np.linspace(west, east, width)
+    target_y = np.linspace(north, south, height)
+    mesh_x, mesh_y = np.meshgrid(target_x, target_y)
+    points = np.column_stack((x[valid], y[valid]))
+    sampled = griddata(points, data[valid], (mesh_x, mesh_y), method="linear")
+    if not np.any(np.isfinite(sampled)):
+        raise ValueError("Curvilinear reprojection produced no valid raster cells.")
+
+    low = float(np.nanpercentile(sampled, 2)) if vmin is None else float(vmin)
+    high = float(np.nanpercentile(sampled, 98)) if vmax is None else float(vmax)
+    if not np.isfinite(low) or not np.isfinite(high) or high <= low:
+        low, high = float(np.nanmin(sampled)), float(np.nanmax(sampled))
+        if high <= low:
+            high = low + 1.0
+    rgba = _colourize(np.where(np.isfinite(sampled), sampled, low),
+                     np.isfinite(sampled), low, high)
+    Image.fromarray(rgba, mode="RGBA").save(output_path, format="PNG", optimize=True)
+
+    inverse = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+    west_lon, south_lat = inverse.transform(west, south)
+    east_lon, north_lat = inverse.transform(east, north)
+    return {
+        "bounds": {"west": float(west_lon), "south": float(south_lat),
+                   "east": float(east_lon), "north": float(north_lat)},
+        "width": int(width), "height": int(height),
+        "value_min": low, "value_max": high,
+        "valid_cells": int(np.isfinite(sampled).sum()),
+        "missing_cells": int((~np.isfinite(sampled)).sum()),
+        "coordinate_order": "north_to_south",
+        "render_projection": "EPSG:3857",
+        "longitude_convention": "curvilinear_unwrapped",
+        "source_grid_type": "curvilinear_geolocation",
+        "resampling": "linear",
+    }
+
+
 def render_scalar_png(values: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray,
                       output_path, vmin: float | None = None, vmax: float | None = None) -> dict:
     """Render a transparent RGBA PNG with rows resampled for Leaflet EPSG:3857."""
-    data, lat, lon, longitude_convention = normalize_regular_grid(values, latitudes, longitudes)
+    if np.asarray(latitudes).ndim == 2 or np.asarray(longitudes).ndim == 2:\n        return _render_curvilinear_scalar_png(values, latitudes, longitudes, output_path, vmin, vmax)\n    data, lat, lon, longitude_convention = normalize_regular_grid(values, latitudes, longitudes)
     bounds = grid_bounds(lat, lon)
     data = _resample_rows_to_web_mercator(data, lat, bounds)
     valid = np.isfinite(data)
