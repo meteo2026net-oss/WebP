@@ -161,7 +161,7 @@ class PointQueryTests(unittest.TestCase):
             lon = [[-120.0, 0.0, 120.0], [-120.0, 0.0, 120.0], [-120.0, 0.0, 120.0]]
             values = np.arange(9, dtype=np.float32).reshape(3, 3)
             path = self._write_grid(tmp, values, lat, lon)
-            result = sample_npz(path, 80.0, 175.0)
+            result = sample_npz(path, 80.0, 160.0)
             self.assertTrue(result["valid"])
             self.assertEqual(result["value"], 5.0)
             self.assertEqual(result["longitude"], 120.0)
