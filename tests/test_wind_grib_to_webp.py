@@ -315,5 +315,18 @@ class WindGridTests(unittest.TestCase):
 
 
 
+
+    def test_rejects_infinite_curvilinear_wind_geolocation(self):
+        da = FakeDataArray(
+            ("y", "x"),
+            {
+                "latitude": FakeCoordinate([[10.0, np.inf], [9.0, 9.0]], ("y", "x")),
+                "longitude": FakeCoordinate([[20.0, np.inf], [21.0, 22.0]], ("y", "x")),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "must not contain infinite"):
+            spatial_layout(da)
+
+
 if __name__ == "__main__":
     unittest.main()
