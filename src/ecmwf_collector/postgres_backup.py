@@ -171,7 +171,7 @@ def create_postgres_backup(
         manifest_path = destination.with_suffix(destination.suffix + ".json")
         try:
             manifest_tmp.write_text(
-                json.dumps(metadata, ensure_ascii=False, indent=2) + "\\n",
+                json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
             os.replace(temporary, destination)
