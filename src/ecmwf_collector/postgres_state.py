@@ -7,7 +7,7 @@ from pathlib import Path
 from .state import COLUMNS, FileRecord, utc_now
 
 CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS files (
+CREATE TABLE IF NOT EXISTS public.files (
     remote_path TEXT PRIMARY KEY,
     remote_size BIGINT,
     local_path TEXT,
