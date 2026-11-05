@@ -105,7 +105,7 @@ python -m unittest discover -s tests -t . -v
 - ينشئ التطبيق بياناته القابلة للكتابة في `%LOCALAPPDATA%\\ECMWFWebP` عند التشغيل المجمّد؛ لا تُكتب التنزيلات أو الإعدادات داخل مجلد البرنامج.
 - ينشئ GitHub Actions حزمة باسم `ECMWFWebP-Windows-x64` تشمل `START.bat` وملف `SHA256SUMS.txt` للتحقق من سلامة ملفات الحزمة. الحزمة التجريبية متاحة من صفحة تشغيل Workflow لمدة 14 يوماً.
 
-**حالة التحقق:** نجح تشغيل Windows CI رقم 130 على commit `c0aaa41d5f7653705aa14f48f1a95f3c6a436e1d`، بما في ذلك بناء EXE واختبار بدء التطبيق وخادم الخرائط ورفع artifact باسم `ECMWFWebP-Windows-x64`. بصمة artifact المنشور: `sha256:21577713a6b8eb2ece8e45c2af3b0459913aa6df0c6009bf288af229fb56a00c`. الأثر متاح لمدة 14 يوماً من تشغيل Actions. هذه نتيجة بناء واختبار آلي على GitHub-hosted Windows runner، وليست بديلاً عن تجربة الحزمة على جهاز Windows نظيف مستقل.
+**حالة التحقق:** نجح تشغيل Windows CI رقم 41994624135 على commit `d6bd76fd982119bb4c13335b91ecce2c917a69b4`، بما في ذلك بناء EXE واختبار بدء التطبيق وخادم الخرائط ورفع artifact باسم `ECMWFWebP-Windows-x64`. بصمة artifact المنشور: `sha256:772d39dd3b7b3c728c6a751dbbc8c05186d4c21e591aa6a00ba5369d08932fca`. الأثر متاح لمدة 14 يوماً من تشغيل Actions. هذه نتيجة بناء واختبار آلي على GitHub-hosted Windows runner، وليست بديلاً عن تجربة الحزمة على جهاز Windows نظيف مستقل.
 
 **تنبيه:** هذا المسار لا يثبت PostgreSQL ولا يغيّر سجل الحالة الحالي من SQLite. لا تعتبر الحزمة إصداراً نهائياً قبل اختبارها على جهاز Windows نظيف. الإصدار الحالي المستهدف والمبني هو Windows x64؛ دعم ARM64 وmacOS وLinux يحتاج حزم بناء مستقلة.
 
