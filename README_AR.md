@@ -121,3 +121,16 @@ python -m ecmwf_collector.tools.migrate_sqlite_to_postgres --sqlite state/state.
 - يمكن تشغيل التطبيق بعد ذلك من الطرفية نفسها التي تحتوي على متغير البيئة.
 
 **ما لم ينجز بعد:** تثبيت/تهيئة خادم PostgreSQL محلياً على Windows تلقائياً، إنشاء حساب خدمة آمن، إدارة سر الاتصال عبر Windows Credential Manager، وإعداد الترحيل/الاختبار على جهاز نظيف. لا تضع كلمة المرور في BAT أو Git أو سجل التشغيل. لا تعتبر إضافة backend وحدها تثبيتاً تلقائياً لـ PostgreSQL.
+
+
+### إعداد اتصال PostgreSQL بأمان
+
+بعد تثبيت خادم PostgreSQL وإنشاء قاعدة البيانات والمستخدم:
+```powershell
+python -m ecmwf_collector.tools.configure_postgres
+```
+تطلب الأداة سلسلة الاتصال بإدخال مخفي، تختبر الاتصال وإنشاء جدول الحالة، ثم تحفظ السلسلة في مخزن بيانات الاعتماد الخاص بنظام التشغيل عبر `keyring`. لا تضع سلسلة الاتصال في ملف BAT أو JSON أو Git. لإزالة بيانات الاتصال المحفوظة:
+```powershell
+python -m ecmwf_collector.tools.configure_postgres --remove
+```
+يمكن تجاوز بيانات الاعتماد المحفوظة مؤقتاً بمتغير البيئة `ECMWF_POSTGRES_DSN`. أداة الترحيل تقرأ المصدر نفسه، وتستخدم الآن SQLite Online Backup لالتقاط نسخة متسقة حتى عند وجود WAL أو كون التطبيق مفتوحاً.
