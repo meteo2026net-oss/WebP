@@ -27,7 +27,7 @@ class PostgresBackupTests(unittest.TestCase):
             bin_dir.mkdir(parents=True)
             executable = bin_dir / "pg_dump.exe"
             executable.write_bytes(b"")
-            with patch.dict(os.environ, {"ProgramFiles": temp}, clear=True), \\
+            with patch.dict(os.environ, {"ProgramFiles": temp}, clear=True), \
                  patch.object(postgres_backup.shutil, "which", return_value=None):
                 self.assertEqual(postgres_backup._tool("pg_dump"), str(executable))
 
