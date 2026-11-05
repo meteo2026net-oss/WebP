@@ -1,5 +1,6 @@
 import sqlite3
 import tempfile
+from contextlib import closing
 import unittest
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from ecmwf_collector.state_backup import (
 class StateBackupTests(unittest.TestCase):
     def _database(self, root: Path) -> Path:
         path = root / "state.db"
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db:
             db.execute(
                 "CREATE TABLE files (remote_path TEXT PRIMARY KEY, status TEXT NOT NULL)"
             )
@@ -28,7 +29,7 @@ class StateBackupTests(unittest.TestCase):
             root = Path(temp)
             source = self._database(root)
             backup = create_manual_backup(source, root / "backups")
-            with sqlite3.connect(backup) as db:
+            with closing(sqlite3.connect(backup)) as db:
                 self.assertEqual(
                     db.execute("SELECT remote_path,status FROM files").fetchone(),
                     ("/archive/2026/11/sample.grib2", "downloaded"),
@@ -40,11 +41,11 @@ class StateBackupTests(unittest.TestCase):
             root = Path(temp)
             source = self._database(root)
             first = ensure_daily_backup(source, root / "backups")
-            with sqlite3.connect(source) as db:
+            with closing(sqlite3.connect(source)) as db:
                 db.execute("UPDATE files SET status='validated'")
             second = ensure_daily_backup(source, root / "backups")
             self.assertEqual(first, second)
-            with sqlite3.connect(second) as db:
+            with closing(sqlite3.connect(second)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
 
     def test_daily_backup_is_refreshed_if_existing_snapshot_is_corrupt(self):
@@ -55,7 +56,7 @@ class StateBackupTests(unittest.TestCase):
             first.write_bytes(b"not a sqlite database")
             refreshed = ensure_daily_backup(source, root / "backups")
             self.assertNotEqual(first, refreshed)
-            with sqlite3.connect(refreshed) as db:
+            with closing(sqlite3.connect(refreshed)) as db:
                 self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
     def test_missing_database_does_not_create_an_empty_backup(self):
@@ -78,12 +79,12 @@ class StateBackupTests(unittest.TestCase):
             root = Path(temp)
             target = self._database(root)
             backup = create_manual_backup(target, root / "backups")
-            with sqlite3.connect(target) as db:
+            with closing(sqlite3.connect(target)) as db:
                 db.execute("UPDATE files SET status='validated'")
             safety = restore_sqlite_backup(backup, target, root / "backups")
-            with sqlite3.connect(target) as db:
+            with closing(sqlite3.connect(target)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
-            with sqlite3.connect(safety) as db:
+            with closing(sqlite3.connect(safety)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "validated")
 
     def test_restore_refuses_live_sqlite_wal_sidecar_without_replacing_database(self):
@@ -91,12 +92,12 @@ class StateBackupTests(unittest.TestCase):
             root = Path(temp)
             target = self._database(root)
             backup = create_manual_backup(target, root / "backups")
-            with sqlite3.connect(target) as db:
+            with closing(sqlite3.connect(target)) as db:
                 db.execute("UPDATE files SET status='validated'")
             Path(f"{target}-wal").write_bytes(b"active")
             with self.assertRaisesRegex(RuntimeError, "sidecar"):
                 restore_sqlite_backup(backup, target, root / "backups")
-            with sqlite3.connect(target) as db:
+            with closing(sqlite3.connect(target)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "validated")
 
     def test_restore_rejects_invalid_backup_without_touching_current_database(self):
@@ -107,7 +108,7 @@ class StateBackupTests(unittest.TestCase):
             invalid.write_bytes(b"not sqlite")
             with self.assertRaises(sqlite3.DatabaseError):
                 restore_sqlite_backup(invalid, target, root / "backups")
-            with sqlite3.connect(target) as db:
+            with closing(sqlite3.connect(target)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
 
     def test_backup_failure_does_not_replace_original_database(self):
