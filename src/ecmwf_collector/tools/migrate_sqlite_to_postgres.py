@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ecmwf_collector.state import StateStore
 from ecmwf_collector.postgres_state import PostgresStateStore
+from ecmwf_collector.secrets_store import SecretStore
 
 
 def main() -> int:
@@ -16,9 +17,12 @@ def main() -> int:
     parser.add_argument("--sqlite", type=Path, default=Path("state/state.db"))
     parser.add_argument("--backup-dir", type=Path, default=Path("state/backups"))
     args = parser.parse_args()
-    dsn = os.environ.get("ECMWF_POSTGRES_DSN")
+    dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip() or SecretStore().get_postgres_dsn()
     if not dsn:
-        parser.error("Set ECMWF_POSTGRES_DSN to the target PostgreSQL connection string.")
+        parser.error(
+            "Configure a DSN with python -m ecmwf_collector.tools.configure_postgres "
+            "or set ECMWF_POSTGRES_DSN."
+        )
     source = args.sqlite.resolve()
     if not source.is_file():
         parser.error(f"SQLite database not found: {source}")
