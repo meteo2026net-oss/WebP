@@ -34,11 +34,11 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
     def test_parses_windows_postgres_service_state(self):
         listed = type("Result", (), {
             "returncode": 0,
-            "stdout": "SERVICE_NAME: postgresql-x64-17\\n        DISPLAY_NAME: PostgreSQL Server 17\\n",
+            "stdout": "SERVICE_NAME: postgresql-x64-17\n        DISPLAY_NAME: PostgreSQL Server 17\n",
         })()
         detail = type("Result", (), {
             "returncode": 0,
-            "stdout": "SERVICE_NAME: postgresql-x64-17\\n        STATE              : 4  RUNNING\\n",
+            "stdout": "SERVICE_NAME: postgresql-x64-17\n        STATE              : 4  RUNNING\n",
         })()
         with patch.object(postgres_windows.os, "name", "nt"), \\
              patch.object(postgres_windows.subprocess, "run", side_effect=[listed, detail]):
