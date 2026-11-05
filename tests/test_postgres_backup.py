@@ -8,6 +8,26 @@ from ecmwf_collector import postgres_backup
 
 
 class PostgresBackupTests(unittest.TestCase):
+
+    def test_discovers_tools_from_standard_windows_install_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bin_dir = Path(temp) / "PostgreSQL" / "17" / "bin"
+            bin_dir.mkdir(parents=True)
+            executable = bin_dir / "pg_dump.exe"
+            executable.write_bytes(b"")
+            with patch.dict(os.environ, {"ProgramFiles": temp}, clear=True), \\
+                 patch.object(postgres_backup.shutil, "which", return_value=None):
+                self.assertEqual(postgres_backup._tool("pg_dump"), str(executable))
+
+    def test_explicit_tool_override_takes_precedence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            executable = Path(temp) / "custom-pg_dump.exe"
+            executable.write_bytes(b"")
+            with patch.object(postgres_backup.shutil, "which", return_value=None):
+                self.assertEqual(
+                    postgres_backup._tool("pg_dump", str(executable)), str(executable)
+                )
+
     def test_backup_uses_password_environment_not_command_line_and_validates_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             calls = []
