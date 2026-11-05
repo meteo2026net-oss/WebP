@@ -39,6 +39,19 @@ def main() -> int:
     for name in ("config", "downloads", "processed", "logs", "state", "output"):
         (data_root / name).mkdir(parents=True, exist_ok=True)
     setup_logging(data_root / "logs")
+    # Protect the existing SQLite history before opening either backend.
+    # This is non-blocking: a backup failure is logged, but never prevents startup.
+    sqlite_path = data_root / "state" / "state.db"
+    if sqlite_path.is_file():
+        try:
+            from ecmwf_collector.state_backup import ensure_daily_backup
+            backup = ensure_daily_backup(sqlite_path, data_root / "state" / "backups", keep=30)
+            if backup:
+                import logging
+                logging.getLogger(__name__).info("Verified daily SQLite backup: %s", backup)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Automatic SQLite backup failed; original database was not changed.")
     config_path = data_root / "config" / "settings.json"
     cfg = load_config(config_path)
     from PySide6.QtCore import Qt
