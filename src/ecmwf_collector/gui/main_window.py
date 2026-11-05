@@ -309,8 +309,10 @@ class MainWindow(QMainWindow):
         sqlite_store = self.state
         postgres_store = None
         backup_path = None
+        app_role_provisioned = False
+        backend_switched = False
         try:
-            from ..postgres_provision import provision_application_login
+            from ..postgres_provision import provision_application_login, remove_new_application_login
             from ..postgres_state import PostgresStateStore
             from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
 
@@ -323,6 +325,7 @@ class MainWindow(QMainWindow):
 
             source_records = sqlite_store.all_records()
             app_dsn = provision_application_login(admin_dsn)
+            app_role_provisioned = True
             register_secret(app_dsn)
             postgres_store = PostgresStateStore(app_dsn)
             postgres_store.import_records(source_records)
@@ -343,6 +346,8 @@ class MainWindow(QMainWindow):
                 )
 
             self.state = postgres_store
+            backend_switched = True
+            app_role_provisioned = False
             postgres_store = None
             sqlite_store.close()
             self._log(
@@ -359,6 +364,12 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             if postgres_store is not None:
                 postgres_store.close()
+            if app_role_provisioned and not backend_switched:
+                try:
+                    remove_new_application_login(admin_dsn)
+                    self._log("أُزيل حساب PostgreSQL الذي أُنشئ في هذه المحاولة الفاشلة؛ بقي جدول PostgreSQL وبياناته ونسخة SQLite دون حذف.")
+                except Exception:
+                    self._log("تحذير: تعذّر تأكيد إزالة حساب PostgreSQL الجديد؛ افحص الحساب ecmwf_webp_app قبل إعادة المحاولة.")
             self._log(f"تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية كما هي: {type(exc).__name__}")
             QMessageBox.critical(
                 self, "فشل ربط PostgreSQL",
