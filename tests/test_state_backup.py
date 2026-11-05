@@ -22,6 +22,9 @@ class StateBackupTests(unittest.TestCase):
                 "INSERT INTO files(remote_path,status) VALUES (?,?)",
                 ("/archive/2026/11/sample.grib2", "downloaded"),
             )
+            # closing() closes the connection but does not commit its transaction.
+            # Commit the fixture explicitly so the backup tests exercise persisted rows.
+            db.commit()
         return path
 
     def test_manual_backup_is_a_verified_consistent_copy(self):
