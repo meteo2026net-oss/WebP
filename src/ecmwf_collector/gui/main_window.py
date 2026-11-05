@@ -532,10 +532,15 @@ class MainWindow(QMainWindow):
             ("PostgreSQL موجود مسبقاً." if result.get("already_present")
              else "اكتمل تثبيت PostgreSQL واكتشف التطبيق الخادم.")
             + "\n\nخدمات Windows:\n" + service_text
-            + "\n\nالخطوة التالية: استخدم «ربط PostgreSQL ونقل السجل»، "
-              "وأدخل سلسلة اتصال المدير التي أنشأتها داخل مثبّت EDB. "
-              "لن تُحفظ بيانات اعتماد المدير.",
+            + "\n\nيمكنك الآن ربط PostgreSQL ونقل سجل SQLite بعد إنشاء نسخة احتياطية والتحقق من السجلات. "
+              "سيُطلب منك إدخال سلسلة اتصال المدير، ولن تُحفظ بيانات اعتماده.",
         )
+        if QMessageBox.question(
+            self, "ربط PostgreSQL الآن",
+            "سيُنشأ حساب تطبيق محدود الصلاحيات، وتُنقل السجلات بعد إنشاء نسخة SQLite احتياطية والتحقق منها. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        ) == QMessageBox.Yes:
+            self._on_configure_postgres()
 
     def _on_diagnose_postgres(self):
         """Show read-only local PostgreSQL installation and service diagnostics."""
