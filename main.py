@@ -18,7 +18,21 @@ from ecmwf_collector.state_backend import (
 from ecmwf_collector.logging_setup import redact
 
 
+def _select_postgres_dsn(secrets, *, preflight_sqlite: bool = False, environ=None) -> str | None:
+    """Select the normal DSN, or skip all credential lookups for isolated package preflight."""
+    if preflight_sqlite:
+        return None
+    source = os.environ if environ is None else environ
+    return source.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
+
+
 def main() -> int:
+    preflight_sqlite = "--preflight-sqlite" in sys.argv[1:]
+    if preflight_sqlite:
+        # This private smoke-test switch prevents Qt from seeing an unknown argument.
+        sys.argv = [sys.argv[0]] + [
+            argument for argument in sys.argv[1:] if argument != "--preflight-sqlite"
+        ]
     if "--map-server" in sys.argv[1:]:
         try:
             from serve_map import main as map_main
@@ -60,7 +74,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
     secrets = SecretStore()
-    postgres_dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
+    postgres_dsn = _select_postgres_dsn(secrets, preflight_sqlite=preflight_sqlite)
 
     def recover_postgres(exc: Exception, environment_dsn: bool) -> str:
         from PySide6.QtWidgets import QMessageBox

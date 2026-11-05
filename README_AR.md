@@ -105,6 +105,7 @@ python -m unittest discover -s tests -t . -v
 - ينشئ التطبيق بياناته القابلة للكتابة في `%LOCALAPPDATA%\\ECMWFWebP` عند التشغيل المجمّد؛ لا تُكتب التنزيلات أو الإعدادات داخل مجلد البرنامج.
 - ينشئ GitHub Actions حزمة باسم `ECMWFWebP-Windows-x64` تشمل `START.bat` وملف `SHA256SUMS.txt` للتحقق من سلامة ملفات الحزمة. الحزمة التجريبية متاحة من صفحة تشغيل Workflow لمدة 14 يوماً.
 - تتضمن الحزمة أيضاً `Verify-ECMWFWebP.ps1`؛ شغّله من PowerShell قبل الاستخدام للتحقق آلياً من كل بصمات الملفات، تشغيل EXE، مجلد بيانات المستخدم، وخادم الخرائط. يحفظ تقرير قبول محلياً دون إدراج بيانات الاعتماد.
+  يعمل اختبار الواجهة ببيانات مؤقتة ووضع SQLite معزول حتى لا يقرأ بيانات PostgreSQL المحفوظة أو يتصل بخدمة خارجية.
 
 **أحدث تحقق ناجح (5 نوفمبر 2026):** نجح Windows CI رقم [42048111241](https://github.com/meteo2026net-oss/WebP/actions/runs/42048111241) على commit `aa4c46e2f1e568b063fc465b7e0399d526bd5750`. اجتاز 297 اختبار وحدة خلال 6.15 ثوانٍ، وتجميع Python، وبناء EXE، واختبار تشغيل التطبيق، واختبار خادم الخرائط وملفات HTML/CSS/JS، ثم رفع الحزمة. كما نجح Linux PR workflow رقم [42048111344](https://github.com/meteo2026net-oss/WebP/actions/runs/42048111344) مع 297 اختباراً وفحص JavaScript. بصمة حزمة Windows: `sha256:a81d5d8996eb807c8b3e18e9916e047fea9ddee793f3b3cd7e20d1074ac10ccc`. الحزمة متاحة في صفحة Workflow لمدة 14 يوماً من الرفع. هذا تحقق آلي على Windows runner وليس بديلاً عن تجربة جهاز Windows مستقل.
 

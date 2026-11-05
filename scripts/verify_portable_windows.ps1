@@ -23,6 +23,8 @@ $reportPath = Join-Path $reportRoot ("portable-acceptance-" + (Get-Date -Format 
 $appProcess = $null
 $mapProcess = $null
 $httpClient = $null
+$originalLocalAppData = $env:LOCALAPPDATA
+$temporaryDataRoot = $null
 
 function Add-Check {
     param([string]$Name, [bool]$Passed, [string]$Detail)
@@ -81,9 +83,9 @@ function Get-HttpResult {
 }
 
 try {
-    $isWindows = ($env:OS -eq "Windows_NT")
+    $isWindowsOS = ($env:OS -eq "Windows_NT")
     $is64Bit = [Environment]::Is64BitOperatingSystem
-    Add-Check "Operating system" ($isWindows -and $is64Bit) "Windows=$isWindows; 64-bit=$is64Bit; PowerShell=$($PSVersionTable.PSVersion)"
+    Add-Check "Operating system" ($isWindowsOS -and $is64Bit) "Windows=$isWindowsOS; 64-bit=$is64Bit; PowerShell=$($PSVersionTable.PSVersion)"
 
     foreach ($required in @($exe, $launcher, $manifest)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
@@ -127,7 +129,20 @@ try {
     Remove-Item -LiteralPath $probe -Force
     Add-Check "User data directory" $true "The per-user application data directory is writable"
 
-    $appProcess = Start-Process -FilePath $exe -WorkingDirectory $root -PassThru
+    # Use a disposable data root and explicit SQLite mode so the preflight never
+    # reads the user's saved PostgreSQL DSN or touches their real state database.
+    $temporaryDataRoot = Join-Path $env:TEMP ("ECMWFWebP-preflight-" + [guid]::NewGuid().ToString("N"))
+    [void](New-Item -ItemType Directory -Path $temporaryDataRoot -Force)
+    try {
+        $env:LOCALAPPDATA = $temporaryDataRoot
+        $appProcess = Start-Process -FilePath $exe -ArgumentList @("--preflight-sqlite") -WorkingDirectory $root -PassThru
+    } finally {
+        if ($null -ne $originalLocalAppData) {
+            $env:LOCALAPPDATA = $originalLocalAppData
+        } else {
+            Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue
+        }
+    }
     Start-Sleep -Seconds $StartupSeconds
     $appProcess.Refresh()
     if ($appProcess.HasExited) { throw "The packaged desktop application exited during startup (code $($appProcess.ExitCode))." }
@@ -137,7 +152,16 @@ try {
     if (Test-TcpPort -HostName "127.0.0.1" -Port 8765) {
         throw "Port 8765 is already in use. Close any running ECMWFWebP map viewer and rerun this preflight."
     }
-    $mapProcess = Start-Process -FilePath $exe -ArgumentList @("--map-server", "--no-browser") -WorkingDirectory $root -PassThru -WindowStyle Hidden
+    try {
+        $env:LOCALAPPDATA = $temporaryDataRoot
+        $mapProcess = Start-Process -FilePath $exe -ArgumentList @("--map-server", "--no-browser") -WorkingDirectory $root -PassThru -WindowStyle Hidden
+    } finally {
+        if ($null -ne $originalLocalAppData) {
+            $env:LOCALAPPDATA = $originalLocalAppData
+        } else {
+            Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue
+        }
+    }
 
     $handler = New-Object System.Net.Http.HttpClientHandler
     $handler.UseProxy = $false
@@ -186,6 +210,14 @@ try {
         if (-not $appProcess.WaitForExit(5000)) {
             Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
         }
+    }
+    if ($null -ne $originalLocalAppData) {
+        $env:LOCALAPPDATA = $originalLocalAppData
+    } else {
+        Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue
+    }
+    if ($temporaryDataRoot -and (Test-Path -LiteralPath $temporaryDataRoot)) {
+        Remove-Item -LiteralPath $temporaryDataRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     [void](New-Item -ItemType Directory -Path $reportRoot -Force)
