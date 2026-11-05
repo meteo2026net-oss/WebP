@@ -33,10 +33,10 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
             "server_installation_detected": True,
             "services": [{"name": "postgresql-x64-16", "state": "RUNNING"}],
         }
-        with patch.object(postgres_windows.os, "name", "nt"), \\
+        with patch.object(postgres_windows.os, "name", "nt"), \
              patch.object(postgres_windows, "diagnose_postgres_installation",
-                          side_effect=[{"server_installation_detected": False}, detected]), \\
-             patch.object(postgres_windows.shutil, "which", return_value="C:/Windows/winget.exe"), \\
+                          side_effect=[{"server_installation_detected": False}, detected]), \
+             patch.object(postgres_windows.shutil, "which", return_value="C:/Windows/winget.exe"), \
              patch.object(postgres_windows.subprocess, "run") as run:
             run.return_value = type("Result", (), {
                 "returncode": 0, "stdout": "", "stderr": "",
@@ -51,8 +51,8 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
 
     def test_installer_does_not_reinstall_existing_server(self):
         detected = {"server_installation_detected": True, "services": []}
-        with patch.object(postgres_windows.os, "name", "nt"), \\
-             patch.object(postgres_windows, "diagnose_postgres_installation", return_value=detected), \\
+        with patch.object(postgres_windows.os, "name", "nt"), \
+             patch.object(postgres_windows, "diagnose_postgres_installation", return_value=detected), \
              patch.object(postgres_windows.subprocess, "run") as run:
             result = postgres_windows.install_postgres_with_winget()
         run.assert_not_called()
