@@ -337,34 +337,34 @@ class MainWindow(QMainWindow):
                 "انتظر انتهاء المهام الحالية قبل إنشاء النسخة الاحتياطية.",
             )
             return
-        backup_dir = project_root() / "state" / "backups"
-        try:
-            if isinstance(self.state, StateStore):
-                from ..state_backup import create_manual_backup
 
+        backup_dir = project_root() / "state" / "backups"
+        state = self.state
+
+        def create_backup():
+            if isinstance(state, StateStore):
+                from ..state_backup import create_manual_backup
                 backup = create_manual_backup(
                     project_root() / "state" / "state.db", backup_dir, keep=30
                 )
-                kind = "SQLite"
-            elif isinstance(self.state, PostgresStateStore):
+                return "SQLite", backup
+            if isinstance(state, PostgresStateStore):
                 from ..postgres_backup import create_postgres_backup
+                backup = create_postgres_backup(state._dsn, backup_dir, keep=30)
+                return "PostgreSQL", backup
+            raise RuntimeError("نوع قاعدة البيانات النشطة غير معروف؛ لم يُجر أي تغيير.")
 
-                backup = create_postgres_backup(self.state._dsn, backup_dir, keep=30)
-                kind = "PostgreSQL"
-            else:
-                raise RuntimeError("نوع قاعدة البيانات النشطة غير معروف؛ لم يُجر أي تغيير.")
+        def backup_done(result):
+            kind, backup = result
             self._log(f"اكتملت نسخة {kind} الاحتياطية والتحقق منها: {backup}")
             QMessageBox.information(
                 self, "اكتمل النسخ الاحتياطي",
-                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\n\n{backup}\n\n"
+                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\\n\\n{backup}\\n\\n"
                 "يُحتفظ بآخر 30 نسخة من هذا النوع.",
             )
-        except Exception as exc:
-            self._log(f"فشل النسخ الاحتياطي: {type(exc).__name__}: {redact(str(exc))}")
-            QMessageBox.critical(
-                self, "تعذّر إنشاء النسخة الاحتياطية",
-                f"لم تُعدّل قاعدة البيانات الأصلية.\\n{type(exc).__name__}: {redact(str(exc))}",
-            )
+
+        self._log("جارٍ إنشاء نسخة احتياطية والتحقق منها في الخلفية…")
+        self._run(create_backup, backup_done)
 
     def _on_restore_postgres(self):
         if self._downloading or self._workers:
