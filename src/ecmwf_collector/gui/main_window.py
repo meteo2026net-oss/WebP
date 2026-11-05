@@ -398,8 +398,8 @@ class MainWindow(QMainWindow):
 
         admin_dsn, accepted = QInputDialog.getText(
             self, "صلاحية استعادة PostgreSQL",
-            "أدخل سلسلة اتصال مالك قاعدة البيانات أو المدير (الإدخال مخفي). "
-            "لن تُحفظ هذه البيانات:",
+            "أدخل سلسلة اتصال حساب PostgreSQL بصلاحية SUPERUSER (الإدخال مخفي). "
+            "حساب مالك قاعدة البيانات غير كافٍ للاستعادة الكاملة. لن تُحفظ هذه البيانات:",
             QLineEdit.Password,
         )
         if not accepted or not admin_dsn.strip():
