@@ -225,3 +225,125 @@ def validate_postgres_backup_manifest(archive: Path) -> dict[str, object]:
     if not hmac.compare_digest(digest, expected_digest):
         raise ValueError("PostgreSQL backup checksum does not match its manifest.")
     return metadata
+
+
+
+def _assert_postgres_restore_access(dsn: str) -> str:
+    """Require database ownership or superuser and the existing application role."""
+    try:
+        import psycopg
+    except ImportError as exc:
+        raise RuntimeError("PostgreSQL restore requires psycopg[binary].") from exc
+    with psycopg.connect(dsn, connect_timeout=8) as conn:
+        row = conn.execute(
+            """
+            SELECT current_database(), r.rolsuper, d.datdba = r.oid,
+                   EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ecmwf_webp_app')
+            FROM pg_database AS d
+            JOIN pg_roles AS r ON r.rolname = current_user
+            WHERE d.datname = current_database()
+            """
+        ).fetchone()
+    if not row:
+        raise RuntimeError("Could not verify PostgreSQL restore privileges.")
+    database, is_superuser, is_owner, app_role_exists = row
+    if not (is_superuser or is_owner):
+        raise PermissionError(
+            "PostgreSQL restore requires the target database owner or a superuser account."
+        )
+    if not app_role_exists:
+        raise RuntimeError(
+            "The restricted application role ecmwf_webp_app is missing; restore was not started."
+        )
+    return str(database)
+
+
+def restore_postgres_backup(
+    dsn: str,
+    archive: Path,
+    backup_dir: Path,
+    *,
+    pg_dump: str | None = None,
+    pg_restore: str | None = None,
+    timeout: int = 3600,
+) -> Path:
+    """Restore a verified archive transactionally after creating a safety backup.
+
+    The archive must belong to the selected database. PostgreSQL executes the
+    replacement in one transaction, so a failed pg_restore cannot leave a
+    partially restored database. The restricted app role's grants are restored
+    after the archive is applied.
+    """
+    archive = Path(archive)
+    metadata = validate_postgres_backup_manifest(archive)
+    values = _connection_parts(dsn)
+    target_database = values.get("dbname")
+    if not target_database or metadata["database"] != target_database:
+        raise ValueError(
+            "Backup database does not match the selected PostgreSQL database; restore was refused."
+        )
+    database = _assert_postgres_restore_access(dsn)
+    restore_exe = _tool("pg_restore", pg_restore)
+    dump_exe = _tool("pg_dump", pg_dump)
+    _validate_tool_pair(dump_exe, restore_exe)
+    options, env = _command_options(values)
+
+    listing = subprocess.run(
+        [restore_exe, "--list", str(archive)],
+        env=env, capture_output=True, text=True, timeout=min(timeout, 300), check=False,
+    )
+    if listing.returncode:
+        detail = (listing.stderr or listing.stdout or "pg_restore archive inspection failed").strip()
+        raise RuntimeError(f"PostgreSQL archive inspection failed: {detail[-1500:]}")
+
+    # Preserve the live database immediately before any destructive restore.
+    safety_backup = create_postgres_backup(
+        dsn, backup_dir, keep=30, pg_dump=dump_exe, pg_restore=restore_exe,
+        timeout=timeout,
+    )
+    command = [
+        restore_exe, "--no-password", "--exit-on-error", "--single-transaction",
+        "--clean", "--if-exists", "--no-owner", "--no-privileges",
+        *options, str(archive),
+    ]
+    result = subprocess.run(
+        command, env=env, capture_output=True, text=True, timeout=timeout, check=False,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "pg_restore failed").strip()
+        raise RuntimeError(
+            "PostgreSQL restore failed; the single-transaction restore was rolled back. "
+            f"Safety backup: {safety_backup}. Details: {detail[-1500:]}"
+        )
+
+    # --no-privileges avoids importing stale ACLs; reapply only the app's
+    # required grants, then verify the table is present and readable.
+    import psycopg
+    from psycopg import sql
+    from .postgres_provision import APP_ROLE
+    with psycopg.connect(dsn, connect_timeout=8) as conn:
+        conn.execute(
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(database), sql.Identifier(APP_ROLE)
+            )
+        )
+        conn.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(APP_ROLE))
+        )
+        conn.execute(
+            sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.files TO {}").format(
+                sql.Identifier(APP_ROLE)
+            )
+        )
+        check = conn.execute(
+            "SELECT to_regclass('public.files'), "
+            "has_table_privilege(%s, 'public.files', 'SELECT'), "
+            "has_table_privilege(%s, 'public.files', 'INSERT')",
+            (APP_ROLE, APP_ROLE),
+        ).fetchone()
+        if not check or check[0] is None or not check[1] or not check[2]:
+            raise RuntimeError(
+                f"PostgreSQL restore completed but application table verification failed. "
+                f"Safety backup: {safety_backup}"
+            )
+    return safety_backup

@@ -118,6 +118,8 @@ class MainWindow(QMainWindow):
         self.btn_backup.clicked.connect(self._on_backup_sqlite)
         self.btn_restore = QPushButton("استعادة نسخة SQLite")
         self.btn_restore.clicked.connect(self._on_restore_sqlite)
+        self.btn_pg_restore = QPushButton("استعادة نسخة PostgreSQL")
+        self.btn_pg_restore.clicked.connect(self._on_restore_postgres)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
@@ -126,6 +128,7 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.btn_pg_diagnose)
         btns.addWidget(self.btn_backup)
         btns.addWidget(self.btn_restore)
+        btns.addWidget(self.btn_pg_restore)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -326,6 +329,94 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self, "تعذّر إنشاء النسخة الاحتياطية",
                 f"لم تُعدّل قاعدة البيانات الأصلية.\\n{type(exc).__name__}: {redact(str(exc))}",
+            )
+
+    def _on_restore_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة PostgreSQL.",
+            )
+            return
+        if not isinstance(self.state, PostgresStateStore):
+            QMessageBox.information(
+                self, "PostgreSQL غير نشط",
+                "يجب ربط PostgreSQL ونقل السجل إليه قبل استخدام استعادته.",
+            )
+            return
+
+        from ..postgres_backup import validate_postgres_backup_manifest
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة PostgreSQL الاحتياطية", str(backup_dir),
+            "PostgreSQL custom backups (*.dump)",
+        )
+        if not selected:
+            return
+        archive = Path(selected)
+        try:
+            metadata = validate_postgres_backup_manifest(archive)
+            from ..postgres_backup import _connection_parts
+            target = _connection_parts(self.state._dsn).get("dbname")
+            if metadata.get("database") != target:
+                raise ValueError("النسخة لا تخص قاعدة البيانات النشطة.")
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "نسخة PostgreSQL غير صالحة",
+                f"لن يتم تغيير قاعدة البيانات. {type(exc).__name__}: {redact(str(exc))}",
+            )
+            return
+
+        admin_dsn, accepted = QInputDialog.getText(
+            self, "صلاحية استعادة PostgreSQL",
+            "أدخل سلسلة اتصال مالك قاعدة البيانات أو المدير (الإدخال مخفي). "
+            "لن تُحفظ هذه البيانات:",
+            QLineEdit.Password,
+        )
+        if not accepted or not admin_dsn.strip():
+            return
+        admin_dsn = admin_dsn.strip()
+        register_secret(admin_dsn)
+        answer = QMessageBox.warning(
+            self, "تأكيد استعادة PostgreSQL",
+            "سيتم استبدال محتويات قاعدة PostgreSQL المحددة بمحتويات النسخة. "
+            "سينشأ التطبيق أولاً أرشيف أمان للحالة الحالية، ثم ينفذ الاستعادة "
+            "داخل معاملة واحدة. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log(f"بدء استعادة PostgreSQL من: {archive}")
+
+        def work():
+            from ..postgres_backup import restore_postgres_backup
+            return restore_postgres_backup(
+                admin_dsn, archive, backup_dir, timeout=3600
+            )
+
+        self._run(work, lambda safety: self._postgres_restore_done(archive, safety))
+
+    def _postgres_restore_done(self, archive: Path, safety: Path):
+        try:
+            self.state.count()
+            self._log(
+                f"اكتملت استعادة PostgreSQL من {archive}. "
+                f"نسخة الأمان السابقة: {safety}"
+            )
+            QMessageBox.information(
+                self, "اكتملت استعادة PostgreSQL",
+                f"تمت الاستعادة والتحقق من جدول التطبيق.\\n"
+                f"نسخة الأمان السابقة: {safety}",
+            )
+        except Exception as exc:
+            self._log(
+                f"استعادة PostgreSQL تمت لكن تعذّر التحقق عبر حساب التطبيق: "
+                f"{type(exc).__name__}: {redact(str(exc))}"
+            )
+            QMessageBox.warning(
+                self, "استعادة مع تحذير",
+                f"تم تنفيذ الاستعادة، لكن تعذّر التحقق عبر حساب التطبيق: {redact(str(exc))}",
             )
 
     def _on_restore_sqlite(self):
@@ -585,7 +676,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 

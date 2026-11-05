@@ -69,6 +69,61 @@ class PostgresBackupTests(unittest.TestCase):
             self.assertEqual(calls[1][0][1], "--list")
 
 
+    def test_restore_refuses_backup_for_different_database_before_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            import hashlib, json
+            metadata = {
+                "format": "postgresql-custom", "database": "other",
+                "size_bytes": 7, "sha256": hashlib.sha256(b"archive").hexdigest(),
+            }
+            archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
+            with patch.object(postgres_backup, "_assert_postgres_restore_access") as access, \\
+                 patch.object(postgres_backup, "create_postgres_backup") as safety:
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    postgres_backup.restore_postgres_backup(
+                        "postgresql://admin@localhost/weather", archive, Path(temp)
+                    )
+            access.assert_not_called()
+            safety.assert_not_called()
+
+    def test_restore_creates_safety_backup_and_uses_single_transaction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            import hashlib, json
+            metadata = {
+                "format": "postgresql-custom", "database": "weather",
+                "size_bytes": 7, "sha256": hashlib.sha256(b"archive").hexdigest(),
+            }
+            archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
+            safety = Path(temp) / "safety.dump"
+            calls = []
+            def fake_run(args, **kwargs):
+                calls.append(args)
+                return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            with patch.object(postgres_backup, "_assert_postgres_restore_access", return_value="weather"), \\
+                 patch.object(postgres_backup, "_tool", side_effect=["pg_restore", "pg_dump"]), \\
+                 patch.object(postgres_backup, "_validate_tool_pair"), \\
+                 patch.object(postgres_backup, "_command_options", return_value=(["--dbname", "dbname=weather"], {})), \\
+                 patch.object(postgres_backup.subprocess, "run", side_effect=fake_run), \\
+                 patch.object(postgres_backup, "create_postgres_backup", return_value=safety), \\
+                 patch("psycopg.connect") as connect:
+                connect.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = (
+                    "public.files", True, True
+                )
+                result = postgres_backup.restore_postgres_backup(
+                    "postgresql://admin@localhost/weather", archive, Path(temp)
+                )
+            self.assertEqual(result, safety)
+            self.assertEqual(len(calls), 2)
+            restore_args = calls[-1]
+            self.assertIn("--single-transaction", restore_args)
+            self.assertIn("--clean", restore_args)
+            self.assertIn("--if-exists", restore_args)
+            self.assertIn("--no-owner", restore_args)
+
     def test_manifest_detects_archive_tampering(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "backup.dump"
