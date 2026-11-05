@@ -80,7 +80,9 @@ class PostgresStateStore:
                 )
             table_access = conn.execute(
                 """
-                SELECT to_regclass('public.files') IS NOT NULL,
+                SELECT has_database_privilege(current_user, current_database(), 'CONNECT'),
+                       has_schema_privilege(current_user, 'public', 'USAGE'),
+                       to_regclass('public.files') IS NOT NULL,
                        has_table_privilege(current_user, 'public.files', 'SELECT'),
                        has_table_privilege(current_user, 'public.files', 'INSERT'),
                        has_table_privilege(current_user, 'public.files', 'UPDATE'),
@@ -89,7 +91,8 @@ class PostgresStateStore:
             ).fetchone()
             if table_access is None or not all(bool(flag) for flag in table_access):
                 raise RuntimeError(
-                    "رفض الاتصال: جدول public.files غير مهيأ أو أن صلاحيات القراءة والكتابة غير مكتملة. "
+                    "رفض الاتصال: حساب التطبيق يفتقد CONNECT لقاعدة البيانات أو USAGE للمخطط "
+                    "أو أن جدول public.files غير مهيأ أو صلاحيات القراءة والكتابة غير مكتملة. "
                     "أعد إعداد حساب التطبيق بأداة configure_postgres."
                 )
 
