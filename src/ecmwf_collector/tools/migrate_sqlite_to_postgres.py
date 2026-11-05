@@ -12,6 +12,11 @@ from ecmwf_collector.postgres_state import PostgresStateStore
 from ecmwf_collector.secrets_store import SecretStore
 
 
+def create_sqlite_backup(source: Path, backup: Path) -> None:
+    """Create a consistent SQLite snapshot using the online backup API."""
+    create_sqlite_backup(source, backup)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sqlite", type=Path, default=Path("state/state.db"))
