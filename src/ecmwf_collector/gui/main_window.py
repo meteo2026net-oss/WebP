@@ -111,11 +111,14 @@ class MainWindow(QMainWindow):
         self.btn_test = QPushButton("اختبار الاتصال")
         self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
         self.btn_postgres.clicked.connect(self._on_configure_postgres)
+        self.btn_backup = QPushButton("نسخ احتياطي للسجل")
+        self.btn_backup.clicked.connect(self._on_backup_sqlite)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
         btns.addWidget(self.btn_postgres)
+        btns.addWidget(self.btn_backup)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -282,6 +285,39 @@ class MainWindow(QMainWindow):
             return None
         return ConnectionSettings.from_config(cfg, self.password.text())
 
+    def _on_backup_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل إنشاء النسخة الاحتياطية.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "قاعدة PostgreSQL نشطة",
+                "النسخ الاحتياطي المباشر لـ PostgreSQL غير مفعّل في هذه النسخة. "
+                "لم يتم إجراء أي تغيير على قاعدة البيانات.",
+            )
+            return
+        try:
+            from ..state_backup import create_manual_backup
+
+            state_path = project_root() / "state" / "state.db"
+            backup_dir = project_root() / "state" / "backups"
+            backup = create_manual_backup(state_path, backup_dir, keep=30)
+            self._log(f"اكتملت نسخة SQLite الاحتياطية بعد فحص سلامتها: {backup}")
+            QMessageBox.information(
+                self, "اكتمل النسخ الاحتياطي",
+                f"تم إنشاء نسخة احتياطية والتحقق من سلامتها.\\n\\n{backup}\\n\\n"
+                "يُحتفظ بآخر 30 نسخة يدوية.",
+            )
+        except Exception as exc:
+            self._log(f"فشل النسخ الاحتياطي: {type(exc).__name__}: {redact(str(exc))}")
+            QMessageBox.critical(
+                self, "تعذّر إنشاء النسخة الاحتياطية",
+                f"قاعدة البيانات الأصلية لم تُستبدل.\\n{type(exc).__name__}: {redact(str(exc))}",
+            )
+
     def _on_configure_postgres(self):
         if self._downloading or self._workers:
             QMessageBox.information(
@@ -425,7 +461,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_postgres, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
