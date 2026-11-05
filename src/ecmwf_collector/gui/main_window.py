@@ -497,22 +497,37 @@ class MainWindow(QMainWindow):
         state_path = project_root() / "state" / "state.db"
         old_store = self.state
         old_store.close()
-        try:
-            from ..state_backup import restore_sqlite_backup
+        from ..state_backup import restore_sqlite_backup
 
-            safety_copy = restore_sqlite_backup(
+        def restore():
+            return restore_sqlite_backup(
                 backup_path, state_path, backup_dir, keep=30
             )
-            self.state = StateStore(state_path)
-            self._log(
-                f"تمت استعادة النسخة {backup_path}. نسخة الأمان السابقة: {safety_copy}"
-            )
-            QMessageBox.information(
-                self, "اكتملت الاستعادة",
-                f"تم استرجاع السجل وإعادة فتح قاعدة البيانات.\\n"
-                f"نسخة الأمان من السجل السابق: {safety_copy}",
-            )
-        except Exception as exc:
+
+        def restored(safety_copy):
+            try:
+                self.state = StateStore(state_path)
+                self._log(
+                    f"تمت استعادة النسخة {backup_path}. "
+                    f"نسخة الأمان السابقة: {safety_copy}"
+                )
+                QMessageBox.information(
+                    self, "اكتملت الاستعادة",
+                    f"تم استرجاع السجل وإعادة فتح قاعدة البيانات.\\n"
+                    f"نسخة الأمان من السجل السابق: {safety_copy}",
+                )
+            except Exception as exc:
+                self._log(
+                    f"تمت عملية الاستعادة لكن تعذّر إعادة فتح SQLite: "
+                    f"{type(exc).__name__}: {redact(str(exc))}"
+                )
+                QMessageBox.critical(
+                    self, "تعذّرت إعادة فتح قاعدة البيانات",
+                    f"ملف قاعدة البيانات قد تم تحديثه، لكن تعذّر فتحه: "
+                    f"{type(exc).__name__}: {redact(str(exc))}",
+                )
+
+        def restore_failed(message):
             try:
                 self.state = StateStore(state_path)
             except Exception as reopen_exc:
@@ -520,12 +535,15 @@ class MainWindow(QMainWindow):
                     f"تعذّرت إعادة فتح SQLite بعد فشل الاستعادة: "
                     f"{type(reopen_exc).__name__}: {redact(str(reopen_exc))}"
                 )
-            self._log(f"فشلت استعادة SQLite: {type(exc).__name__}: {redact(str(exc))}")
             QMessageBox.critical(
                 self, "تعذّرت الاستعادة",
-                f"سبب الفشل: {type(exc).__name__}: {redact(str(exc))}\\n"
-                "إذا أُنشئت نسخة أمان، ستجدها داخل مجلد state/backups.",
+                f"فشلت الاستعادة: {message}\\n"
+                "لم يتم اعتماد قاعدة البيانات الجديدة. افحص مجلد state/backups "
+                "للعثور على نسخة الأمان إن أُنشئت.",
             )
+
+        self._log("جارٍ استعادة نسخة SQLite والتحقق منها في الخلفية…")
+        self._run(restore, restored, on_failed=restore_failed)
 
     def _on_install_postgres(self):
         if self._downloading or self._workers:
@@ -736,7 +754,7 @@ class MainWindow(QMainWindow):
         return p if p.is_absolute() else project_root() / p
 
     # ---------- المهام الخلفية ----------
-    def _run(self, fn, on_done, busy=True):
+    def _run(self, fn, on_done, busy=True, on_failed=None):
         w = Worker(fn)
         self._workers.add(w)
 
@@ -749,6 +767,8 @@ class MainWindow(QMainWindow):
             self._workers.discard(w)
             self._busy(False)
             self._log(f"خطأ: {msg}")
+            if on_failed is not None:
+                on_failed(msg)
 
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
