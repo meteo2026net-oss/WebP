@@ -77,6 +77,26 @@ jobs:
             throw "Desktop executable exited during startup with code $($process.ExitCode)"
           }
           Stop-Process -Id $process.Id -Force
+      - name: Smoke-test bundled map server
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--map-server" -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 25; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:8765/map_viewer/" -TimeoutSec 2
+                if ($response.StatusCode -eq 200) { $ready = $true; break }
+              } catch {}
+              $process.Refresh()
+              if ($process.HasExited) { throw "Bundled map server exited with code $($process.ExitCode)" }
+            }
+            if (-not $ready) { throw "Bundled map viewer did not become available on localhost:8765" }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
       - name: Stage one-click launcher
         shell: pwsh
         run: Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
