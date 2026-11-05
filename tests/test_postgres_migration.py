@@ -98,6 +98,10 @@ class PostgresProvisionTests(unittest.TestCase):
         create_role = next(item for item in calls if item[0].startswith("CREATE ROLE"))
         self.assertEqual(len(literal_values), 1)
         self.assertIn(literal_values[0], create_role[0])
+        for restricted_flag in (
+            "NOSUPERUSER", "NOCREATEDB", "NOCREATEROLE", "NOREPLICATION", "NOBYPASSRLS"
+        ):
+            self.assertIn(restricted_flag, create_role[0])
         self.assertTrue(any("GRANT CONNECT ON DATABASE" in item[0] for item in calls))
         self.assertTrue(any("GRANT USAGE, CREATE ON SCHEMA public" in item[0] for item in calls))
         store.assert_called_once()
