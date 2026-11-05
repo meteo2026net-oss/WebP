@@ -12,7 +12,20 @@ KINDS = ("AN", "FM", "FP", "FS")
 CYCLES = ("00", "06", "12", "18")
 
 
+def resource_root() -> Path:
+    """Read-only application resources (source checkout or PyInstaller bundle)."""
+    import sys
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parents[2]
+
+
 def project_root() -> Path:
+    """Writable per-user data directory in frozen builds; repository root in source mode."""
+    import sys
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "ECMWFWebP"
     return Path(__file__).resolve().parents[2]
 
 
