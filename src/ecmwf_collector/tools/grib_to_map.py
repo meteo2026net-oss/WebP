@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import itertools
 import json
+import math
 import re
 from pathlib import Path
 
@@ -47,6 +48,8 @@ def _json_scalar(value):
         return value.isoformat()
     if hasattr(value, "item"):
         value = value.item()
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return str(value)

@@ -9,10 +9,23 @@ from unittest.mock import patch
 import numpy as np
 import xarray as xr
 
-from ecmwf_collector.tools.grib_to_map import _source_id, convert_file
+from ecmwf_collector.tools.grib_to_map import _json_scalar, _source_id, convert_file
 
 
 class GribMapDisplayUnitTests(unittest.TestCase):
+    def test_non_finite_numpy_metadata_becomes_json_null(self):
+        import json
+
+        for value in (np.float32(np.nan), np.float64(np.inf), float("-inf")):
+            with self.subTest(value=value):
+                converted = _json_scalar(value)
+                self.assertIsNone(converted)
+                self.assertEqual(json.dumps({"value": converted}, allow_nan=False),
+                                 '{"value": null}')
+
+    def test_finite_numpy_metadata_remains_numeric(self):
+        self.assertEqual(_json_scalar(np.float64(12.5)), 12.5)
+
     def test_source_id_tracks_file_contents_not_just_path(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "forecast.grib2"
