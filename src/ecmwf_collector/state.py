@@ -79,6 +79,12 @@ class StateStore:
                              (utc_now(), remote_path))
             self._db.commit()
 
+    def count(self) -> int:
+        """Return the number of tracked remote files."""
+        with self._lock:
+            row = self._db.execute("SELECT COUNT(*) FROM files").fetchone()
+        return int(row[0])
+
     def all_records(self) -> list[FileRecord]:
         with self._lock:
             rows = self._db.execute("SELECT remote_path,remote_size,local_path,status,local_size,sha256,"
