@@ -58,7 +58,7 @@ def _windows_services() -> list[dict[str, str]]:
     if result.returncode:
         return []
     names = re.findall(
-        r"^\\s*SERVICE_NAME:\\s*(postgresql[^\\r\\n]*)",
+        r"^\s*SERVICE_NAME:\s*(postgresql[^\r\n]*)",
         result.stdout or "", flags=re.IGNORECASE | re.MULTILINE,
     )
     services: list[dict[str, str]] = []
@@ -69,7 +69,7 @@ def _windows_services() -> list[dict[str, str]]:
                 capture_output=True, text=True, timeout=10, check=False,
             )
             output = detail.stdout or ""
-            match = re.search(r"STATE\\s*:\\s*\\d+\\s+(\\w+)", output, re.IGNORECASE)
+            match = re.search(r"STATE\s*:\s*\d+\s+(\w+)", output, re.IGNORECASE)
             services.append({
                 "name": name,
                 "state": match.group(1).upper() if match else "UNKNOWN",
