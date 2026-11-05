@@ -37,7 +37,9 @@ def provision_application_login(admin_dsn: str) -> str:
             )
         with admin.transaction():
             admin.execute(
-                "CREATE ROLE ecmwf_webp_app LOGIN PASSWORD %s", (app_password,)
+                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                    sql.Identifier(APP_ROLE), sql.Literal(app_password)
+                )
             )
             role_created = True
             admin.execute(
