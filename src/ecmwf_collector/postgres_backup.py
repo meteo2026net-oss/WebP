@@ -87,6 +87,15 @@ def _command_options(values: Mapping[str, str]) -> tuple[list[str], dict[str, st
         env["PGPASSWORD"] = password
     return ["--dbname", make_conninfo(**connection)], env
 
+def _sha256_file(path: Path) -> str:
+    """Hash large archives incrementally instead of loading them into RAM."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def create_postgres_backup(
     dsn: str, backup_dir: Path, keep: int = 30, *, pg_dump: str | None = None,
     pg_restore: str | None = None, timeout: int = 3600,
@@ -124,7 +133,7 @@ def create_postgres_backup(
         if verify.returncode:
             detail = (verify.stderr or verify.stdout or "pg_restore validation failed").strip()
             raise RuntimeError(f"PostgreSQL archive validation failed: {detail[-2000:]}")
-        digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
+        digest = _sha256_file(temporary)
         metadata = {
             "format": "postgresql-custom",
             "database": database,
@@ -132,7 +141,6 @@ def create_postgres_backup(
             "size_bytes": temporary.stat().st_size,
             "sha256": digest,
         }
-        os.replace(temporary, destination)
         manifest_tmp = destination.with_suffix(destination.suffix + ".json.tmp")
         manifest_path = destination.with_suffix(destination.suffix + ".json")
         try:
@@ -140,7 +148,12 @@ def create_postgres_backup(
                 json.dumps(metadata, ensure_ascii=False, indent=2) + "\\n",
                 encoding="utf-8",
             )
+            os.replace(temporary, destination)
             os.replace(manifest_tmp, manifest_path)
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            manifest_path.unlink(missing_ok=True)
+            raise
         finally:
             manifest_tmp.unlink(missing_ok=True)
     except BaseException:
@@ -169,7 +182,7 @@ def validate_postgres_backup_manifest(archive: Path) -> dict[str, object]:
         raise ValueError("Unsupported PostgreSQL backup manifest format.")
     if not archive.is_file() or archive.stat().st_size != metadata.get("size_bytes"):
         raise ValueError("PostgreSQL backup size does not match its manifest.")
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    digest = _sha256_file(archive)
     if digest != metadata.get("sha256"):
         raise ValueError("PostgreSQL backup checksum does not match its manifest.")
     return metadata
