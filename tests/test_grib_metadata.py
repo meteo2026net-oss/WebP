@@ -1,12 +1,46 @@
+import tempfile
+import types
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from ecmwf_collector.tools.grib_to_map import _json_scalar, _json_value
-from ecmwf_collector.tools.inspect_grib import KEYS
+from ecmwf_collector.tools.inspect_grib import KEYS, inspect_file
 
 
 class GribMetadataSerializationTests(unittest.TestCase):
+    def test_inventory_uses_imported_eccodes_getter_for_each_metadata_key(self):
+        fake_message = object()
+        values = {"edition": 2, "shortName": "msl", "units": "Pa"}
+        requested = []
+
+        def codes_get(gid, key):
+            self.assertIs(gid, fake_message)
+            requested.append(key)
+            if key not in values:
+                raise KeyError(key)
+            return values[key]
+
+        messages = iter([fake_message, None])
+        fake_eccodes = types.SimpleNamespace(
+            codes_get=codes_get,
+            codes_grib_new_from_file=lambda stream: next(messages),
+            codes_release=lambda gid: self.assertIs(gid, fake_message),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "sample.grib2"
+            source.write_bytes(b"GRIB")
+            with patch.dict("sys.modules", {"eccodes": fake_eccodes}):
+                records = inspect_file(source)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["edition"], 2)
+        self.assertEqual(records[0]["shortName"], "msl")
+        self.assertEqual(records[0]["units"], "Pa")
+        self.assertEqual(set(requested), set(KEYS))
+
     def test_inventory_includes_wind_reference_frame_flags(self):
         self.assertIn("uvRelativeToGrid", KEYS)
         self.assertIn("resolutionAndComponentFlags", KEYS)
