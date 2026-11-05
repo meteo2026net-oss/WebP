@@ -77,6 +77,9 @@ jobs:
             throw "Desktop executable exited during startup with code $($process.ExitCode)"
           }
           Stop-Process -Id $process.Id -Force
+      - name: Stage one-click launcher
+        shell: pwsh
+        run: Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
       - name: Upload portable Windows package
         uses: actions/upload-artifact@v4
         with:
