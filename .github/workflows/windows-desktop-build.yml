@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -54,6 +58,17 @@ jobs:
           $exe = "dist/ECMWFWebP/ECMWFWebP.exe"
           if (-not (Test-Path $exe)) { throw "Missing $exe" }
           Get-Item $exe | Format-List FullName,Length
+      - name: Smoke-test desktop executable startup
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 12
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Desktop executable exited during startup with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
       - name: Upload portable Windows package
         uses: actions/upload-artifact@v4
         with:
