@@ -140,7 +140,7 @@ try {
 
     $handler = New-Object System.Net.Http.HttpClientHandler
     $handler.UseProxy = $false
-    $httpClient = New-Object System.Net.Http.HttpClient($handler)
+    $httpClient = New-Object -TypeName System.Net.Http.HttpClient -ArgumentList $handler
     $httpClient.Timeout = [TimeSpan]::FromSeconds(4)
 
     $ready = $false
