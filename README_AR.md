@@ -102,7 +102,7 @@ python -m unittest discover -s tests -t . -v
 - من نسخة المصدر: شغّل `START.bat`. يتطلب مسار البناء الحالي Python 3.12 x64 واتصالاً بالإنترنت لتنزيل الاعتماديات.
 - بعد البناء، توجد الحزمة في `dist/ECMWFWebP/` وبداخلها `ECMWFWebP.exe` و`START.bat`. يمكن نقل المجلد كاملاً إلى جهاز Windows x64 آخر وتشغيل `START.bat` دون تثبيت Python.
 - ينشئ التطبيق بياناته القابلة للكتابة في `%LOCALAPPDATA%\\ECMWFWebP` عند التشغيل المجمّد؛ لا تُكتب التنزيلات أو الإعدادات داخل مجلد البرنامج.
-- ينشئ GitHub Actions حزمة اختبارية باسم `ECMWFWebP-Windows-x64` عند تشغيل workflow الخاص ببناء Windows.
+- ينشئ GitHub Actions حزمة باسم `ECMWFWebP-Windows-x64` تشمل `START.bat` وملف `SHA256SUMS.txt` للتحقق من سلامة ملفات الحزمة. الحزمة التجريبية متاحة من صفحة تشغيل Workflow لمدة 14 يوماً.
 
 **تنبيه:** هذا المسار لا يثبت PostgreSQL ولا يغيّر سجل الحالة الحالي من SQLite. كما أن توافق الحزمة لا يُعد مؤكداً إلا بعد نجاح Windows CI وتجربة تشغيل EXE والخريطة على جهاز Windows نظيف. الإصدار الحالي المستهدف والمبني هو Windows x64؛ دعم ARM64 وmacOS وLinux يحتاج حزم بناء مستقلة.
 
