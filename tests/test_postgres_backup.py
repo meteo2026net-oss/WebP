@@ -90,6 +90,23 @@ class PostgresBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "checksum"):
                 postgres_backup.validate_postgres_backup_manifest(archive)
 
+    def test_manifest_write_failure_does_not_publish_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            def run(args, **kwargs):
+                if "--format=custom" in args:
+                    Path(args[args.index("--file") + 1]).write_bytes(b"valid archive")
+                return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
+                 patch.object(postgres_backup.subprocess, "run", side_effect=run), \
+                 patch.object(Path, "write_text", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    postgres_backup.create_postgres_backup(
+                        "postgresql://app@localhost/weather", Path(temp)
+                    )
+            self.assertEqual(list(Path(temp).glob("*.dump")), [])
+            self.assertEqual(list(Path(temp).glob("*.json")), [])
+
     def test_failed_dump_leaves_no_final_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             def fail(args, **kwargs):
