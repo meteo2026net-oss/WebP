@@ -70,6 +70,31 @@ def _tool(name: str, override: str | None = None) -> str:
     )
 
 
+def _tool_major_version(executable: str, *, timeout: int = 10) -> int:
+    result = subprocess.run(
+        [executable, "--version"], capture_output=True, text=True,
+        timeout=timeout, check=False,
+    )
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode or "PostgreSQL" not in output:
+        raise RuntimeError(f"Could not determine PostgreSQL tool version: {executable}")
+    import re
+    match = re.search(r"PostgreSQL\\)\\s+(\\d+)(?:\\.(\\d+))?", output)
+    if not match:
+        raise RuntimeError(f"Unrecognized PostgreSQL tool version: {output[:200]}")
+    return int(match.group(1))
+
+
+def _validate_tool_pair(pg_dump: str, pg_restore: str) -> None:
+    dump_major = _tool_major_version(pg_dump)
+    restore_major = _tool_major_version(pg_restore)
+    if dump_major != restore_major:
+        raise RuntimeError(
+            "pg_dump and pg_restore must use the same PostgreSQL major version "
+            f"(found {dump_major} and {restore_major})."
+        )
+
+
 def _command_options(values: Mapping[str, str]) -> tuple[list[str], dict[str, str]]:
     from psycopg.conninfo import make_conninfo
 
@@ -106,6 +131,7 @@ def create_postgres_backup(
     values = _connection_parts(dsn)
     dump_exe = _tool("pg_dump", pg_dump)
     restore_exe = _tool("pg_restore", pg_restore)
+    _validate_tool_pair(dump_exe, restore_exe)
     options, env = _command_options(values)
     directory = Path(backup_dir)
     directory.mkdir(parents=True, exist_ok=True)
