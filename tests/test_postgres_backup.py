@@ -156,7 +156,7 @@ class PostgresBackupTests(unittest.TestCase):
                  patch.object(postgres_backup, "create_postgres_backup", return_value=safety), \
                  patch("psycopg.connect") as connect:
                 connect.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = (
-                    "public.files", True, True
+                    "public.files", True, True, True, True, True, True
                 )
                 result = postgres_backup.restore_postgres_backup(
                     "postgresql://admin@localhost/weather", archive, Path(temp)
@@ -168,6 +168,40 @@ class PostgresBackupTests(unittest.TestCase):
             self.assertIn("--clean", restore_args)
             self.assertIn("--if-exists", restore_args)
             self.assertIn("--no-owner", restore_args)
+
+    def test_restore_verification_requires_database_schema_and_full_crud_access(self):
+        from ecmwf_collector.postgres_backup import _verify_restored_application_access
+
+        class FakeResult:
+            def __init__(self, row):
+                self.row = row
+            def fetchone(self):
+                return self.row
+
+        class FakeConnection:
+            def __init__(self, row):
+                self.row = row
+            def execute(self, *_args):
+                return FakeResult(self.row)
+
+        safety = Path("safety.dump")
+        _verify_restored_application_access(
+            FakeConnection(("public.files", True, True, True, True, True, True)),
+            "ecmwf_webp_app",
+            safety,
+        )
+        invalid_rows = [
+            (None, True, True, True, True, True, True),
+            ("public.files", False, True, True, True, True, True),
+            ("public.files", True, False, True, True, True, True),
+            ("public.files", True, True, True, True, False, True),
+            ("public.files", True, True, True, True, True, False),
+        ]
+        for row in invalid_rows:
+            with self.subTest(row=row), self.assertRaisesRegex(RuntimeError, "required"):
+                _verify_restored_application_access(
+                    FakeConnection(row), "ecmwf_webp_app", safety
+                )
 
     def test_manifest_detects_archive_tampering(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -259,6 +259,28 @@ def _assert_postgres_restore_access(dsn: str) -> str:
     return str(database)
 
 
+def _verify_restored_application_access(conn, app_role: str, safety_backup: Path) -> None:
+    """Verify every database/schema/table privilege required by PostgresStateStore."""
+    check = conn.execute(
+        """
+        SELECT to_regclass('public.files'),
+               has_database_privilege(%s, current_database(), 'CONNECT'),
+               has_schema_privilege(%s, 'public', 'USAGE'),
+               has_table_privilege(%s, 'public.files', 'SELECT'),
+               has_table_privilege(%s, 'public.files', 'INSERT'),
+               has_table_privilege(%s, 'public.files', 'UPDATE'),
+               has_table_privilege(%s, 'public.files', 'DELETE')
+        """,
+        (app_role, app_role, app_role, app_role, app_role, app_role),
+    ).fetchone()
+    if not check or check[0] is None or not all(bool(flag) for flag in check[1:]):
+        raise RuntimeError(
+            "PostgreSQL restore completed but the application role is missing one or more "
+            "required CONNECT, schema USAGE, or table CRUD privileges. "
+            f"Safety backup: {safety_backup}"
+        )
+
+
 def restore_postgres_backup(
     dsn: str,
     archive: Path,
@@ -341,15 +363,5 @@ def restore_postgres_backup(
                 sql.Identifier(APP_ROLE)
             )
         )
-        check = conn.execute(
-            "SELECT to_regclass('public.files'), "
-            "has_table_privilege(%s, 'public.files', 'SELECT'), "
-            "has_table_privilege(%s, 'public.files', 'INSERT')",
-            (APP_ROLE, APP_ROLE),
-        ).fetchone()
-        if not check or check[0] is None or not check[1] or not check[2]:
-            raise RuntimeError(
-                f"PostgreSQL restore completed but application table verification failed. "
-                f"Safety backup: {safety_backup}"
-            )
+        _verify_restored_application_access(conn, APP_ROLE, safety_backup)
     return safety_backup
