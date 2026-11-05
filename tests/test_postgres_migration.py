@@ -124,7 +124,14 @@ class PostgresProvisionTests(unittest.TestCase):
             def transaction(self):
                 return contextlib.nullcontext()
 
-        fake_psycopg = types.SimpleNamespace(connect=lambda *_a, **_k: FakeConnection())
+        fake_sql = types.SimpleNamespace(
+            SQL=lambda value: value,
+            Identifier=lambda value: '"' + value.replace('"', '""') + '"',
+            Literal=lambda value: "'" + value.replace("'", "''") + "'",
+        )
+        fake_psycopg = types.SimpleNamespace(
+            sql=fake_sql, connect=lambda *_a, **_k: FakeConnection()
+        )
         with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
             with self.assertRaisesRegex(RuntimeError, "موجود مسبقاً"):
                 provision_application_login("host=127.0.0.1 dbname=weatherdb")
