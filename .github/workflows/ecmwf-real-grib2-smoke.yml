@@ -29,7 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy Pillow pyproj scipy xarray cfgrib eccodes
 
-      - name: Download the pinned public ECMWF GRIB2 sample
+      - name: Download the URL-fixed public ECMWF GRIB2 sample (checksum recorded, not pinned)
         run: |
           mkdir -p output/ecmwf-real
           curl --fail --location --retry 3 --retry-delay 2 \
@@ -74,7 +74,7 @@ jobs:
               raise SystemExit(f"Expected mean-sea-level pressure shortName 'msl'; found: {sorted(short_names)}")
           if selected_variable not in short_names:
               raise SystemExit(
-                  f"Requested variable {selected_variable!r} is not present in this pinned sample; "
+                  f"Requested variable {selected_variable!r} is not present in this URL-fixed sample; "
                   f"available short names: {sorted(short_names)}"
               )
           print(f"ecCodes decoded {report['message_count']} GRIB2 message(s)")
