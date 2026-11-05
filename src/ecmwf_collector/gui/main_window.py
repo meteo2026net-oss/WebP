@@ -113,6 +113,8 @@ class MainWindow(QMainWindow):
         self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
         self.btn_postgres.clicked.connect(self._on_configure_postgres)
         self.btn_pg_diagnose = QPushButton("تشخيص PostgreSQL")
+        self.btn_db_status = QPushButton("حالة قاعدة البيانات")
+        self.btn_db_status.clicked.connect(self._on_database_status)
         self.btn_pg_diagnose.clicked.connect(self._on_diagnose_postgres)
         self.btn_pg_install = QPushButton("تثبيت PostgreSQL")
         self.btn_pg_install.clicked.connect(self._on_install_postgres)
@@ -128,6 +130,7 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.btn_test)
         btns.addWidget(self.btn_postgres)
         btns.addWidget(self.btn_pg_diagnose)
+        btns.addWidget(self.btn_db_status)
         btns.addWidget(self.btn_pg_install)
         btns.addWidget(self.btn_backup)
         btns.addWidget(self.btn_restore)
@@ -297,6 +300,35 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "بيانات ناقصة", "أدخل اسم المستخدم وكلمة مرور FTP.")
             return None
         return ConnectionSettings.from_config(cfg, self.password.text())
+
+    def _on_database_status(self):
+        """Show the active state backend and its current record count."""
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل قراءة حالة قاعدة البيانات.",
+            )
+            return
+
+        def inspect():
+            count = self.state.count()
+            if isinstance(self.state, PostgresStateStore):
+                return "PostgreSQL", count, "اتصال قاعدة البيانات النشطة"
+            if isinstance(self.state, StateStore):
+                return "SQLite", count, str(project_root() / "state" / "state.db")
+            return type(self.state).__name__, count, "مسار غير متاح"
+
+        def show(result):
+            backend, count, location = result
+            message = (
+                f"قاعدة البيانات النشطة: {backend}\\n"
+                f"عدد السجلات: {count:,}\\n"
+                f"الموقع: {location}"
+            )
+            self._log(message.replace("\\n", " | "))
+            QMessageBox.information(self, "حالة قاعدة البيانات", message)
+
+        self._run(inspect, show)
 
     def _on_backup_sqlite(self):
         if self._downloading or self._workers:
@@ -726,7 +758,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_pg_install, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_db_status, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_pg_install, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
