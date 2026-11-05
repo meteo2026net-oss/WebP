@@ -10,19 +10,6 @@ from pathlib import Path
 from typing import Mapping
 
 
-_PG_ENV = {
-    "sslmode": "PGSSLMODE",
-    "sslrootcert": "PGSSLROOTCERT",
-    "sslcert": "PGSSLCERT",
-    "sslkey": "PGSSLKEY",
-    "sslcrl": "PGSSLCRL",
-    "gssencmode": "PGGSSENCMODE",
-    "target_session_attrs": "PGTARGETSESSIONATTRS",
-    "service": "PGSERVICE",
-    "passfile": "PGPASSFILE",
-}
-
-
 def _connection_parts(dsn: str) -> dict[str, str]:
     if not dsn or not dsn.strip():
         raise ValueError("PostgreSQL connection string is empty.")
