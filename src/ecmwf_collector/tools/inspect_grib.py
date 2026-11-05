@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 
+# These keys must be readable for an inventory to identify a real GRIB field.
+REQUIRED_KEYS = frozenset({"edition", "shortName", "gridType"})
+
 KEYS = (
     "edition", "centre", "dataDate", "dataTime", "validityDate", "validityTime",
     "dataType", "shortName", "name", "units", "paramId", "typeOfLevel",
@@ -29,10 +32,20 @@ KEYS = (
 
 
 def safe_get(gid: Any, key: str, getter) -> Any:
-    """Read one ecCodes key using the getter imported by inspect_file."""
+    """Read an ecCodes key without hiding failures for essential GRIB metadata.
+
+    Optional keys may be absent for a particular grid/message, but silently
+    replacing failures for the core identification keys with None makes a
+    broken ecCodes installation or undecodable message look like valid data.
+    """
     try:
         return getter(gid, key)
-    except Exception:
+    except Exception as exc:
+        if key in REQUIRED_KEYS:
+            raise RuntimeError(
+                f"ecCodes could not read required GRIB key {key!r} "
+                f"({type(exc).__name__}): {exc}"
+            ) from exc
         return None
 
 
