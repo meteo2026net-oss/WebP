@@ -66,6 +66,8 @@ def spatial_layout(da: xr.DataArray) -> tuple[str, str, np.ndarray, np.ndarray, 
             raise ValueError("2-D geolocation must map to two data dimensions.")
         lat = np.asarray(lat_coord.values, dtype=np.float64)
         lon = np.asarray(lon_coord.values, dtype=np.float64)
+        if np.any(np.isinf(lat)) or np.any(np.isinf(lon)):
+            raise ValueError("Curvilinear wind geolocation coordinates must not contain infinite values.")
         lat_finite, lon_finite = np.isfinite(lat), np.isfinite(lon)
         if np.any(lat_finite != lon_finite):
             raise ValueError("Curvilinear wind latitude/longitude validity masks differ.")
