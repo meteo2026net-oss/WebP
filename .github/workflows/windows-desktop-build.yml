@@ -81,7 +81,7 @@ jobs:
         shell: pwsh
         run: |
           $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
-          $process = Start-Process -FilePath $exe -ArgumentList "--map-server" -PassThru
+          $process = Start-Process -FilePath $exe -ArgumentList "--map-server --no-browser" -PassThru
           try {
             $ready = $false
             for ($i = 0; $i -lt 25; $i++) {
@@ -89,7 +89,9 @@ jobs:
               try {
                 $response = Invoke-WebRequest -Uri "http://127.0.0.1:8765/map_viewer/" -TimeoutSec 2
                 if ($response.StatusCode -eq 200) { $ready = $true; break }
-              } catch {}
+              } catch {
+                Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.Message)"
+              }
               $process.Refresh()
               if ($process.HasExited) { throw "Bundled map server exited with code $($process.ExitCode)" }
             }
