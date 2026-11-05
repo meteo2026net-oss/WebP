@@ -5,7 +5,8 @@ import argparse
 import getpass
 import sys
 
-from ecmwf_collector.postgres_state import PostgresStateStore
+from ecmwf_collector.postgres_provision import provision_application_login
+from ecmwf_collector.logging_setup import register_secret
 from ecmwf_collector.secrets_store import SecretStore
 
 
@@ -30,27 +31,28 @@ def main() -> int:
         )
         return 2
 
-    dsn = getpass.getpass("PostgreSQL connection string (input hidden): ").strip()
-    if not dsn:
+    admin_dsn = getpass.getpass(
+        "Local PostgreSQL administrator DSN (input hidden): "
+    ).strip()
+    if not admin_dsn:
         print("No connection string supplied.", file=sys.stderr)
         return 2
 
-    store = None
+    register_secret(admin_dsn)
     try:
-        # Verify reachability and credentials before persisting anything.
-        store = PostgresStateStore(dsn)
-        if not secrets.set_postgres_dsn(dsn):
-            print("Could not save the connection in the OS credential vault.", file=sys.stderr)
+        # Provision and verify a restricted application login. Never persist
+        # the administrator DSN in the operating-system credential vault.
+        app_dsn = provision_application_login(admin_dsn)
+        if not secrets.set_postgres_dsn(app_dsn):
+            print("Could not save the application login in the OS credential vault.", file=sys.stderr)
             return 3
-        print("PostgreSQL connection verified and saved in the OS credential vault.")
-        print("The application will use it automatically on its next launch.")
+        print("A least-privilege PostgreSQL application login was verified and saved.")
+        print("The administrator DSN was not stored.")
+        print("The application will use the restricted login on its next launch.")
         return 0
     except Exception as exc:
         print(f"PostgreSQL setup failed ({type(exc).__name__}): {exc}", file=sys.stderr)
         return 1
-    finally:
-        if store is not None:
-            store.close()
 
 
 if __name__ == "__main__":
