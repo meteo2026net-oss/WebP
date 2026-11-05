@@ -32,13 +32,14 @@ def main() -> int:
     from ecmwf_collector.gui.main_window import MainWindow
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
-    postgres_dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip()
+    secrets = SecretStore()
+    postgres_dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
     if postgres_dsn:
         from ecmwf_collector.postgres_state import PostgresStateStore
         state_store = PostgresStateStore(postgres_dsn)
     else:
         state_store = StateStore(data_root / "state" / "state.db")
-    window = MainWindow(cfg, config_path, SecretStore(), state_store)
+    window = MainWindow(cfg, config_path, secrets, state_store)
     window.show()
     return app.exec()
 
