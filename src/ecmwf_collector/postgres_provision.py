@@ -29,6 +29,7 @@ def provision_application_login(admin_dsn: str) -> str:
     app_password = secrets.token_urlsafe(36)
     register_secret(app_password)
     role_created = False
+    from .postgres_state import CREATE_TABLE
     with psycopg.connect(admin_dsn.strip(), connect_timeout=8) as admin:
         database = admin.execute("SELECT current_database()").fetchone()[0]
         if not database:
@@ -41,6 +42,9 @@ def provision_application_login(admin_dsn: str) -> str:
                 f"الحساب {APP_ROLE} موجود مسبقاً؛ أوقف الإعداد لتجنب تغيير بيانات اعتماد موجودة."
             )
         with admin.transaction():
+            # Create the table as the administrator so the application login
+            # never needs CREATE on the shared public schema.
+            admin.execute(CREATE_TABLE)
             admin.execute(
                 sql.SQL(
                     "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
@@ -55,7 +59,10 @@ def provision_application_login(admin_dsn: str) -> str:
                     sql.Identifier(database)
                 )
             )
-            admin.execute("GRANT USAGE, CREATE ON SCHEMA public TO ecmwf_webp_app")
+            admin.execute("GRANT USAGE ON SCHEMA public TO ecmwf_webp_app")
+            admin.execute(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.files TO ecmwf_webp_app"
+            )
 
     app_dsn = psycopg.conninfo.make_conninfo(
         admin_dsn.strip(), user=APP_ROLE, password=app_password
@@ -78,6 +85,7 @@ def provision_application_login(admin_dsn: str) -> str:
                             sql.Identifier(database)
                         )
                     )
+                    admin.execute("REVOKE ALL ON TABLE public.files FROM ecmwf_webp_app")
                     admin.execute("REVOKE ALL ON SCHEMA public FROM ecmwf_webp_app")
                     admin.execute("DROP ROLE IF EXISTS ecmwf_webp_app")
             except Exception:
