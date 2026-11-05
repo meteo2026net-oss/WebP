@@ -52,12 +52,14 @@ def provision_application_login(admin_dsn: str) -> str:
     app_dsn = psycopg.conninfo.make_conninfo(
         admin_dsn.strip(), user=APP_ROLE, password=app_password
     )
+    from .logging_setup import register_secret
+    register_secret(app_dsn)
     store = None
     try:
         from .postgres_state import PostgresStateStore
         store = PostgresStateStore(app_dsn)
         return app_dsn
-    except Exception:
+    except Exception as exc:
         # Remove the newly-created role if the app login cannot initialize.
         if role_created:
             try:
@@ -73,7 +75,9 @@ def provision_application_login(admin_dsn: str) -> str:
                     admin.execute("DROP ROLE IF EXISTS ecmwf_webp_app")
             except Exception:
                 pass
-        raise
+        raise RuntimeError(
+            f"تعذّر تهيئة حساب PostgreSQL للتطبيق ({type(exc).__name__})."
+        ) from None
     finally:
         if store is not None:
             store.close()
