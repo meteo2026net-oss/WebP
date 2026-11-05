@@ -201,7 +201,7 @@ class PostgresProvisionTests(unittest.TestCase):
                 provision_application_login("host=127.0.0.1 dbname=weatherdb")
 
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
-        self.assertTrue(any("REVOKE ALL ON SCHEMA public" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
         self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
 
 
