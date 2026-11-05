@@ -80,7 +80,10 @@ class PostgresProvisionTests(unittest.TestCase):
         fake_psycopg = types.SimpleNamespace(
             sql=fake_sql,
             conninfo=types.SimpleNamespace(
-                make_conninfo=lambda dsn, **kwargs: dsn + " " + repr(kwargs)
+                make_conninfo=lambda dsn, **kwargs: " ".join(
+                    [part for part in dsn.split() if part.split("=", 1)[0] not in kwargs]
+                    + [f"{key}={value}" for key, value in kwargs.items()]
+                )
             ),
             connect=lambda *_args, **_kwargs: FakeConnection(),
         )
