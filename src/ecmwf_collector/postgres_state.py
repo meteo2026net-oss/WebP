@@ -40,8 +40,6 @@ class PostgresStateStore:
         self._dsn = dsn
         self._lock = threading.RLock()
         with self._connect() as conn:
-            # Never allow an environment-variable DSN or manual configuration to
-            # silently bypass the restricted application account provisioner.
             role = conn.execute(
                 """
                 SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
@@ -111,25 +109,23 @@ class PostgresStateStore:
         if bad:
             raise ValueError(f"حقول غير معروفة: {bad}")
         now = utc_now()
+        # A single atomic statement avoids the SELECT-then-INSERT race when
+        # parallel download workers discover or update the same remote path.
+        update_fields = tuple(fields)
+        fields.setdefault("status", "pending")
+        columns = ("remote_path", *fields.keys(), "updated_at")
+        assignments = [f"{name}=EXCLUDED.{name}" for name in update_fields]
+        assignments.append("updated_at=EXCLUDED.updated_at")
+        if not update_fields:
+            assignments = ["updated_at=EXCLUDED.updated_at"]
+        sql = (
+            f"INSERT INTO public.files ({', '.join(columns)}) "
+            f"VALUES ({', '.join(['%s'] * len(columns))}) "
+            f"ON CONFLICT (remote_path) DO UPDATE SET {', '.join(assignments)}"
+        )
+        values = (remote_path, *fields.values(), now)
         with self._lock, self._connect() as conn:
-            exists = conn.execute("SELECT 1 FROM public.files WHERE remote_path=%s", (remote_path,)).fetchone()
-            if exists:
-                if fields:
-                    sets = ", ".join(f"{key}=%s" for key in fields)
-                    conn.execute(
-                        f"UPDATE public.files SET {sets}, updated_at=%s WHERE remote_path=%s",
-                        (*fields.values(), now, remote_path),
-                    )
-                else:
-                    conn.execute("UPDATE public.files SET updated_at=%s WHERE remote_path=%s", (now, remote_path))
-            else:
-                fields.setdefault("status", "pending")
-                cols = ", ".join(("remote_path", *fields.keys(), "updated_at"))
-                marks = ", ".join(["%s"] * (len(fields) + 2))
-                conn.execute(
-                    f"INSERT INTO public.files ({cols}) VALUES ({marks})",
-                    (remote_path, *fields.values(), now),
-                )
+            conn.execute(sql, values)
 
     def bump_attempts(self, remote_path: str) -> None:
         with self._lock, self._connect() as conn:
