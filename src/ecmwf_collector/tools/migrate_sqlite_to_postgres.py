@@ -39,7 +39,9 @@ def main() -> int:
     # SQLite's online backup API captures a consistent snapshot, including committed
     # WAL content, even if the desktop app is still open.
     create_sqlite_backup(source, backup)
-    sqlite = StateStore(source)
+    # Import the exact immutable snapshot that was backed up, not the live database;
+    # this prevents concurrent downloads from changing rows between backup and read.
+    sqlite = StateStore(backup)
     postgres = None
     try:
         records = sqlite.all_records()

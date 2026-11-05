@@ -313,5 +313,60 @@ class ConfigurePostgresCliTests(unittest.TestCase):
         self.assertFalse(any("TRUNCATE" in item.upper() or "DELETE FROM" in item.upper() for item in statements))
 
 
+class MigrationSnapshotTests(unittest.TestCase):
+    def test_migration_reads_the_created_backup_not_the_live_sqlite_database(self):
+        import contextlib
+        import io
+        import os
+        from unittest.mock import patch
+        from ecmwf_collector.tools import migrate_sqlite_to_postgres as migration
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "live-state.db"
+            source.write_bytes(b"live database placeholder")
+            backup_dir = root / "backups"
+            opened_paths = []
+
+            class FakeSQLite:
+                def __init__(self, path):
+                    opened_paths.append(Path(path))
+                def all_records(self):
+                    return []
+                def close(self):
+                    pass
+
+            class FakePostgres:
+                def __init__(self, _dsn):
+                    pass
+                def import_records(self, records):
+                    return 0
+                def all_records(self):
+                    return []
+                def close(self):
+                    pass
+
+            def make_backup(_source, backup):
+                backup.write_bytes(b"consistent snapshot")
+
+            output = io.StringIO()
+            with (
+                patch.dict(os.environ, {"ECMWF_POSTGRES_DSN": "host=localhost dbname=test"}),
+                patch.object(migration, "create_sqlite_backup", side_effect=make_backup),
+                patch.object(migration, "StateStore", FakeSQLite),
+                patch.object(migration, "PostgresStateStore", FakePostgres),
+                patch("sys.argv", ["migrate_sqlite_to_postgres", "--sqlite", str(source),
+                                   "--backup-dir", str(backup_dir)]),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(migration.main(), 0)
+
+            self.assertEqual(len(opened_paths), 1)
+            self.assertNotEqual(opened_paths[0], source.resolve())
+            self.assertEqual(opened_paths[0].parent, backup_dir.resolve())
+            self.assertTrue(opened_paths[0].is_file())
+            self.assertIn("SQLite backup retained at:", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
