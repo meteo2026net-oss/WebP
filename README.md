@@ -48,23 +48,23 @@ Never commit local settings, credentials, database files, logs, or downloaded da
 ```powershell
 $env:PYTHONPATH = "src"
 python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json
-``
+```
 3. Convert every compatible regular latitude/longitude scalar field, including its separate forecast-time and vertical-level slices:
 ```powershell
 python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
-``
+```
 4. Or process the downloaded tree in one batch:
 ```powershell
 python -m ecmwf_collector.tools.process_downloads --downloads downloads --output-dir output/map_data
-``
+```
 5. For U/V wind components, create both the scientific RGB WebP texture and a wind-speed display overlay:
 ```powershell
 python -m ecmwf_collector.tools.wind_grib_to_webp path/to/wind.grib2 --output output/wind.webp
-``
+```
 6. Start a local web server from the repository root and open the map:
 ```powershell
 python serve_map.py
-``
+```
 Open `http://127.0.0.1:8765/map_viewer/`. The map reads `output/map_data/manifest.json`. Click the map to query the nearest original GRIB grid cell; this requires the matching `.npz` data file. Compatible forecast frames can be browsed with the timeline slider and played sequentially.
 
 ## Tests
