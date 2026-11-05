@@ -247,9 +247,10 @@ def _assert_postgres_restore_access(dsn: str) -> str:
     if not row:
         raise RuntimeError("Could not verify PostgreSQL restore privileges.")
     database, is_superuser, is_owner, app_role_exists = row
-    if not (is_superuser or is_owner):
+    if not is_superuser:
         raise PermissionError(
-            "PostgreSQL restore requires the target database owner or a superuser account."
+            "Safe full-database restore requires a PostgreSQL superuser account so every "
+            "object in the archive can be replaced consistently."
         )
     if not app_role_exists:
         raise RuntimeError(
