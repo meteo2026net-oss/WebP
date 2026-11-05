@@ -321,11 +321,11 @@ class MainWindow(QMainWindow):
         def show(result):
             backend, count, location = result
             message = (
-                f"قاعدة البيانات النشطة: {backend}\\n"
-                f"عدد السجلات: {count:,}\\n"
+                f"قاعدة البيانات النشطة: {backend}\n"
+                f"عدد السجلات: {count:,}\n"
                 f"الموقع: {location}"
             )
-            self._log(message.replace("\\n", " | "))
+            self._log(message.replace("\n", " | "))
             QMessageBox.information(self, "حالة قاعدة البيانات", message)
 
         self._run(inspect, show)
