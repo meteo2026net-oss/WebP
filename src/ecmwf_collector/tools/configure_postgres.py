@@ -6,7 +6,7 @@ import getpass
 import sys
 
 from ecmwf_collector.postgres_provision import provision_application_login
-from ecmwf_collector.logging_setup import register_secret
+from ecmwf_collector.logging_setup import redact, register_secret
 from ecmwf_collector.secrets_store import SecretStore
 
 
@@ -51,7 +51,7 @@ def main() -> int:
         print("The application will use the restricted login on its next launch.")
         return 0
     except Exception as exc:
-        print(f"PostgreSQL setup failed ({type(exc).__name__}): {exc}", file=sys.stderr)
+        print(f"PostgreSQL setup failed ({type(exc).__name__}): {redact(str(exc))}", file=sys.stderr)
         return 1
 
 
