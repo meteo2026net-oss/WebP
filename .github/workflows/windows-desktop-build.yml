@@ -80,6 +80,19 @@ jobs:
       - name: Stage one-click launcher
         shell: pwsh
         run: Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
+      - name: Generate package SHA-256 manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "dist/ECMWFWebP").Path
+          $manifest = Join-Path $root "SHA256SUMS.txt"
+          $lines = Get-ChildItem -LiteralPath $root -File -Recurse |
+            Where-Object { $_.FullName -ne $manifest } |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+              "$hash  $relative"
+            }
+          $lines | Set-Content -LiteralPath $manifest -Encoding ascii
       - name: Upload portable Windows package
         uses: actions/upload-artifact@v4
         with:
