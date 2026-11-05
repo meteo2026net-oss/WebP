@@ -297,17 +297,20 @@ class MainWindow(QMainWindow):
             return
         dsn, accepted = QInputDialog.getText(
             self,
-            "ربط PostgreSQL",
-            "أدخل سلسلة اتصال PostgreSQL المحلية (سيُخفى النص):",
+            "إعداد PostgreSQL",
+            "أدخل سلسلة اتصال مدير PostgreSQL لقاعدة محلية موجودة (تُخفى). سيُنشأ حساب تطبيق محدود الصلاحيات:",
             QLineEdit.Password,
         )
         if not accepted or not dsn.strip():
             return
 
+        admin_dsn = dsn.strip()
+        register_secret(admin_dsn)
         sqlite_store = self.state
         postgres_store = None
         backup_path = None
         try:
+            from ..postgres_provision import provision_application_login
             from ..postgres_state import PostgresStateStore
             from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
 
@@ -319,7 +322,9 @@ class MainWindow(QMainWindow):
             create_sqlite_backup(state_path, backup_path)
 
             source_records = sqlite_store.all_records()
-            postgres_store = PostgresStateStore(dsn.strip())
+            app_dsn = provision_application_login(admin_dsn)
+            register_secret(app_dsn)
+            postgres_store = PostgresStateStore(app_dsn)
             postgres_store.import_records(source_records)
             target_records = postgres_store.all_records()
             target_by_path = {record.remote_path: record for record in target_records}
@@ -331,7 +336,7 @@ class MainWindow(QMainWindow):
                 raise RuntimeError(
                     f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
                 )
-            if not self.secrets.set_postgres_dsn(dsn.strip()):
+            if not self.secrets.set_postgres_dsn(app_dsn):
                 raise RuntimeError(
                     "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
                     "لم يتم تبديل قاعدة البيانات الحالية."
