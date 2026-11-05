@@ -146,7 +146,9 @@ jobs:
           $lines = Get-ChildItem -LiteralPath $root -File -Recurse |
             ForEach-Object {
               $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
-              $hiddenSegment = @($relative -split '[\\/]' | Where-Object { $_.StartsWith('.') }).Count -gt 0
+              $segments = $relative -split '[\\/]'
+              $hiddenSegment = $false
+              foreach ($segment in $segments) { if ($segment.StartsWith('.')) { $hiddenSegment = $true } }
               if ($_.FullName -ne $manifest -and -not $hiddenSegment) {
                 $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
                 "$hash  $relative"
@@ -160,39 +162,25 @@ jobs:
           $manifest = Join-Path $root "SHA256SUMS.txt"
           $listed = @{}
           foreach ($line in Get-Content -LiteralPath $manifest) {
-            if ($line -notmatch '^(?<hash>[0-9a-f]{64})  (?<path>.+)        uses: actions/upload-artifact@v4
-        with:
-          name: ECMWFWebP-Windows-x64
-          path: dist/ECMWFWebP/
-          if-no-files-found: error
-          retention-days: 14
-) {
-              throw "Invalid SHA256 manifest line: $line"
-            }
-            $relative = $Matches.path
-            if ($listed.ContainsKey($relative)) {
-              throw "Duplicate SHA256 manifest entry: $relative"
-            }
-            $listed[$relative] = $Matches.hash
+            if ($line.Length -lt 67 -or $line.Substring(64, 2) -ne '  ') { throw "Invalid SHA256 manifest line: $line" }
+            $expectedHash = $line.Substring(0, 64)
+            $relative = $line.Substring(66)
+            if ($expectedHash -notmatch '^[0-9a-f]{64}$') { throw "Invalid SHA256 value for: $relative" }
+            if ($listed.ContainsKey($relative)) { throw "Duplicate SHA256 manifest entry: $relative" }
+            $listed[$relative] = $expectedHash
             $filePath = Join-Path $root $relative
-            if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
-              throw "Manifest entry is missing from the portable package: $relative"
-            }
-            $actual = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $listed[$relative]) {
-              throw "SHA256 mismatch for package file: $relative"
-            }
+            if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) { throw "Manifest entry is missing from the portable package: $relative" }
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) { throw "SHA256 mismatch for package file: $relative" }
           }
-          $packageFiles = @(
-            Get-ChildItem -LiteralPath $root -File -Recurse | Where-Object {
-              $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
-              $hiddenSegment = @($relative -split '[\\/]' | Where-Object { $_.StartsWith('.') }).Count -gt 0
-              $_.FullName -ne $manifest -and -not $hiddenSegment
-            }
-          )
-          if ($listed.Count -ne $packageFiles.Count) {
-            throw "Manifest covers $($listed.Count) files but uploadable package contains $($packageFiles.Count) files."
-          }
+          $packageFiles = @(Get-ChildItem -LiteralPath $root -File -Recurse | Where-Object {
+            $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+            $segments = $relative -split '[\\/]'
+            $hiddenSegment = $false
+            foreach ($segment in $segments) { if ($segment.StartsWith('.')) { $hiddenSegment = $true } }
+            $_.FullName -ne $manifest -and -not $hiddenSegment
+          })
+          if ($listed.Count -ne $packageFiles.Count) { throw "Manifest covers $($listed.Count) files but uploadable package contains $($packageFiles.Count) files." }
           Write-Host "Verified $($listed.Count) package file hashes and manifest coverage."
       - name: Upload portable Windows package
         uses: actions/upload-artifact@v4
