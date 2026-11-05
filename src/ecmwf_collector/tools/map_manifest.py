@@ -10,11 +10,27 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "manifest.json"
-    try:
-        current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"version": 1, "layers": []}
-    except (OSError, json.JSONDecodeError):
+    if path.exists():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Existing map manifest is not valid JSON; refusing to overwrite it: {path}"
+            ) from exc
+        except OSError as exc:
+            raise OSError(f"Could not read existing map manifest {path}: {exc}") from exc
+        if not isinstance(current, dict) or not isinstance(current.get("layers"), list):
+            raise ValueError(
+                f"Existing map manifest has an invalid structure; expected an object "
+                f"with a layers array: {path}"
+            )
+        if any(not isinstance(layer, dict) for layer in current["layers"]):
+            raise ValueError(
+                f"Existing map manifest contains a non-object layer; refusing to overwrite it: {path}"
+            )
+    else:
         current = {"version": 1, "layers": []}
-    layers = current.get("layers", [])
+    layers = current["layers"]
 
     def identity(product: dict) -> str:
         # A GRIB file may contain multiple groups and ensemble/other slices
