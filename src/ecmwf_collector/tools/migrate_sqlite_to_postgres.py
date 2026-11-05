@@ -1,0 +1,52 @@
+"""Safely import the existing SQLite state into PostgreSQL without deleting SQLite."""
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ecmwf_collector.state import StateStore
+from ecmwf_collector.postgres_state import PostgresStateStore
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sqlite", type=Path, default=Path("state/state.db"))
+    parser.add_argument("--backup-dir", type=Path, default=Path("state/backups"))
+    args = parser.parse_args()
+    dsn = os.environ.get("ECMWF_POSTGRES_DSN")
+    if not dsn:
+        parser.error("Set ECMWF_POSTGRES_DSN to the target PostgreSQL connection string.")
+    source = args.sqlite.resolve()
+    if not source.is_file():
+        parser.error(f"SQLite database not found: {source}")
+    args.backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup = args.backup_dir / f"state-{stamp}.db"
+    shutil.copy2(source, backup)
+    sqlite = StateStore(source)
+    postgres = None
+    try:
+        records = sqlite.all_records()
+        postgres = PostgresStateStore(dsn)
+        inserted = postgres.import_records(records)
+        target_records = postgres.all_records()
+        target_by_path = {row.remote_path: row for row in target_records}
+        mismatches = [row.remote_path for row in records if target_by_path.get(row.remote_path) != row]
+        if mismatches:
+            raise RuntimeError(f"Verification failed for {len(mismatches)} records: {mismatches[:10]}")
+        print(f"SQLite records: {len(records)}")
+        print(f"New PostgreSQL records: {inserted}")
+        print(f"Verified PostgreSQL records: {len(records)}")
+        print(f"SQLite backup retained at: {backup}")
+        return 0
+    finally:
+        sqlite.close()
+        if postgres:
+            postgres.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
