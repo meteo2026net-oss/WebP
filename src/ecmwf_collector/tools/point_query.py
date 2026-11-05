@@ -66,8 +66,15 @@ def sample_npz(path: Path, latitude: float, longitude: float, method: str = "nea
         if np.any(np.abs(longitudes) > 360.0):
             raise ValueError("Grid longitude coordinates are outside -360..360 degrees.")
     else:
-        geo_valid = (np.isfinite(latitudes) & np.isfinite(longitudes)
-                     & (np.abs(latitudes) <= 90.0))
+        latitude_finite = np.isfinite(latitudes)
+        longitude_finite = np.isfinite(longitudes)
+        if np.any(np.isinf(latitudes)) or np.any(np.isinf(longitudes)):
+            raise ValueError("Curvilinear grid coordinates must not contain infinite values.")
+        if np.any(latitude_finite != longitude_finite):
+            raise ValueError("Curvilinear latitude/longitude missing-cell masks differ.")
+        geo_valid = latitude_finite & longitude_finite
+        if np.any(np.abs(latitudes[geo_valid]) > 90.0):
+            raise ValueError("Grid latitude coordinates are outside -90..90 degrees.")
         if np.any(np.abs(longitudes[geo_valid]) > 360.0):
             raise ValueError("Grid longitude coordinates are outside -360..360 degrees.")
         if int(geo_valid.sum()) < 3:
