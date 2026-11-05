@@ -424,5 +424,68 @@ class MapRenderTests(unittest.TestCase):
         self.assertFalse(_has_two_dimensional_spread(points))
 
 
+    def test_curvilinear_scalar_rejects_malformed_geolocation(self):
+        lat_base = np.array([[12.0, 12.1, 12.2],
+                             [11.0, 11.1, 11.2],
+                             [10.0, 10.1, 10.2]])
+        lon_base = np.array([[30.0, 31.0, 32.0],
+                             [30.1, 31.1, 32.1],
+                             [30.2, 31.2, 32.2]])
+        values = np.arange(9, dtype=np.float32).reshape(3, 3)
+        cases = (
+            ("paired infinity", np.where(np.indices((3, 3))[0] == 0, np.inf, lat_base), lon_base,
+             "must not contain infinite"),
+            ("mismatched NaN masks", np.where(np.indices((3, 3))[0] == 0, np.nan, lat_base), lon_base,
+             "missing-cell masks differ"),
+            ("latitude above range", np.array([[90.1, 12.1, 12.2], [11.0, 11.1, 11.2], [10.0, 10.1, 10.2]]), lon_base,
+             "-90..90"),
+            ("longitude above range", lat_base, np.array([[361.0, 31.0, 32.0], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]]),
+             "-360..360"),
+        )
+        for name, lat, lon, message in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaisesRegex(ValueError, message):
+                    render_scalar_png(values, lat, lon, Path(tmp) / "invalid.png")
+
+    def test_curvilinear_direction_rejects_malformed_geolocation(self):
+        lat_base = np.array([[12.0, 12.1, 12.2],
+                             [11.0, 11.1, 11.2],
+                             [10.0, 10.1, 10.2]])
+        lon_base = np.array([[30.0, 31.0, 32.0],
+                             [30.1, 31.1, 32.1],
+                             [30.2, 31.2, 32.2]])
+        direction = np.full((3, 3), 45.0, dtype=np.float32)
+        cases = (
+            ("paired infinity", np.where(np.indices((3, 3))[0] == 0, -np.inf, lat_base), lon_base,
+             "must not contain infinite"),
+            ("mismatched NaN masks", lat_base, np.where(np.indices((3, 3))[0] == 0, np.nan, lon_base),
+             "missing-cell masks differ"),
+            ("latitude below range", np.array([[-90.1, 12.1, 12.2], [11.0, 11.1, 11.2], [10.0, 10.1, 10.2]]), lon_base,
+             "-90..90"),
+            ("longitude below range", lat_base, np.array([[-361.0, 31.0, 32.0], [30.1, 31.1, 32.1], [30.2, 31.2, 32.2]]),
+             "-360..360"),
+        )
+        for name, lat, lon, message in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaisesRegex(ValueError, message):
+                    render_direction_png(direction, lat, lon, Path(tmp) / "invalid-direction.png")
+
+    def test_curvilinear_direction_accepts_paired_nan_geolocation(self):
+        lat = np.array([[12.0, 12.1, np.nan],
+                        [11.0, 11.1, 11.2],
+                        [10.0, 10.1, 10.2]])
+        lon = np.array([[30.0, 31.0, np.nan],
+                        [30.1, 31.1, 32.1],
+                        [30.2, 31.2, 32.2]])
+        direction = np.full((3, 3), 45.0, dtype=np.float32)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = render_direction_png(
+                direction, lat, lon, Path(tmp) / "paired-nan-direction.png"
+            )
+        self.assertGreater(result["valid_cells"], 0)
+        self.assertEqual(result["longitude_convention"], "curvilinear_unwrapped")
+
+
+
 if __name__ == "__main__":
     unittest.main()
