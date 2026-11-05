@@ -93,9 +93,19 @@ jobs:
                 Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.Message)"
               }
               $process.Refresh()
-              if ($process.HasExited) { throw "Bundled map server exited with code $($process.ExitCode)" }
+              if ($process.HasExited) {
+                $logRoot = Join-Path $env:LOCALAPPDATA "ECMWFWebP/logs"
+                Get-ChildItem $logRoot -Filter "map_server*.log" -ErrorAction SilentlyContinue |
+                  ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content $_.FullName }
+                throw "Bundled map server exited with code $($process.ExitCode)"
+              }
             }
-            if (-not $ready) { throw "Bundled map viewer did not become available on localhost:8765" }
+            if (-not $ready) {
+              $logRoot = Join-Path $env:LOCALAPPDATA "ECMWFWebP/logs"
+              Get-ChildItem $logRoot -Filter "map_server*.log" -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content $_.FullName }
+              throw "Bundled map viewer did not become available on localhost:8765"
+            }
           } finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
