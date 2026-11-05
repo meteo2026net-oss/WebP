@@ -31,6 +31,22 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
         self.assertFalse(result["service_running"])
         self.assertEqual(result["services"], [])
 
+    def test_parses_windows_postgres_service_state(self):
+        listed = type("Result", (), {
+            "returncode": 0,
+            "stdout": "SERVICE_NAME: postgresql-x64-17\\n        DISPLAY_NAME: PostgreSQL Server 17\\n",
+        })()
+        detail = type("Result", (), {
+            "returncode": 0,
+            "stdout": "SERVICE_NAME: postgresql-x64-17\\n        STATE              : 4  RUNNING\\n",
+        })()
+        with patch.object(postgres_windows.os, "name", "nt"), \\
+             patch.object(postgres_windows.subprocess, "run", side_effect=[listed, detail]):
+            services = postgres_windows._windows_services()
+        self.assertEqual(
+            services, [{"name": "postgresql-x64-17", "state": "RUNNING"}]
+        )
+
     def test_reports_running_windows_postgres_service(self):
         with patch.object(postgres_windows, "_find_binary", return_value=None), \
              patch.object(postgres_windows, "_windows_services", return_value=[
