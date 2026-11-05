@@ -40,7 +40,7 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
             "returncode": 0,
             "stdout": "SERVICE_NAME: postgresql-x64-17\n        STATE              : 4  RUNNING\n",
         })()
-        with patch.object(postgres_windows.os, "name", "nt"), \\
+        with patch.object(postgres_windows.os, "name", "nt"), \
              patch.object(postgres_windows.subprocess, "run", side_effect=[listed, detail]):
             services = postgres_windows._windows_services()
         self.assertEqual(
