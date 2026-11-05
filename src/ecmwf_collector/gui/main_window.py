@@ -497,9 +497,15 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         try:
+            if getattr(sys, "frozen", False):
+                command = [sys.executable, "--map-server"]
+                working_directory = str(project_root())
+            else:
+                command = [sys.executable, str(project_root() / "serve_map.py")]
+                working_directory = str(project_root())
             subprocess.Popen(
-                [sys.executable, str(project_root() / "serve_map.py")],
-                cwd=str(project_root()),
+                command,
+                cwd=working_directory,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
