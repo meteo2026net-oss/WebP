@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import getpass
 import sys
 
@@ -15,7 +16,22 @@ from ecmwf_collector.secrets_store import SecretStore
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--remove", action="store_true", help="Remove the saved PostgreSQL DSN.")
+    parser.add_argument(
+        "--diagnose", action="store_true",
+        help="Print read-only diagnostics for locally installed PostgreSQL tools and services.",
+    )
     args = parser.parse_args()
+    if args.diagnose:
+        from ecmwf_collector.postgres_windows import diagnose_postgres_installation
+
+        result = diagnose_postgres_installation()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not result["server_installation_detected"]:
+            print(
+                "لم يتم اكتشاف خادم PostgreSQL محلي. هذا الفحص لا يثبت الخادم ولا يغيّر الخدمات."
+            )
+            return 1
+        return 0
     secrets = SecretStore()
     if args.remove:
         if not secrets.available:
