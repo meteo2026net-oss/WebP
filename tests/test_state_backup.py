@@ -6,6 +6,7 @@ from pathlib import Path
 from ecmwf_collector.state_backup import (
     create_manual_backup,
     ensure_daily_backup,
+    restore_sqlite_backup,
 )
 
 
@@ -71,6 +72,43 @@ class StateBackupTests(unittest.TestCase):
             for _ in range(4):
                 create_manual_backup(source, backup_dir, keep=2)
             self.assertEqual(len(list(backup_dir.glob("state-manual-*.db"))), 2)
+
+    def test_restore_creates_safety_copy_before_replacing_current_database(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = self._database(root)
+            backup = create_manual_backup(target, root / "backups")
+            with sqlite3.connect(target) as db:
+                db.execute("UPDATE files SET status='validated'")
+            safety = restore_sqlite_backup(backup, target, root / "backups")
+            with sqlite3.connect(target) as db:
+                self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
+            with sqlite3.connect(safety) as db:
+                self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "validated")
+
+    def test_restore_refuses_live_sqlite_wal_sidecar_without_replacing_database(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = self._database(root)
+            backup = create_manual_backup(target, root / "backups")
+            with sqlite3.connect(target) as db:
+                db.execute("UPDATE files SET status='validated'")
+            Path(f"{target}-wal").write_bytes(b"active")
+            with self.assertRaisesRegex(RuntimeError, "sidecar"):
+                restore_sqlite_backup(backup, target, root / "backups")
+            with sqlite3.connect(target) as db:
+                self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "validated")
+
+    def test_restore_rejects_invalid_backup_without_touching_current_database(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = self._database(root)
+            invalid = root / "invalid.db"
+            invalid.write_bytes(b"not sqlite")
+            with self.assertRaises(sqlite3.DatabaseError):
+                restore_sqlite_backup(invalid, target, root / "backups")
+            with sqlite3.connect(target) as db:
+                self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
 
     def test_backup_failure_does_not_replace_original_database(self):
         with tempfile.TemporaryDirectory() as temp:
