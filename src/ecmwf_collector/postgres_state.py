@@ -78,7 +78,20 @@ class PostgresStateStore:
                 raise RuntimeError(
                     "رفض الاتصال: حساب PostgreSQL عضو في دور ذي صلاحيات مرتفعة."
                 )
-            conn.execute(CREATE_TABLE)
+            table_access = conn.execute(
+                """
+                SELECT to_regclass('public.files') IS NOT NULL,
+                       has_table_privilege(current_user, 'public.files', 'SELECT'),
+                       has_table_privilege(current_user, 'public.files', 'INSERT'),
+                       has_table_privilege(current_user, 'public.files', 'UPDATE'),
+                       has_table_privilege(current_user, 'public.files', 'DELETE')
+                """
+            ).fetchone()
+            if table_access is None or not all(bool(flag) for flag in table_access):
+                raise RuntimeError(
+                    "رفض الاتصال: جدول public.files غير مهيأ أو أن صلاحيات القراءة والكتابة غير مكتملة. "
+                    "أعد إعداد حساب التطبيق بأداة configure_postgres."
+                )
 
     def _connect(self):
         return self._psycopg.connect(self._dsn, connect_timeout=8)
@@ -86,7 +99,7 @@ class PostgresStateStore:
     def get(self, remote_path: str) -> FileRecord | None:
         with self._lock, self._connect() as conn:
             row = conn.execute(
-                f"SELECT {SELECT_COLUMNS} FROM files WHERE remote_path=%s", (remote_path,)
+                f"SELECT {SELECT_COLUMNS} FROM public.files WHERE remote_path=%s", (remote_path,)
             ).fetchone()
         return FileRecord(*row) if row else None
 
@@ -96,7 +109,7 @@ class PostgresStateStore:
             raise ValueError(f"حقول غير معروفة: {bad}")
         now = utc_now()
         with self._lock, self._connect() as conn:
-            exists = conn.execute("SELECT 1 FROM files WHERE remote_path=%s", (remote_path,)).fetchone()
+            exists = conn.execute("SELECT 1 FROM public.files WHERE remote_path=%s", (remote_path,)).fetchone()
             if exists:
                 if fields:
                     sets = ", ".join(f"{key}=%s" for key in fields)
@@ -124,7 +137,7 @@ class PostgresStateStore:
 
     def all_records(self) -> list[FileRecord]:
         with self._lock, self._connect() as conn:
-            rows = conn.execute(f"SELECT {SELECT_COLUMNS} FROM files ORDER BY remote_path").fetchall()
+            rows = conn.execute(f"SELECT {SELECT_COLUMNS} FROM public.files ORDER BY remote_path").fetchall()
         return [FileRecord(*row) for row in rows]
 
     def count(self) -> int:
@@ -147,7 +160,7 @@ class PostgresStateStore:
                 )
                 inserted += cur.rowcount
                 existing = conn.execute(
-                    f"SELECT {SELECT_COLUMNS} FROM files WHERE remote_path=%s", (record.remote_path,)
+                    f"SELECT {SELECT_COLUMNS} FROM public.files WHERE remote_path=%s", (record.remote_path,)
                 ).fetchone()
                 if existing != values:
                     raise RuntimeError(
