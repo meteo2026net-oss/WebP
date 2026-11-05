@@ -263,5 +263,39 @@ class PointQueryTests(unittest.TestCase):
             self.assertEqual(result["longitude"], 120.0)
 
 
+
+    def test_rejects_curvilinear_latitude_above_north_pole(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[90.1, 90.0], [89.0, 89.1]]
+            lon = [[20.0, 21.0], [20.1, 21.1]]
+            path = self._write_grid(tmp, np.ones((2, 2)), lat, lon)
+            with self.assertRaisesRegex(ValueError, "-90..90"):
+                sample_npz(path, 89.5, 20.5)
+
+    def test_rejects_curvilinear_latitude_below_south_pole(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[-90.1, -90.0], [-89.0, -89.1]]
+            lon = [[20.0, 21.0], [20.1, 21.1]]
+            path = self._write_grid(tmp, np.ones((2, 2)), lat, lon)
+            with self.assertRaisesRegex(ValueError, "-90..90"):
+                sample_npz(path, -89.5, 20.5)
+
+    def test_rejects_mismatched_curvilinear_missing_coordinate_masks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, np.nan], [9.0, 9.1]]
+            lon = [[20.0, 21.0], [20.1, 21.1]]
+            path = self._write_grid(tmp, np.ones((2, 2)), lat, lon)
+            with self.assertRaisesRegex(ValueError, "missing-cell masks differ"):
+                sample_npz(path, 9.5, 20.5)
+
+    def test_rejects_infinite_curvilinear_geolocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lat = [[10.0, np.inf], [9.0, 9.1]]
+            lon = [[20.0, np.inf], [20.1, 21.1]]
+            path = self._write_grid(tmp, np.ones((2, 2)), lat, lon)
+            with self.assertRaisesRegex(ValueError, "must not contain infinite"):
+                sample_npz(path, 9.5, 20.5)
+
+
 if __name__ == "__main__":
     unittest.main()
