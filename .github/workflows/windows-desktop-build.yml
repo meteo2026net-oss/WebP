@@ -9,7 +9,11 @@ on:
       - "serve_map.py"
       - "ecmwf_webp.spec"
       - "scripts/build_windows.ps1"
+      - "tests/**"
       - "pyproject.toml"
+      - "requirements.txt"
+      - "environment.yml"
+      - "START.bat"
       - ".github/workflows/windows-desktop-build.yml"
   push:
     branches: [main, "feat/windows-one-click-desktop-package"]
