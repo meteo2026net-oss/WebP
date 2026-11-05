@@ -5,7 +5,7 @@ Set-Location $RepoRoot
 
 Write-Host "[1/5] Checking Windows architecture..."
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only 64-bit Windows is supported by this build." }
-if ($env:PROCESSOR_ARCHITECTURE -notin @("AMD64", "ARM64")) { throw "Unsupported processor architecture: $env:PROCESSOR_ARCHITECTURE" }
+if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") { throw "This tested source-build path currently supports Windows x64 only. ARM64 packaging requires a separate native build." }
 
 Write-Host "[2/5] Locating Python 3.12..."
 $Python = $null
@@ -35,5 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 Write-Host "[5/5] Checking generated executable..."
 $Exe = Join-Path $RepoRoot "dist\ECMWFWebP\ECMWFWebP.exe"
 if (-not (Test-Path $Exe)) { throw "Expected executable was not generated: $Exe" }
+Copy-Item (Join-Path $RepoRoot "START.bat") (Join-Path (Split-Path $Exe) "START.bat") -Force
 Write-Host "Build complete: $Exe"
+Write-Host "Portable folder launcher: $(Join-Path (Split-Path $Exe) 'START.bat')"
 Write-Host "Note: first-run database initialization and PostgreSQL provisioning are separate milestones; this build still uses the existing SQLite state store."
