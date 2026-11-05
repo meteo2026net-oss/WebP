@@ -229,7 +229,7 @@ def validate_postgres_backup_manifest(archive: Path) -> dict[str, object]:
 
 
 def _assert_postgres_restore_access(dsn: str) -> str:
-    """Require database ownership or superuser and the existing application role."""
+    """Require superuser access and the existing restricted application role."""
     try:
         import psycopg
     except ImportError as exc:
@@ -284,6 +284,11 @@ def restore_postgres_backup(
             "Backup database does not match the selected PostgreSQL database; restore was refused."
         )
     database = _assert_postgres_restore_access(dsn)
+    if database != target_database or database != metadata["database"]:
+        raise ValueError(
+            "The connected PostgreSQL database does not match the backup target; "
+            "restore was refused before creating a safety backup."
+        )
     restore_exe = _tool("pg_restore", pg_restore)
     dump_exe = _tool("pg_dump", pg_dump)
     _validate_tool_pair(dump_exe, restore_exe)
