@@ -17,6 +17,16 @@ class MapManifestTests(unittest.TestCase):
                 update_manifest(root, [{"variable": "t", "image": "new.png"}])
             self.assertEqual(path.read_text(encoding="utf-8"), original)
 
+    def test_invalid_utf8_manifest_is_preserved_and_reports_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "manifest.json"
+            original = b'{"version": 1, "layers": [\xff]}'
+            path.write_bytes(original)
+            with self.assertRaisesRegex(ValueError, "not valid UTF-8"):
+                update_manifest(root, [{"variable": "t", "image": "new.png"}])
+            self.assertEqual(path.read_bytes(), original)
+
     def test_invalid_manifest_structure_is_preserved(self):
         for payload in ('[]', '{"version": 1}', '{"version": 1, "layers": [null]}'):
             with self.subTest(payload=payload), tempfile.TemporaryDirectory() as tmp:

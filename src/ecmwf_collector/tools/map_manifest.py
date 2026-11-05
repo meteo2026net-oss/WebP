@@ -17,6 +17,10 @@ def update_manifest(output_dir: Path, products: list[dict]) -> Path:
             raise ValueError(
                 f"Existing map manifest is not valid JSON; refusing to overwrite it: {path}"
             ) from exc
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Existing map manifest is not valid UTF-8; refusing to overwrite it: {path}"
+            ) from exc
         except OSError as exc:
             raise OSError(f"Could not read existing map manifest {path}: {exc}") from exc
         if not isinstance(current, dict) or not isinstance(current.get("layers"), list):
