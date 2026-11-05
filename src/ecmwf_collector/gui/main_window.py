@@ -658,76 +658,98 @@ class MainWindow(QMainWindow):
         admin_dsn = dsn.strip()
         register_secret(admin_dsn)
         sqlite_store = self.state
-        postgres_store = None
-        backup_path = None
-        app_role_provisioned = False
-        backend_switched = False
-        try:
-            from ..postgres_provision import provision_application_login, remove_new_application_login
+        state_path = project_root() / "state" / "state.db"
+        backup_dir = project_root() / "state" / "backups"
+
+        def migrate():
+            from ..postgres_provision import (
+                provision_application_login, remove_new_application_login,
+            )
             from ..postgres_state import PostgresStateStore
             from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
 
-            state_path = project_root() / "state" / "state.db"
-            backup_dir = project_root() / "state" / "backups"
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-            backup_path = backup_dir / f"state-before-postgres-{stamp}.db"
-            create_sqlite_backup(state_path, backup_path)
-
-            source_records = sqlite_store.all_records()
-            app_dsn = provision_application_login(admin_dsn)
-            app_role_provisioned = True
-            register_secret(app_dsn)
-            postgres_store = PostgresStateStore(app_dsn)
-            postgres_store.import_records(source_records)
-            target_records = postgres_store.all_records()
-            target_by_path = {record.remote_path: record for record in target_records}
-            mismatches = [
-                record.remote_path for record in source_records
-                if target_by_path.get(record.remote_path) != record
-            ]
-            if mismatches:
-                raise RuntimeError(
-                    f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
-                )
-            if not self.secrets.set_postgres_dsn(app_dsn):
-                raise RuntimeError(
-                    "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
-                    "لم يتم تبديل قاعدة البيانات الحالية."
-                )
-
-            self.state = postgres_store
-            backend_switched = True
-            app_role_provisioned = False
             postgres_store = None
+            app_role_provisioned = False
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+                backup_path = backup_dir / f"state-before-postgres-{stamp}.db"
+                create_sqlite_backup(state_path, backup_path)
+
+                source_records = sqlite_store.all_records()
+                app_dsn = provision_application_login(admin_dsn)
+                app_role_provisioned = True
+                register_secret(app_dsn)
+                postgres_store = PostgresStateStore(app_dsn)
+                postgres_store.import_records(source_records)
+                target_records = postgres_store.all_records()
+                target_by_path = {record.remote_path: record for record in target_records}
+                mismatches = [
+                    record.remote_path for record in source_records
+                    if target_by_path.get(record.remote_path) != record
+                ]
+                if mismatches:
+                    raise RuntimeError(
+                        f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
+                    )
+                if len(target_records) != len(source_records):
+                    raise RuntimeError(
+                        "عدد السجلات في PostgreSQL لا يطابق عدد سجلات SQLite."
+                    )
+                if not self.secrets.set_postgres_dsn(app_dsn):
+                    raise RuntimeError(
+                        "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
+                        "لم يتم تبديل قاعدة البيانات الحالية."
+                    )
+                result = (postgres_store, len(source_records), backup_path)
+                postgres_store = None
+                app_role_provisioned = False
+                return result
+            except Exception:
+                if postgres_store is not None:
+                    postgres_store.close()
+                if app_role_provisioned:
+                    try:
+                        remove_new_application_login(admin_dsn)
+                    except Exception:
+                        log.exception(
+                            "تعذّر تأكيد إزالة حساب PostgreSQL الذي أُنشئ أثناء ترحيل فاشل"
+                        )
+                raise
+
+        def migrated(result):
+            postgres_store, record_count, backup_path = result
+            self.state = postgres_store
             sqlite_store.close()
             self._log(
-                f"تم ربط PostgreSQL والتحقق من {len(source_records)} سجلات. "
+                f"تم ربط PostgreSQL والتحقق من {record_count} سجلات. "
                 f"نسخة SQLite الاحتياطية محفوظة في: {backup_path}"
             )
             QMessageBox.information(
                 self, "اكتمل ربط PostgreSQL",
                 f"تم نقل السجل والتحقق منه بنجاح.\\n"
-                f"عدد السجلات: {len(source_records)}\\n"
+                f"عدد السجلات: {record_count}\\n"
                 f"نسخة SQLite الاحتياطية: {backup_path}\\n"
                 "ستستخدم الجلسات القادمة PostgreSQL تلقائياً.",
             )
-        except Exception as exc:
-            if postgres_store is not None:
-                postgres_store.close()
-            if app_role_provisioned and not backend_switched:
-                try:
-                    remove_new_application_login(admin_dsn)
-                    self._log("أُزيل حساب PostgreSQL الذي أُنشئ في هذه المحاولة الفاشلة؛ بقي جدول PostgreSQL وبياناته ونسخة SQLite دون حذف.")
-                except Exception:
-                    self._log("تحذير: تعذّر تأكيد إزالة حساب PostgreSQL الجديد؛ افحص الحساب ecmwf_webp_app قبل إعادة المحاولة.")
-            self._log(f"تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية كما هي: {type(exc).__name__}")
+
+        def migration_failed(message):
+            self._log(
+                "تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية نشطة. "
+                f"التفاصيل: {message}"
+            )
             QMessageBox.critical(
                 self, "فشل ربط PostgreSQL",
                 f"لم يتم تبديل قاعدة البيانات الحالية.\\n"
-                f"السبب: {type(exc).__name__}: {redact(str(exc))}\\n"
-                f"النسخة الاحتياطية إن أُنشئت: {backup_path or 'لم تُنشأ'}",
+                f"السبب: {message}\\n"
+                "تبقى قاعدة SQLite الأصلية هي النشطة.",
             )
+
+        self._log(
+            "بدأ ترحيل SQLite إلى PostgreSQL في الخلفية: "
+            "نسخ احتياطي، نقل، مقارنة السجلات، ثم تبديل آمن عند النجاح…"
+        )
+        self._run(migrate, migrated, on_failed=migration_failed)
 
     def _on_save(self):
         cfg = self._read_cfg()
