@@ -244,6 +244,73 @@ class ConfigurePostgresCliTests(unittest.TestCase):
         self.assertNotIn("admin-secret", output.getvalue())
         self.assertNotIn("app-secret", output.getvalue())
 
+    def test_cli_vault_save_failure_removes_only_new_role(self):
+        import contextlib
+        import io
+        import sys
+        from unittest.mock import patch
+        from ecmwf_collector.tools import configure_postgres
+
+        admin_dsn = "host=127.0.0.1 dbname=weatherdb user=admin password=admin-secret"
+        secrets_store = type("Secrets", (), {
+            "available": True,
+            "set_postgres_dsn": lambda self, _value: False,
+        })()
+        output = io.StringIO()
+        with (
+            patch.object(configure_postgres, "SecretStore", return_value=secrets_store),
+            patch.object(configure_postgres.getpass, "getpass", return_value=admin_dsn),
+            patch.object(configure_postgres, "provision_application_login", return_value="app-dsn"),
+            patch.object(configure_postgres, "remove_new_application_login") as cleanup,
+            patch.object(sys, "argv", ["configure_postgres"]),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(output),
+        ):
+            result = configure_postgres.main()
+        self.assertEqual(result, 3)
+        cleanup.assert_called_once_with(admin_dsn)
+        self.assertIn("table and data were retained", output.getvalue())
+
+    def test_cleanup_revokes_and_drops_role_but_never_drops_table(self):
+        import sys
+        import types
+        from unittest.mock import patch
+        from ecmwf_collector.postgres_provision import remove_new_application_login
+
+        statements = []
+        class FakeConnection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def execute(self, statement, params=None):
+                statement = str(statement)
+                statements.append(statement)
+                if "current_database" in statement:
+                    return types.SimpleNamespace(fetchone=lambda: ("weatherdb",))
+                return types.SimpleNamespace(fetchone=lambda: None)
+
+        class FakeSQL(str):
+            def format(self, *values):
+                result = self
+                for value in values:
+                    result = result.replace("{}", str(value), 1)
+                return result
+
+        fake_sql = types.SimpleNamespace(
+            SQL=lambda value: FakeSQL(value),
+            Identifier=lambda value: '"' + value.replace('"', '""') + '"',
+        )
+        fake_psycopg = types.SimpleNamespace(sql=fake_sql, connect=lambda *_a, **_k: FakeConnection())
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
+            remove_new_application_login("host=127.0.0.1 dbname=weatherdb")
+        self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
+        self.assertTrue(any("DROP ROLE IF EXISTS" in item for item in statements))
+        self.assertFalse(any("DROP TABLE" in item.upper() for item in statements))
+        self.assertFalse(any("TRUNCATE" in item.upper() or "DELETE FROM" in item.upper() for item in statements))
+
 
 if __name__ == "__main__":
     unittest.main()
