@@ -418,11 +418,20 @@ class MainWindow(QMainWindow):
             return
         self._log(f"بدء استعادة PostgreSQL من: {archive}")
 
+        app_store = self.state
+
         def work():
             from ..postgres_backup import restore_postgres_backup
-            return restore_postgres_backup(
+            safety_copy = restore_postgres_backup(
                 admin_dsn, archive, backup_dir, timeout=3600
             )
+            # The restricted application DSN is checked in the worker too; a slow
+            # or unavailable local PostgreSQL service must not freeze the GUI.
+            try:
+                verified_count = app_store.count()
+                return safety_copy, verified_count, None
+            except Exception as exc:
+                return safety_copy, None, f"{type(exc).__name__}: {redact(str(exc))}"
 
         def restore_failed(message):
             self._log(
@@ -434,33 +443,43 @@ class MainWindow(QMainWindow):
                 "راجع سجل التطبيق واحتفظ بنسخة الأمان إذا أُنشئت؛ لا تحذف النسخة الأصلية.",
             )
 
-        self._run(
-            work,
-            lambda safety: self._postgres_restore_done(archive, safety),
-            on_failed=restore_failed,
-        )
+        def restore_done(result):
+            safety_copy, verified_count, verification_error = result
+            self._postgres_restore_done(
+                archive, safety_copy, verified_count, verification_error
+            )
 
-    def _postgres_restore_done(self, archive: Path, safety: Path):
-        try:
-            self.state.count()
+        self._run(work, restore_done, on_failed=restore_failed)
+
+    def _postgres_restore_done(
+        self,
+        archive: Path,
+        safety: Path,
+        verified_count: int | None,
+        verification_error: str | None = None,
+    ):
+        if verification_error:
             self._log(
-                f"اكتملت استعادة PostgreSQL من {archive}. "
+                f"اكتملت الاستعادة، لكن تعذّر التحقق عبر حساب التطبيق: {verification_error}. "
                 f"نسخة الأمان السابقة: {safety}"
-            )
-            QMessageBox.information(
-                self, "اكتملت استعادة PostgreSQL",
-                f"تمت الاستعادة والتحقق من جدول التطبيق.\\n"
-                f"نسخة الأمان السابقة: {safety}",
-            )
-        except Exception as exc:
-            self._log(
-                f"استعادة PostgreSQL تمت لكن تعذّر التحقق عبر حساب التطبيق: "
-                f"{type(exc).__name__}: {redact(str(exc))}"
             )
             QMessageBox.warning(
                 self, "استعادة مع تحذير",
-                f"تم تنفيذ الاستعادة، لكن تعذّر التحقق عبر حساب التطبيق: {redact(str(exc))}",
+                "أُنجزت استعادة PostgreSQL، لكن تعذّر فحص السجل باستخدام حساب التطبيق. "
+                f"تفاصيل التحقق: {verification_error}\\nنسخة الأمان: {safety}",
             )
+            return
+
+        self._log(
+            f"اكتملت استعادة PostgreSQL من {archive}. "
+            f"عدد السجلات: {verified_count}. نسخة الأمان السابقة: {safety}"
+        )
+        QMessageBox.information(
+            self, "اكتملت استعادة PostgreSQL",
+            f"تمت الاستعادة والتحقق من حساب التطبيق.\\n"
+            f"عدد السجلات: {verified_count}\\n"
+            f"نسخة الأمان السابقة: {safety}",
+        )
 
     def _on_restore_sqlite(self):
         if self._downloading or self._workers:
