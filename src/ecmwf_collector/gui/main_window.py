@@ -10,7 +10,7 @@ import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self.cfg, self.config_path, self.secrets, self.state = cfg, config_path, secrets, state
         self.pool = QThreadPool.globalInstance()
         self._workers: set = set()
+        self._close_when_idle = False
         self._cwd = "/"
         self._entries: list[RemoteEntry] = []
         self._manager: DownloadManager | None = None
@@ -783,14 +784,20 @@ class MainWindow(QMainWindow):
         def done(res):
             self._workers.discard(w)
             self._busy(False)
-            on_done(res)
+            try:
+                on_done(res)
+            finally:
+                self._finish_close_if_idle()
 
         def failed(msg):
             self._workers.discard(w)
             self._busy(False)
             self._log(f"خطأ: {msg}")
-            if on_failed is not None:
-                on_failed(msg)
+            try:
+                if on_failed is not None:
+                    on_failed(msg)
+            finally:
+                self._finish_close_if_idle()
 
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
@@ -1021,10 +1028,33 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self._log(f"تعذّر التصدير: {exc}")
 
+    def _finish_close_if_idle(self):
+        """Close only after every worker has returned to the GUI thread."""
+        if self._close_when_idle and not self._workers and not self._downloading:
+            self._close_when_idle = False
+            QTimer.singleShot(0, self.close)
+
     def closeEvent(self, event):
-        if self._manager:
-            self._manager.stop()
-            self.pool.waitForDone(10000)
+        if self._workers or self._downloading:
+            answer = QMessageBox.question(
+                self,
+                "مهام قيد التنفيذ",
+                "توجد عملية تعمل في الخلفية (نسخ احتياطي أو استعادة أو ترحيل أو تنزيل).\n"
+                "هل تريد إيقاف التنزيل إن وجد، ثم إبقاء التطبيق مفتوحاً حتى تنتهي العمليات بأمان؟",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Yes:
+                self._close_when_idle = True
+                if self._manager:
+                    self._manager.stop()
+                    self._log("طُلب الإغلاق؛ يجري إيقاف التنزيل بأمان وانتظار اكتمال المهام الأخرى…")
+                else:
+                    self._log("طُلب الإغلاق؛ سيبقى التطبيق مفتوحاً حتى تنتهي المهمة الخلفية بأمان…")
+                event.ignore()
+            else:
+                event.ignore()
+            return
         super().closeEvent(event)
 
     def _log(self, msg: str):
