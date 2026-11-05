@@ -799,10 +799,11 @@ class MainWindow(QMainWindow):
         def failed(msg):
             self._workers.discard(w)
             self._busy(False)
-            self._log(f"خطأ: {msg}")
+            safe_message = redact(str(msg))
+            self._log(f"خطأ: {safe_message}")
             try:
                 if on_failed is not None:
-                    on_failed(msg)
+                    on_failed(safe_message)
             finally:
                 self._finish_close_if_idle()
 
@@ -1087,5 +1088,6 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _log(self, msg: str):
-        log.info(msg.replace("\n", " | "))
-        self.status.appendPlainText(msg)
+        safe_message = redact(str(msg))
+        log.info(safe_message.replace("\n", " | "))
+        self.status.appendPlainText(safe_message)
