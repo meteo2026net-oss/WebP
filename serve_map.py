@@ -26,10 +26,16 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
 
     def translate_path(self, path: str) -> str:
         relative = unquote(urlsplit(path).path).lstrip("/")
-        candidate = (ROOT / relative).resolve()
+        # Generated scientific products live in the writable per-user data tree,
+        # while the static viewer is bundled read-only with the application.
+        if relative == "output/map_data" or relative.startswith("output/map_data/"):
+            data_relative = relative[len("output/map_data"):].lstrip("/")
+            candidate = (MAP_DATA / data_relative).resolve()
+        else:
+            candidate = (BUNDLE_ROOT / relative).resolve()
         if any(candidate == allowed or allowed in candidate.parents for allowed in ALLOWED_ROOTS):
             return str(candidate)
-        return str(ROOT / "__map_file_not_found__")
+        return str(BUNDLE_ROOT / "__map_file_not_found__")
 
     def _json_response(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
