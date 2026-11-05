@@ -41,7 +41,10 @@ def provision_application_login(admin_dsn: str) -> str:
             )
         with admin.transaction():
             admin.execute(
-                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                sql.SQL(
+                    "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                    "NOREPLICATION NOBYPASSRLS PASSWORD {}"
+                ).format(
                     sql.Identifier(APP_ROLE), sql.Literal(app_password)
                 )
             )
