@@ -23,6 +23,13 @@ ROOT = BUNDLE_ROOT
 
 
 class MapOnlyHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args) -> None:
+        # BaseHTTPRequestHandler writes to sys.stderr, which is None in a
+        # windowed PyInstaller executable. Route access logs to the same file.
+        logging.getLogger("ecmwf_webp.map_server").info(
+            "HTTP %s - %s", self.address_string(), format % args
+        )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
