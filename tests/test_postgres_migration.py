@@ -36,7 +36,7 @@ class SQLiteBackupTests(unittest.TestCase):
 
 
 class PostgresProvisionTests(unittest.TestCase):
-    def test_provision_uses_parameterized_secret_and_saves_app_login_only(self):
+    def test_provision_quotes_generated_secret_and_saves_app_login_only(self):
         import contextlib
         import sys
         import types
@@ -65,12 +65,17 @@ class PostgresProvisionTests(unittest.TestCase):
                 return types.SimpleNamespace(fetchone=lambda: None)
 
         class FakeSQL(str):
-            def format(self, identifier):
-                return self.replace("{}", identifier)
+            def format(self, *values):
+                result = self
+                for value in values:
+                    result = result.replace("{}", str(value), 1)
+                return result
 
+        literal_values = []
         fake_sql = types.SimpleNamespace(
             SQL=lambda value: FakeSQL(value),
             Identifier=lambda value: '"' + value.replace('"', '""') + '"',
+            Literal=lambda value: literal_values.append(value) or "'" + value.replace("'", "''") + "'",
         )
         fake_psycopg = types.SimpleNamespace(
             sql=fake_sql,
@@ -88,8 +93,8 @@ class PostgresProvisionTests(unittest.TestCase):
         self.assertIn("ecmwf_webp_app", app_dsn)
         self.assertNotIn("admin-secret", app_dsn)
         create_role = next(item for item in calls if item[0].startswith("CREATE ROLE"))
-        self.assertEqual(len(create_role[1]), 1)
-        self.assertNotIn(create_role[1][0], create_role[0])
+        self.assertEqual(len(literal_values), 1)
+        self.assertIn(literal_values[0], create_role[0])
         self.assertTrue(any("GRANT CONNECT ON DATABASE" in item[0] for item in calls))
         self.assertTrue(any("GRANT USAGE, CREATE ON SCHEMA public" in item[0] for item in calls))
         store.assert_called_once()
