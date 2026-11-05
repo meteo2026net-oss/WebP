@@ -65,7 +65,7 @@ class PostgresBackupTests(unittest.TestCase):
 
     def test_rotation_keeps_requested_number(self):
         with tempfile.TemporaryDirectory() as temp:
-            with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"]), \
+            with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"] * 3), \
                  patch.object(postgres_backup.subprocess, "run") as run:
                 def fake(args, **kwargs):
                     if "--format=custom" in args:
