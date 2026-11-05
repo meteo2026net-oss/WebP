@@ -114,24 +114,24 @@ class PostgresStateStore:
                 if fields:
                     sets = ", ".join(f"{key}=%s" for key in fields)
                     conn.execute(
-                        f"UPDATE files SET {sets}, updated_at=%s WHERE remote_path=%s",
+                        f"UPDATE public.files SET {sets}, updated_at=%s WHERE remote_path=%s",
                         (*fields.values(), now, remote_path),
                     )
                 else:
-                    conn.execute("UPDATE files SET updated_at=%s WHERE remote_path=%s", (now, remote_path))
+                    conn.execute("UPDATE public.files SET updated_at=%s WHERE remote_path=%s", (now, remote_path))
             else:
                 fields.setdefault("status", "pending")
                 cols = ", ".join(("remote_path", *fields.keys(), "updated_at"))
                 marks = ", ".join(["%s"] * (len(fields) + 2))
                 conn.execute(
-                    f"INSERT INTO files ({cols}) VALUES ({marks})",
+                    f"INSERT INTO public.files ({cols}) VALUES ({marks})",
                     (remote_path, *fields.values(), now),
                 )
 
     def bump_attempts(self, remote_path: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute(
-                "UPDATE files SET attempts=attempts+1, updated_at=%s WHERE remote_path=%s",
+                "UPDATE public.files SET attempts=attempts+1, updated_at=%s WHERE remote_path=%s",
                 (utc_now(), remote_path),
             )
 
@@ -142,7 +142,7 @@ class PostgresStateStore:
 
     def count(self) -> int:
         with self._lock, self._connect() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0])
+            return int(conn.execute("SELECT COUNT(*) FROM public.files").fetchone()[0])
 
     def import_records(self, records: list[FileRecord]) -> int:
         """Insert missing records and reject conflicting keys; never overwrite target data."""
@@ -154,7 +154,7 @@ class PostgresStateStore:
                     "detected_type", "validation", "downloaded_at", "attempts", "last_error", "updated_at"
                 ))
                 cur = conn.execute(
-                    f"INSERT INTO files ({SELECT_COLUMNS}) VALUES ({', '.join(['%s'] * 12)}) "
+                    f"INSERT INTO public.files ({SELECT_COLUMNS}) VALUES ({', '.join(['%s'] * 12)}) "
                     "ON CONFLICT (remote_path) DO NOTHING",
                     values,
                 )
