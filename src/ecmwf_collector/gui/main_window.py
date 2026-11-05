@@ -113,12 +113,15 @@ class MainWindow(QMainWindow):
         self.btn_postgres.clicked.connect(self._on_configure_postgres)
         self.btn_backup = QPushButton("نسخ احتياطي للسجل")
         self.btn_backup.clicked.connect(self._on_backup_sqlite)
+        self.btn_restore = QPushButton("استعادة نسخة SQLite")
+        self.btn_restore.clicked.connect(self._on_restore_sqlite)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
         btns.addWidget(self.btn_postgres)
         btns.addWidget(self.btn_backup)
+        btns.addWidget(self.btn_restore)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -318,6 +321,79 @@ class MainWindow(QMainWindow):
                 f"قاعدة البيانات الأصلية لم تُستبدل.\\n{type(exc).__name__}: {redact(str(exc))}",
             )
 
+    def _on_restore_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "قاعدة PostgreSQL نشطة",
+                "استعادة نسخ SQLite متاحة فقط عندما تكون SQLite هي قاعدة البيانات النشطة.",
+            )
+            return
+        from ..state_backup import validate_backup
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة SQLite الاحتياطية", str(backup_dir),
+            "SQLite backups (*.db)",
+        )
+        if not selected:
+            return
+        backup_path = Path(selected)
+        try:
+            validate_backup(backup_path)
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "نسخة احتياطية غير صالحة",
+                f"لن يتم تغيير قاعدة البيانات الحالية.\\n{type(exc).__name__}: {redact(str(exc))}",
+            )
+            return
+        answer = QMessageBox.question(
+            self, "تأكيد استعادة قاعدة البيانات",
+            "سيُستبدل سجل SQLite الحالي بمحتويات النسخة المحددة. "
+            "سينشئ التطبيق نسخة أمان من السجل الحالي أولاً. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        state_path = project_root() / "state" / "state.db"
+        old_store = self.state
+        old_store.close()
+        try:
+            from ..state_backup import restore_sqlite_backup
+
+            safety_copy = restore_sqlite_backup(
+                backup_path, state_path, backup_dir, keep=30
+            )
+            self.state = StateStore(state_path)
+            self._log(
+                f"تمت استعادة النسخة {backup_path}. نسخة الأمان السابقة: {safety_copy}"
+            )
+            QMessageBox.information(
+                self, "اكتملت الاستعادة",
+                f"تم استرجاع السجل وإعادة فتح قاعدة البيانات.\\n"
+                f"نسخة الأمان من السجل السابق: {safety_copy}",
+            )
+        except Exception as exc:
+            try:
+                self.state = StateStore(state_path)
+            except Exception as reopen_exc:
+                self._log(
+                    f"تعذّرت إعادة فتح SQLite بعد فشل الاستعادة: "
+                    f"{type(reopen_exc).__name__}: {redact(str(reopen_exc))}"
+                )
+            self._log(f"فشلت استعادة SQLite: {type(exc).__name__}: {redact(str(exc))}")
+            QMessageBox.critical(
+                self, "تعذّرت الاستعادة",
+                f"سبب الفشل: {type(exc).__name__}: {redact(str(exc))}\\n"
+                "إذا أُنشئت نسخة أمان، ستجدها داخل مجلد state/backups.",
+            )
+
     def _on_configure_postgres(self):
         if self._downloading or self._workers:
             QMessageBox.information(
@@ -461,7 +537,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
