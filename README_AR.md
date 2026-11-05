@@ -105,3 +105,19 @@ python -m unittest discover -s tests -t . -v
 - ينشئ GitHub Actions حزمة اختبارية باسم `ECMWFWebP-Windows-x64` عند تشغيل workflow الخاص ببناء Windows.
 
 **تنبيه:** هذا المسار لا يثبت PostgreSQL ولا يغيّر سجل الحالة الحالي من SQLite. كما أن توافق الحزمة لا يُعد مؤكداً إلا بعد نجاح Windows CI وتجربة تشغيل EXE والخريطة على جهاز Windows نظيف. الإصدار الحالي المستهدف والمبني هو Windows x64؛ دعم ARM64 وmacOS وLinux يحتاج حزم بناء مستقلة.
+
+
+## PostgreSQL المحلي وترحيل سجل التنزيلات
+
+أُضيف backend اختياري لـ PostgreSQL مع الحفاظ على SQLite كخيار افتراضي آمن:
+- عند ضبط متغير البيئة `ECMWF_POSTGRES_DSN` قبل تشغيل التطبيق، يستخدم التطبيق PostgreSQL؛ وإلا يستمر باستخدام `state/state.db` (SQLite).
+- الاعتمادية `psycopg[binary]` مضمنة في متطلبات Python.
+- لتهيئة جدول PostgreSQL ثم ترحيل السجل الحالي مع نسخة احتياطية والتحقق من كل سجل:
+```powershell
+$env:ECMWF_POSTGRES_DSN = "host=127.0.0.1 port=5432 dbname=ecmwf_webp user=ecmwf_app password=CHANGE_ME"
+python -m ecmwf_collector.tools.migrate_sqlite_to_postgres --sqlite state/state.db
+```
+- ينشئ الترحيل نسخة احتياطية مؤرخة داخل `state/backups/`، ويضيف السجلات غير الموجودة فقط، ويرفض التعارضات، ثم يقارن السجلات للتحقق. لا يحذف SQLite ولا يستبدله تلقائياً.
+- يمكن تشغيل التطبيق بعد ذلك من الطرفية نفسها التي تحتوي على متغير البيئة.
+
+**ما لم ينجز بعد:** تثبيت/تهيئة خادم PostgreSQL محلياً على Windows تلقائياً، إنشاء حساب خدمة آمن، إدارة سر الاتصال عبر Windows Credential Manager، وإعداد الترحيل/الاختبار على جهاز نظيف. لا تضع كلمة المرور في BAT أو Git أو سجل التشغيل. لا تعتبر إضافة backend وحدها تثبيتاً تلقائياً لـ PostgreSQL.
