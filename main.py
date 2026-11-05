@@ -18,7 +18,7 @@ from ecmwf_collector.state import StateStore
 def main() -> int:
     if "--map-server" in sys.argv[1:]:
         from serve_map import main as map_main
-        map_main()
+        map_main(open_browser="--no-browser" not in sys.argv[1:])
         return 0
 
     data_root = project_root()
