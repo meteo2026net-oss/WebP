@@ -202,5 +202,45 @@ class PostgresProvisionTests(unittest.TestCase):
         self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
 
 
+class ConfigurePostgresCliTests(unittest.TestCase):
+    def test_cli_saves_only_the_restricted_application_dsn(self):
+        import contextlib
+        import io
+        import sys
+        from unittest.mock import patch
+
+        from ecmwf_collector.tools import configure_postgres
+
+        admin_dsn = "host=127.0.0.1 dbname=weatherdb user=postgres password=admin-secret"
+        app_dsn = "host=127.0.0.1 dbname=weatherdb user=ecmwf_webp_app password=app-secret"
+
+        class FakeSecrets:
+            available = True
+
+            def __init__(self):
+                self.saved = None
+
+            def set_postgres_dsn(self, value):
+                self.saved = value
+                return True
+
+        secrets_store = FakeSecrets()
+        output = io.StringIO()
+        with (
+            patch.object(configure_postgres, "SecretStore", return_value=secrets_store),
+            patch.object(configure_postgres.getpass, "getpass", return_value=admin_dsn),
+            patch.object(configure_postgres, "provision_application_login", return_value=app_dsn),
+            patch.object(sys, "argv", ["configure_postgres"]),
+            contextlib.redirect_stdout(output),
+        ):
+            result = configure_postgres.main()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(secrets_store.saved, app_dsn)
+        self.assertNotEqual(secrets_store.saved, admin_dsn)
+        self.assertNotIn("admin-secret", output.getvalue())
+        self.assertNotIn("app-secret", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
