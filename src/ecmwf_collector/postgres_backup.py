@@ -47,20 +47,21 @@ def _tool(name: str, override: str | None = None) -> str:
 
 
 def _command_options(values: Mapping[str, str]) -> tuple[list[str], dict[str, str]]:
-    args: list[str] = []
-    env = os.environ.copy()
-    mapping = {"host": "--host", "port": "--port", "user": "--username", "dbname": "--dbname"}
-    for key, option in mapping.items():
-        if values.get(key):
-            args.extend((option, values[key]))
-    for key, env_name in _PG_ENV.items():
-        if values.get(key):
-            env[env_name] = values[key]
-    if values.get("password"):
-        # Keep credentials out of process command-line arguments.
-        env["PGPASSWORD"] = values["password"]
-    return args, env
+    from psycopg.conninfo import make_conninfo
 
+    env = os.environ.copy()
+    # Do not let an unrelated inherited password silently override this connection.
+    env.pop("PGPASSWORD", None)
+    connection = dict(values)
+    password = connection.pop("password", None)
+    if connection.get("sslpassword"):
+        raise ValueError(
+            "PostgreSQL SSL-key passwords are not supported by the desktop backup helper."
+        )
+    if password:
+        # Keep credentials out of process command-line arguments.
+        env["PGPASSWORD"] = password
+    return ["--dbname", make_conninfo(**connection)], env
 
 def create_postgres_backup(
     dsn: str, backup_dir: Path, keep: int = 30, *, pg_dump: str | None = None,
