@@ -82,15 +82,19 @@ jobs:
         run: |
           $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
           $process = Start-Process -FilePath $exe -ArgumentList "--map-server --no-browser" -PassThru
+          $handler = [System.Net.Http.HttpClientHandler]::new()
+          $handler.UseProxy = $false
+          $client = [System.Net.Http.HttpClient]::new($handler)
           try {
             $ready = $false
             for ($i = 0; $i -lt 25; $i++) {
               Start-Sleep -Seconds 1
               try {
-                $response = Invoke-WebRequest -Uri "http://127.0.0.1:8765/map_viewer/" -TimeoutSec 2
-                if ($response.StatusCode -eq 200) { $ready = $true; break }
+                $response = $client.GetAsync("http://127.0.0.1:8765/map_viewer/").GetAwaiter().GetResult()
+                if ([int]$response.StatusCode -eq 200) { $ready = $true; break }
+                Write-Host "Map server probe $($i + 1)/25 returned HTTP $([int]$response.StatusCode)"
               } catch {
-                Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.Message)"
+                Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.GetBaseException().Message)"
               }
               $process.Refresh()
               if ($process.HasExited) {
@@ -107,6 +111,8 @@ jobs:
               throw "Bundled map viewer did not become available on localhost:8765"
             }
           } finally {
+            $client.Dispose()
+            $handler.Dispose()
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
       - name: Stage one-click launcher
