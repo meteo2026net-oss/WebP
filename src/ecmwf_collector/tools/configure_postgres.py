@@ -5,7 +5,9 @@ import argparse
 import getpass
 import sys
 
-from ecmwf_collector.postgres_provision import provision_application_login
+from ecmwf_collector.postgres_provision import (
+    provision_application_login, remove_new_application_login,
+)
 from ecmwf_collector.logging_setup import redact, register_secret
 from ecmwf_collector.secrets_store import SecretStore
 
@@ -39,18 +41,27 @@ def main() -> int:
         return 2
 
     register_secret(admin_dsn)
+    role_provisioned = False
     try:
         # Provision and verify a restricted application login. Never persist
         # the administrator DSN in the operating-system credential vault.
         app_dsn = provision_application_login(admin_dsn)
+        role_provisioned = True
         if not secrets.set_postgres_dsn(app_dsn):
-            print("Could not save the application login in the OS credential vault.", file=sys.stderr)
+            remove_new_application_login(admin_dsn)
+            role_provisioned = False
+            print("Could not save the application login in the OS credential vault; the newly created app role was removed. The PostgreSQL table and data were retained.", file=sys.stderr)
             return 3
         print("A least-privilege PostgreSQL application login was verified and saved.")
         print("The administrator DSN was not stored.")
         print("The application will use the restricted login on its next launch.")
         return 0
     except Exception as exc:
+        if role_provisioned:
+            try:
+                remove_new_application_login(admin_dsn)
+            except Exception:
+                print("Warning: app-role cleanup could not be confirmed; inspect PostgreSQL role ecmwf_webp_app before retrying.", file=sys.stderr)
         print(f"PostgreSQL setup failed ({type(exc).__name__}): {redact(str(exc))}", file=sys.stderr)
         return 1
 
