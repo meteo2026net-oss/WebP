@@ -14,7 +14,8 @@ from ecmwf_collector.secrets_store import SecretStore
 
 def create_sqlite_backup(source: Path, backup: Path) -> None:
     """Create a consistent SQLite snapshot using the online backup API."""
-    create_sqlite_backup(source, backup)
+    with sqlite3.connect(source) as source_db, sqlite3.connect(backup) as backup_db:
+        source_db.backup(backup_db)
 
 
 def main() -> int:
@@ -36,8 +37,7 @@ def main() -> int:
     backup = args.backup_dir / f"state-{stamp}.db"
     # SQLite's online backup API captures a consistent snapshot, including committed
     # WAL content, even if the desktop app is still open.
-    with sqlite3.connect(source) as source_db, sqlite3.connect(backup) as backup_db:
-        source_db.backup(backup_db)
+    create_sqlite_backup(source, backup)
     sqlite = StateStore(source)
     postgres = None
     try:
