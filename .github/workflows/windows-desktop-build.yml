@@ -1,0 +1,160 @@
+name: Windows desktop package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "main.py"
+      - "serve_map.py"
+      - "ecmwf_webp.spec"
+      - "scripts/build_windows.ps1"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "environment.yml"
+      - "START.bat"
+      - ".github/workflows/windows-desktop-build.yml"
+  push:
+    branches: [main, "feat/windows-one-click-desktop-package"]
+    paths:
+      - "src/**"
+      - "main.py"
+      - "serve_map.py"
+      - "ecmwf_webp.spec"
+      - "scripts/build_windows.ps1"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "environment.yml"
+      - "START.bat"
+      - ".github/workflows/windows-desktop-build.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: pip
+      - name: Install package and PyInstaller
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install -e . pyinstaller
+      - name: Compile Python sources
+        run: python -m compileall -q src main.py serve_map.py tests
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -t . -v
+      - name: Build desktop directory
+        run: python -m PyInstaller --noconfirm --clean ecmwf_webp.spec
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          $exe = "dist/ECMWFWebP/ECMWFWebP.exe"
+          if (-not (Test-Path $exe)) { throw "Missing $exe" }
+          Get-Item $exe | Format-List FullName,Length
+      - name: Smoke-test desktop executable startup
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 12
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Desktop executable exited during startup with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
+      - name: Smoke-test bundled map server
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/ECMWFWebP/ECMWFWebP.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--map-server --no-browser" -PassThru
+          $handler = [System.Net.Http.HttpClientHandler]::new()
+          $handler.UseProxy = $false
+          $client = [System.Net.Http.HttpClient]::new($handler)
+          $client.Timeout = [TimeSpan]::FromSeconds(3)
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 25; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = $client.GetAsync("http://127.0.0.1:8765/map_viewer/").GetAwaiter().GetResult()
+                $status = [int]$response.StatusCode
+                $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ($status -eq 200 -and $body.Contains("ECMWF Weather Map")) {
+                  $ready = $true
+                  $response.Dispose()
+                  break
+                }
+                Write-Host "Map server probe $($i + 1)/25 returned HTTP $status or unexpected HTML"
+                $response.Dispose()
+              } catch {
+                Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.GetBaseException().Message)"
+              }
+              $process.Refresh()
+              if ($process.HasExited) {
+                $logRoot = Join-Path $env:LOCALAPPDATA "ECMWFWebP/logs"
+                Get-ChildItem $logRoot -Filter "map_server*.log" -ErrorAction SilentlyContinue |
+                  ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content $_.FullName }
+                throw "Bundled map server exited with code $($process.ExitCode)"
+              }
+            }
+            if ($ready) {
+              foreach ($asset in @("style.css", "app.js")) {
+                $assetResponse = $client.GetAsync("http://127.0.0.1:8765/map_viewer/$asset").GetAwaiter().GetResult()
+                try {
+                  if ([int]$assetResponse.StatusCode -ne 200) {
+                    throw "Map viewer asset $asset returned HTTP $([int]$assetResponse.StatusCode)"
+                  }
+                } finally {
+                  $assetResponse.Dispose()
+                }
+              }
+            }
+            if (-not $ready) {
+              $logRoot = Join-Path $env:LOCALAPPDATA "ECMWFWebP/logs"
+              Get-ChildItem $logRoot -Filter "map_server*.log" -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content $_.FullName }
+              throw "Bundled map viewer did not become available on localhost:8765"
+            }
+          } finally {
+            $client.Dispose()
+            $handler.Dispose()
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - name: Stage one-click launcher
+        shell: pwsh
+        run: Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
+      - name: Generate package SHA-256 manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "dist/ECMWFWebP").Path
+          $manifest = Join-Path $root "SHA256SUMS.txt"
+          $lines = Get-ChildItem -LiteralPath $root -File -Recurse |
+            Where-Object { $_.FullName -ne $manifest } |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+              "$hash  $relative"
+            }
+          $lines | Set-Content -LiteralPath $manifest -Encoding ascii
+      - name: Upload portable Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ECMWFWebP-Windows-x64
+          path: dist/ECMWFWebP/
+          if-no-files-found: error
+          retention-days: 14

@@ -67,6 +67,15 @@ class SecretsTests(unittest.TestCase):
         self.assertTrue(s.delete_password("u"))
         self.assertIsNone(s.get_password("u"))
 
+    def test_postgres_dsn_uses_credential_vault(self):
+        backend = FakeKeyring()
+        store = SecretStore(backend)
+        dsn = "host=127.0.0.1 dbname=ecmwf_webp user=ecmwf_app password=hidden"
+        self.assertTrue(store.set_postgres_dsn(dsn))
+        self.assertEqual(store.get_postgres_dsn(), dsn)
+        self.assertTrue(store.delete_postgres_dsn())
+        self.assertIsNone(store.get_postgres_dsn())
+
     def test_backend_errors_do_not_raise(self):
         class Broken:
             def get_password(self, *a):

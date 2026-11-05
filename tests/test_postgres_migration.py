@@ -201,8 +201,9 @@ class PostgresProvisionTests(unittest.TestCase):
                 provision_application_login("host=127.0.0.1 dbname=weatherdb")
 
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
-        self.assertTrue(any("REVOKE ALL ON SCHEMA public" in item for item in statements))
-        self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
+        self.assertTrue(any("DROP ROLE IF EXISTS" in item and '"ecmwf_webp_app"' in item for item in statements))
 
 
 class ConfigurePostgresCliTests(unittest.TestCase):
@@ -267,7 +268,6 @@ class ConfigurePostgresCliTests(unittest.TestCase):
             contextlib.redirect_stderr(output),
         ):
             result = configure_postgres.main()
-
         self.assertEqual(result, 3)
         cleanup.assert_called_once_with(admin_dsn)
         self.assertIn("table and data were retained", output.getvalue())
@@ -302,12 +302,9 @@ class ConfigurePostgresCliTests(unittest.TestCase):
             SQL=lambda value: FakeSQL(value),
             Identifier=lambda value: '"' + value.replace('"', '""') + '"',
         )
-        fake_psycopg = types.SimpleNamespace(
-            sql=fake_sql, connect=lambda *_a, **_k: FakeConnection()
-        )
+        fake_psycopg = types.SimpleNamespace(sql=fake_sql, connect=lambda *_a, **_k: FakeConnection())
         with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
             remove_new_application_login("host=127.0.0.1 dbname=weatherdb")
-
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
         self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
         self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))

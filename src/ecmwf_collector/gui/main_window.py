@@ -7,24 +7,26 @@ import socket
 import subprocess
 import sys
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QInputDialog,
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
-from ..logging_setup import register_secret
+from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
 from ..state import StateStore
+from ..postgres_state import PostgresStateStore
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
         self.cfg, self.config_path, self.secrets, self.state = cfg, config_path, secrets, state
         self.pool = QThreadPool.globalInstance()
         self._workers: set = set()
+        self._close_when_idle = False
         self._cwd = "/"
         self._entries: list[RemoteEntry] = []
         self._manager: DownloadManager | None = None
@@ -108,10 +111,31 @@ class MainWindow(QMainWindow):
         form.addRow(self.remember)
         btns = QHBoxLayout()
         self.btn_test = QPushButton("اختبار الاتصال")
+        self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
+        self.btn_postgres.clicked.connect(self._on_configure_postgres)
+        self.btn_pg_diagnose = QPushButton("تشخيص PostgreSQL")
+        self.btn_db_status = QPushButton("حالة قاعدة البيانات")
+        self.btn_db_status.clicked.connect(self._on_database_status)
+        self.btn_pg_diagnose.clicked.connect(self._on_diagnose_postgres)
+        self.btn_pg_install = QPushButton("تثبيت PostgreSQL")
+        self.btn_pg_install.clicked.connect(self._on_install_postgres)
+        self.btn_backup = QPushButton("نسخ احتياطي للسجل")
+        self.btn_backup.clicked.connect(self._on_backup_sqlite)
+        self.btn_restore = QPushButton("استعادة نسخة SQLite")
+        self.btn_restore.clicked.connect(self._on_restore_sqlite)
+        self.btn_pg_restore = QPushButton("استعادة نسخة PostgreSQL")
+        self.btn_pg_restore.clicked.connect(self._on_restore_postgres)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
+        btns.addWidget(self.btn_postgres)
+        btns.addWidget(self.btn_pg_diagnose)
+        btns.addWidget(self.btn_db_status)
+        btns.addWidget(self.btn_pg_install)
+        btns.addWidget(self.btn_backup)
+        btns.addWidget(self.btn_restore)
+        btns.addWidget(self.btn_pg_restore)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -278,6 +302,482 @@ class MainWindow(QMainWindow):
             return None
         return ConnectionSettings.from_config(cfg, self.password.text())
 
+    def _on_database_status(self):
+        """Show the active state backend and its current record count."""
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل قراءة حالة قاعدة البيانات.",
+            )
+            return
+
+        def inspect():
+            count = self.state.count()
+            if isinstance(self.state, PostgresStateStore):
+                return "PostgreSQL", count, "اتصال قاعدة البيانات النشطة"
+            if isinstance(self.state, StateStore):
+                return "SQLite", count, str(project_root() / "state" / "state.db")
+            return type(self.state).__name__, count, "مسار غير متاح"
+
+        def show(result):
+            backend, count, location = result
+            message = (
+                f"قاعدة البيانات النشطة: {backend}\n"
+                f"عدد السجلات: {count:,}\n"
+                f"الموقع: {location}"
+            )
+            self._log(message.replace("\n", " | "))
+            QMessageBox.information(self, "حالة قاعدة البيانات", message)
+
+        self._run(inspect, show)
+
+    def _on_backup_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل إنشاء النسخة الاحتياطية.",
+            )
+            return
+
+        backup_dir = project_root() / "state" / "backups"
+        state = self.state
+
+        def create_backup():
+            if isinstance(state, StateStore):
+                from ..state_backup import create_manual_backup
+                backup = create_manual_backup(
+                    project_root() / "state" / "state.db", backup_dir, keep=30
+                )
+                return "SQLite", backup
+            if isinstance(state, PostgresStateStore):
+                from ..postgres_backup import create_postgres_backup
+                backup = create_postgres_backup(state._dsn, backup_dir, keep=30)
+                return "PostgreSQL", backup
+            raise RuntimeError("نوع قاعدة البيانات النشطة غير معروف؛ لم يُجر أي تغيير.")
+
+        def backup_done(result):
+            kind, backup = result
+            self._log(f"اكتملت نسخة {kind} الاحتياطية والتحقق منها: {backup}")
+            QMessageBox.information(
+                self, "اكتمل النسخ الاحتياطي",
+                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\\n\\n{backup}\\n\\n"
+                "يُحتفظ بآخر 30 نسخة من هذا النوع.",
+            )
+
+        self._log("جارٍ إنشاء نسخة احتياطية والتحقق منها في الخلفية…")
+        self._run(create_backup, backup_done)
+
+    def _on_restore_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة PostgreSQL.",
+            )
+            return
+        if not isinstance(self.state, PostgresStateStore):
+            QMessageBox.information(
+                self, "PostgreSQL غير نشط",
+                "يجب ربط PostgreSQL ونقل السجل إليه قبل استخدام استعادته.",
+            )
+            return
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة PostgreSQL الاحتياطية", str(backup_dir),
+            "PostgreSQL custom backups (*.dump)",
+        )
+        if not selected:
+            return
+        archive = Path(selected)
+        if not archive.is_file():
+            QMessageBox.critical(
+                self, "نسخة PostgreSQL غير موجودة",
+                "الملف المحدد غير موجود. لم يتم تغيير قاعدة البيانات.",
+            )
+            return
+
+        admin_dsn, accepted = QInputDialog.getText(
+            self, "صلاحية استعادة PostgreSQL",
+            "أدخل سلسلة اتصال حساب PostgreSQL بصلاحية SUPERUSER (الإدخال مخفي). "
+            "حساب مالك قاعدة البيانات غير كافٍ للاستعادة الكاملة. لن تُحفظ هذه البيانات:",
+            QLineEdit.Password,
+        )
+        if not accepted or not admin_dsn.strip():
+            return
+        admin_dsn = admin_dsn.strip()
+        register_secret(admin_dsn)
+        answer = QMessageBox.warning(
+            self, "تأكيد استعادة PostgreSQL",
+            "سيتحقق التطبيق في الخلفية من بصمة النسخة وقاعدة البيانات وصلاحيات الاستعادة. "
+            "إذا اجتازت الفحوصات، سينشئ أرشيف أمان للحالة الحالية ثم ينفذ الاستعادة "
+            "داخل معاملة واحدة. قد يستغرق فحص النسخة الكبيرة بعض الوقت، وستبقى الواجهة مستجيبة. "
+            "هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log(f"بدء استعادة PostgreSQL من: {archive}")
+
+        app_store = self.state
+
+        def work():
+            from ..postgres_backup import restore_postgres_backup
+            safety_copy = restore_postgres_backup(
+                admin_dsn, archive, backup_dir, timeout=3600
+            )
+            # The restricted application DSN is checked in the worker too; a slow
+            # or unavailable local PostgreSQL service must not freeze the GUI.
+            try:
+                verified_count = app_store.count()
+                return safety_copy, verified_count, None
+            except Exception as exc:
+                return safety_copy, None, f"{type(exc).__name__}: {redact(str(exc))}"
+
+        def restore_failed(message):
+            self._log(
+                f"فشلت استعادة PostgreSQL قبل اكتمالها أو التحقق منها: {message}"
+            )
+            QMessageBox.critical(
+                self, "تعذّرت استعادة PostgreSQL",
+                f"تعذّر إكمال الاستعادة أو أحد فحوص ما بعد الاستعادة.\\n{message}\\n"
+                "راجع سجل التطبيق واحتفظ بنسخة الأمان إذا أُنشئت؛ لا تحذف النسخة الأصلية.",
+            )
+
+        def restore_done(result):
+            safety_copy, verified_count, verification_error = result
+            self._postgres_restore_done(
+                archive, safety_copy, verified_count, verification_error
+            )
+
+        self._run(work, restore_done, on_failed=restore_failed)
+
+    def _postgres_restore_done(
+        self,
+        archive: Path,
+        safety: Path,
+        verified_count: int | None,
+        verification_error: str | None = None,
+    ):
+        if verification_error:
+            self._log(
+                f"اكتملت الاستعادة، لكن تعذّر التحقق عبر حساب التطبيق: {verification_error}. "
+                f"نسخة الأمان السابقة: {safety}"
+            )
+            QMessageBox.warning(
+                self, "استعادة مع تحذير",
+                "أُنجزت استعادة PostgreSQL، لكن تعذّر فحص السجل باستخدام حساب التطبيق. "
+                f"تفاصيل التحقق: {verification_error}\\nنسخة الأمان: {safety}",
+            )
+            return
+
+        self._log(
+            f"اكتملت استعادة PostgreSQL من {archive}. "
+            f"عدد السجلات: {verified_count}. نسخة الأمان السابقة: {safety}"
+        )
+        QMessageBox.information(
+            self, "اكتملت استعادة PostgreSQL",
+            f"تمت الاستعادة والتحقق من حساب التطبيق.\\n"
+            f"عدد السجلات: {verified_count}\\n"
+            f"نسخة الأمان السابقة: {safety}",
+        )
+
+    def _on_restore_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "قاعدة PostgreSQL نشطة",
+                "استعادة نسخ SQLite متاحة فقط عندما تكون SQLite هي قاعدة البيانات النشطة.",
+            )
+            return
+        from ..state_backup import validate_backup
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة SQLite الاحتياطية", str(backup_dir),
+            "SQLite backups (*.db)",
+        )
+        if not selected:
+            return
+        backup_path = Path(selected)
+        try:
+            validate_backup(backup_path)
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "نسخة احتياطية غير صالحة",
+                f"لن يتم تغيير قاعدة البيانات الحالية.\\n{type(exc).__name__}: {redact(str(exc))}",
+            )
+            return
+        answer = QMessageBox.question(
+            self, "تأكيد استعادة قاعدة البيانات",
+            "سيُستبدل سجل SQLite الحالي بمحتويات النسخة المحددة. "
+            "سينشئ التطبيق نسخة أمان من السجل الحالي أولاً. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        state_path = project_root() / "state" / "state.db"
+        old_store = self.state
+        old_store.close()
+        from ..state_backup import restore_sqlite_backup
+
+        def restore():
+            return restore_sqlite_backup(
+                backup_path, state_path, backup_dir, keep=30
+            )
+
+        def restored(safety_copy):
+            try:
+                self.state = StateStore(state_path)
+                self._log(
+                    f"تمت استعادة النسخة {backup_path}. "
+                    f"نسخة الأمان السابقة: {safety_copy}"
+                )
+                QMessageBox.information(
+                    self, "اكتملت الاستعادة",
+                    f"تم استرجاع السجل وإعادة فتح قاعدة البيانات.\\n"
+                    f"نسخة الأمان من السجل السابق: {safety_copy}",
+                )
+            except Exception as exc:
+                self._log(
+                    f"تمت عملية الاستعادة لكن تعذّر إعادة فتح SQLite: "
+                    f"{type(exc).__name__}: {redact(str(exc))}"
+                )
+                QMessageBox.critical(
+                    self, "تعذّرت إعادة فتح قاعدة البيانات",
+                    f"ملف قاعدة البيانات قد تم تحديثه، لكن تعذّر فتحه: "
+                    f"{type(exc).__name__}: {redact(str(exc))}",
+                )
+
+        def restore_failed(message):
+            try:
+                self.state = StateStore(state_path)
+            except Exception as reopen_exc:
+                self._log(
+                    f"تعذّرت إعادة فتح SQLite بعد فشل الاستعادة: "
+                    f"{type(reopen_exc).__name__}: {redact(str(reopen_exc))}"
+                )
+            QMessageBox.critical(
+                self, "تعذّرت الاستعادة",
+                f"فشلت الاستعادة: {message}\\n"
+                "لم يتم اعتماد قاعدة البيانات الجديدة. افحص مجلد state/backups "
+                "للعثور على نسخة الأمان إن أُنشئت.",
+            )
+
+        self._log("جارٍ استعادة نسخة SQLite والتحقق منها في الخلفية…")
+        self._run(restore, restored, on_failed=restore_failed)
+
+    def _on_install_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل تثبيت PostgreSQL.",
+            )
+            return
+        answer = QMessageBox.warning(
+            self, "تثبيت PostgreSQL 16",
+            "سيستخدم التطبيق Windows Package Manager لتنزيل مثبّت PostgreSQL الرسمي "
+            "من EDB وتشغيله بوضع تفاعلي. قد يطلب Windows صلاحية مسؤول.\n\n"
+            "مهم: ستحدد كلمة مرور مدير قاعدة البيانات بنفسك داخل نافذة المثبّت. "
+            "لن ينشئ التطبيق كلمة مرور افتراضية ولن يحفظ كلمة مرور المدير.\n\n"
+            "قد يستغرق التنزيل والتثبيت عدة دقائق. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log("بدء تثبيت PostgreSQL 16 عبر Windows Package Manager...")
+        from ..postgres_windows import install_postgres_with_winget
+        self._run(install_postgres_with_winget, self._postgres_install_done)
+
+    def _postgres_install_done(self, result):
+        diagnostics = result.get("diagnostics", {})
+        services = diagnostics.get("services", [])
+        service_text = "\n".join(
+            f"{item['name']}: {item['state']}" for item in services
+        ) or "لم تُكتشف خدمة مسجلة بعد."
+        self._log(
+            "اكتمل فحص ما بعد تثبيت PostgreSQL. "
+            f"الخادم مكتشف: {diagnostics.get('server_installation_detected')}"
+        )
+        QMessageBox.information(
+            self, "نتيجة تثبيت PostgreSQL",
+            ("PostgreSQL موجود مسبقاً." if result.get("already_present")
+             else "اكتمل تثبيت PostgreSQL واكتشف التطبيق الخادم.")
+            + "\n\nخدمات Windows:\n" + service_text
+            + "\n\nيمكنك الآن ربط PostgreSQL ونقل سجل SQLite بعد إنشاء نسخة احتياطية والتحقق من السجلات. "
+              "سيُطلب منك إدخال سلسلة اتصال المدير، ولن تُحفظ بيانات اعتماده.",
+        )
+        if QMessageBox.question(
+            self, "ربط PostgreSQL الآن",
+            "سيُنشأ حساب تطبيق محدود الصلاحيات، وتُنقل السجلات بعد إنشاء نسخة SQLite احتياطية والتحقق منها. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        ) == QMessageBox.Yes:
+            self._on_configure_postgres()
+
+    def _on_diagnose_postgres(self):
+        """Show read-only local PostgreSQL installation and service diagnostics."""
+        try:
+            from ..postgres_windows import diagnose_postgres_installation
+
+            result = diagnose_postgres_installation()
+            labels = {
+                "postgres": "خادم PostgreSQL",
+                "pg_ctl": "أداة إدارة الخدمة",
+                "initdb": "أداة تهيئة قاعدة البيانات",
+                "pg_dump": "أداة النسخ الاحتياطي",
+                "pg_restore": "أداة الاستعادة",
+            }
+            lines = [
+                "نتيجة تشخيص محلي للقراءة فقط؛ لم يتم تثبيت أو تشغيل أو إيقاف أي خدمة.",
+                "",
+                f"اكتشاف الخادم: {'نعم' if result['server_installation_detected'] else 'لا'}",
+                f"وجود أدوات العميل: {'مكتملة' if result['client_tools_found'] else 'غير مكتملة'}",
+                f"وجود خدمة تعمل: {'نعم' if result['service_running'] else 'لا'}",
+                "",
+                "الملفات التنفيذية:",
+            ]
+            for key, label in labels.items():
+                lines.append(f"{label}: {result['tools'].get(key) or 'غير موجود'}")
+            lines.append("")
+            lines.append("خدمات Windows:")
+            if result["services"]:
+                lines.extend(
+                    f"{service['name']}: {service['state']}"
+                    for service in result["services"]
+                )
+            else:
+                lines.append("لم يتم اكتشاف خدمة PostgreSQL مسجلة.")
+            QMessageBox.information(self, "تشخيص PostgreSQL", "\n".join(lines))
+        except Exception as exc:
+            self._log(f"فشل تشخيص PostgreSQL: {type(exc).__name__}: {redact(str(exc))}")
+            QMessageBox.warning(
+                self, "تعذّر التشخيص",
+                f"{type(exc).__name__}: {redact(str(exc))}",
+            )
+
+    def _on_configure_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "أوقف التنزيل وانتظر انتهاء المهام الحالية قبل تغيير قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "PostgreSQL نشط بالفعل",
+                "التطبيق يستخدم PostgreSQL حالياً. لم يتم تغيير قاعدة البيانات.",
+            )
+            return
+        dsn, accepted = QInputDialog.getText(
+            self,
+            "إعداد PostgreSQL",
+            "أدخل سلسلة اتصال مدير PostgreSQL لقاعدة محلية موجودة (تُخفى). سيُنشأ حساب تطبيق محدود الصلاحيات:",
+            QLineEdit.Password,
+        )
+        if not accepted or not dsn.strip():
+            return
+
+        admin_dsn = dsn.strip()
+        register_secret(admin_dsn)
+        sqlite_store = self.state
+        state_path = project_root() / "state" / "state.db"
+        backup_dir = project_root() / "state" / "backups"
+
+        def migrate():
+            from ..postgres_provision import (
+                provision_application_login, remove_new_application_login,
+            )
+            from ..postgres_state import PostgresStateStore
+            from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
+
+            postgres_store = None
+            app_role_provisioned = False
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+                backup_path = backup_dir / f"state-before-postgres-{stamp}.db"
+                create_sqlite_backup(state_path, backup_path)
+
+                source_records = sqlite_store.all_records()
+                app_dsn = provision_application_login(admin_dsn)
+                app_role_provisioned = True
+                register_secret(app_dsn)
+                postgres_store = PostgresStateStore(app_dsn)
+                postgres_store.import_records(source_records)
+                target_records = postgres_store.all_records()
+                target_by_path = {record.remote_path: record for record in target_records}
+                mismatches = [
+                    record.remote_path for record in source_records
+                    if target_by_path.get(record.remote_path) != record
+                ]
+                if mismatches:
+                    raise RuntimeError(
+                        f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
+                    )
+                if len(target_records) != len(source_records):
+                    raise RuntimeError(
+                        "عدد السجلات في PostgreSQL لا يطابق عدد سجلات SQLite."
+                    )
+                if not self.secrets.set_postgres_dsn(app_dsn):
+                    raise RuntimeError(
+                        "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
+                        "لم يتم تبديل قاعدة البيانات الحالية."
+                    )
+                result = (postgres_store, len(source_records), backup_path)
+                postgres_store = None
+                app_role_provisioned = False
+                return result
+            except Exception:
+                if postgres_store is not None:
+                    postgres_store.close()
+                if app_role_provisioned:
+                    try:
+                        remove_new_application_login(admin_dsn)
+                    except Exception:
+                        log.exception(
+                            "تعذّر تأكيد إزالة حساب PostgreSQL الذي أُنشئ أثناء ترحيل فاشل"
+                        )
+                raise
+
+        def migrated(result):
+            postgres_store, record_count, backup_path = result
+            self.state = postgres_store
+            sqlite_store.close()
+            self._log(
+                f"تم ربط PostgreSQL والتحقق من {record_count} سجلات. "
+                f"نسخة SQLite الاحتياطية محفوظة في: {backup_path}"
+            )
+            QMessageBox.information(
+                self, "اكتمل ربط PostgreSQL",
+                f"تم نقل السجل والتحقق منه بنجاح.\\n"
+                f"عدد السجلات: {record_count}\\n"
+                f"نسخة SQLite الاحتياطية: {backup_path}\\n"
+                "ستستخدم الجلسات القادمة PostgreSQL تلقائياً.",
+            )
+
+        def migration_failed(message):
+            self._log(
+                "تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية نشطة. "
+                f"التفاصيل: {message}"
+            )
+            QMessageBox.critical(
+                self, "فشل ربط PostgreSQL",
+                f"لم يتم تبديل قاعدة البيانات الحالية.\\n"
+                f"السبب: {message}\\n"
+                "تبقى قاعدة SQLite الأصلية هي النشطة.",
+            )
+
+        self._log(
+            "بدأ ترحيل SQLite إلى PostgreSQL في الخلفية: "
+            "نسخ احتياطي، نقل، مقارنة السجلات، ثم تبديل آمن عند النجاح…"
+        )
+        self._run(migrate, migrated, on_failed=migration_failed)
+
     def _on_save(self):
         cfg = self._read_cfg()
         try:
@@ -303,19 +803,28 @@ class MainWindow(QMainWindow):
         return p if p.is_absolute() else project_root() / p
 
     # ---------- المهام الخلفية ----------
-    def _run(self, fn, on_done, busy=True):
+    def _run(self, fn, on_done, busy=True, on_failed=None):
         w = Worker(fn)
         self._workers.add(w)
 
         def done(res):
             self._workers.discard(w)
             self._busy(False)
-            on_done(res)
+            try:
+                on_done(res)
+            finally:
+                self._finish_close_if_idle()
 
         def failed(msg):
             self._workers.discard(w)
             self._busy(False)
-            self._log(f"خطأ: {msg}")
+            safe_message = redact(str(msg))
+            self._log(f"خطأ: {safe_message}")
+            try:
+                if on_failed is not None:
+                    on_failed(safe_message)
+            finally:
+                self._finish_close_if_idle()
 
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
@@ -325,7 +834,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_db_status, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_pg_install, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
@@ -450,7 +959,12 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(True)
         self.btn_pause.setText("إيقاف مؤقت")
         self._log(f"بدأ التنزيل: {len(items)} ملف")
-        self._run(lambda: manager.run(items), self._download_done, busy=False)
+        self._run(
+            lambda: manager.run(items),
+            self._download_done,
+            busy=False,
+            on_failed=self._download_failed,
+        )
 
     def _download_done(self, result):
         self._downloading = False
@@ -459,6 +973,23 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self._busy(False)
         self._log("انتهى:\n" + result.summary_ar())
+
+    def _download_failed(self, message: str):
+        """Restore the download controls after an unexpected worker failure."""
+        self._downloading = False
+        self._manager = None
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_pause.setText("إيقاف مؤقت")
+        self.pbar_label.setText("توقف التنزيل بسبب خطأ؛ يمكن مراجعة السجل ثم إعادة المحاولة.")
+        self._busy(False)
+        self._log(f"تعذّر إكمال التنزيل: {message}")
+        QMessageBox.warning(
+            self,
+            "تعذّر إكمال التنزيل",
+            f"توقفت مهمة التنزيل بسبب خطأ غير متوقع.\\n{message}\\n"
+            "يمكنك مراجعة السجل وإعادة المحاولة؛ الملفات المكتملة تبقى محفوظة.",
+        )
 
     def _on_progress(self, snap):
         total = max(snap.bytes_total, 1)
@@ -497,9 +1028,15 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         try:
+            if getattr(sys, "frozen", False):
+                command = [sys.executable, "--map-server"]
+                working_directory = str(project_root())
+            else:
+                command = [sys.executable, str(project_root() / "serve_map.py")]
+                working_directory = str(project_root())
             subprocess.Popen(
-                [sys.executable, str(project_root() / "serve_map.py")],
-                cwd=str(project_root()),
+                command,
+                cwd=working_directory,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -540,12 +1077,36 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self._log(f"تعذّر التصدير: {exc}")
 
+    def _finish_close_if_idle(self):
+        """Close only after every worker has returned to the GUI thread."""
+        if self._close_when_idle and not self._workers and not self._downloading:
+            self._close_when_idle = False
+            QTimer.singleShot(0, self.close)
+
     def closeEvent(self, event):
-        if self._manager:
-            self._manager.stop()
-            self.pool.waitForDone(10000)
+        if self._workers or self._downloading:
+            answer = QMessageBox.question(
+                self,
+                "مهام قيد التنفيذ",
+                "توجد عملية تعمل في الخلفية (نسخ احتياطي أو استعادة أو ترحيل أو تنزيل).\n"
+                "هل تريد إيقاف التنزيل إن وجد، ثم إبقاء التطبيق مفتوحاً حتى تنتهي العمليات بأمان؟",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Yes:
+                self._close_when_idle = True
+                if self._manager:
+                    self._manager.stop()
+                    self._log("طُلب الإغلاق؛ يجري إيقاف التنزيل بأمان وانتظار اكتمال المهام الأخرى…")
+                else:
+                    self._log("طُلب الإغلاق؛ سيبقى التطبيق مفتوحاً حتى تنتهي المهمة الخلفية بأمان…")
+                event.ignore()
+            else:
+                event.ignore()
+            return
         super().closeEvent(event)
 
     def _log(self, msg: str):
-        log.info(msg.replace("\n", " | "))
-        self.status.appendPlainText(msg)
+        safe_message = redact(str(msg))
+        log.info(safe_message.replace("\n", " | "))
+        self.status.appendPlainText(safe_message)

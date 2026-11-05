@@ -5,6 +5,7 @@ import logging
 
 log = logging.getLogger(__name__)
 SERVICE = "ECMWF_Data_Collector"
+POSTGRES_DSN_KEY = "postgresql_dsn"
 
 
 class SecretStore:
@@ -39,6 +40,17 @@ class SecretStore:
         except Exception as exc:
             log.warning("تعذّر الحفظ في مخزن الأسرار: %s", type(exc).__name__)
             return False
+
+    def get_postgres_dsn(self) -> str | None:
+        """Read the local PostgreSQL DSN from the OS credential vault."""
+        return self.get_password(POSTGRES_DSN_KEY)
+
+    def set_postgres_dsn(self, dsn: str) -> bool:
+        """Store the PostgreSQL DSN (including any password) in the OS credential vault."""
+        return self.set_password(POSTGRES_DSN_KEY, dsn)
+
+    def delete_postgres_dsn(self) -> bool:
+        return self.delete_password(POSTGRES_DSN_KEY)
 
     def delete_password(self, username: str) -> bool:
         if not self.available or not username:
