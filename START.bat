@@ -15,7 +15,7 @@ echo.
 echo ECMWF WebP - Windows first-time setup
 echo ------------------------------------
 echo The portable desktop build is not present yet.
-echo This launcher will build it from source when Python 3.12 and Git are available.
+echo This launcher will build it from source when Python 3.12 x64 and internet access are available.
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build_windows.ps1"
 if errorlevel 1 (
