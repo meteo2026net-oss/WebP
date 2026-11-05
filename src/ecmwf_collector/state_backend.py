@@ -37,7 +37,7 @@ def open_state_store(
         if choice == REMOVE_SAVED_AND_USE_SQLITE:
             if environment_dsn:
                 raise ValueError(
-                    "Cannot remove a PostgreSQL DSN supplied by ECMWF_POSTGRES_DSN."
+                    "Cannot remove a PostgreSQL DSN supplied by the ECMWF_POSTGRES_DSN environment variable."
                 ) from exc
             if not secrets.delete_postgres_dsn():
                 raise RuntimeError(
