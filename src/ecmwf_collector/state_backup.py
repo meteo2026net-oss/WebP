@@ -71,6 +71,39 @@ def ensure_daily_backup(
     return destination
 
 
+def validate_backup(path: Path) -> None:
+    """Validate a candidate backup before it is offered for restoration."""
+    _verify(Path(path))
+
+
+def restore_sqlite_backup(
+    backup: Path, target: Path, backup_dir: Path, keep: int = 30
+) -> Path:
+    """Restore a verified snapshot, first retaining a verified copy of current state."""
+    backup = Path(backup).resolve()
+    target = Path(target).resolve()
+    backup_dir = Path(backup_dir)
+    if backup == target:
+        raise ValueError("The selected backup is the active database file.")
+    _verify(backup)
+    if not target.is_file():
+        raise FileNotFoundError(f"Current SQLite database does not exist: {target}")
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{target}{suffix}")
+        if sidecar.exists():
+            raise RuntimeError(
+                f"SQLite sidecar {sidecar.name} still exists; close all database users before restoring."
+            )
+    safety_copy = create_manual_backup(target, backup_dir, keep=keep)
+    staging = target.with_name(f".{target.name}.restore-{os.getpid()}.tmp")
+    try:
+        _snapshot(backup, staging)
+        os.replace(staging, target)
+    except BaseException:
+        staging.unlink(missing_ok=True)
+        raise
+    return safety_copy
+
 def _verify(path: Path) -> None:
     with sqlite3.connect(f"file:{Path(path).resolve().as_posix()}?mode=ro", uri=True) as db:
         result = db.execute("PRAGMA integrity_check").fetchone()
