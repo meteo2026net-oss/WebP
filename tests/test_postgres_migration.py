@@ -35,5 +35,95 @@ class SQLiteBackupTests(unittest.TestCase):
                 backup.close()
 
 
+class PostgresProvisionTests(unittest.TestCase):
+    def test_provision_uses_parameterized_secret_and_saves_app_login_only(self):
+        import contextlib
+        import sys
+        import types
+        from unittest.mock import patch
+
+        from ecmwf_collector.postgres_provision import provision_application_login
+
+        calls = []
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def transaction(self):
+                return contextlib.nullcontext()
+
+            def execute(self, statement, params=None):
+                calls.append((str(statement), params))
+                if "current_database" in str(statement):
+                    return types.SimpleNamespace(fetchone=lambda: ("weatherdb",))
+                if "FROM pg_roles" in str(statement):
+                    return types.SimpleNamespace(fetchone=lambda: None)
+                return types.SimpleNamespace(fetchone=lambda: None)
+
+        class FakeSQL(str):
+            def format(self, identifier):
+                return self.replace("{}", identifier)
+
+        fake_sql = types.SimpleNamespace(
+            SQL=lambda value: FakeSQL(value),
+            Identifier=lambda value: '"' + value.replace('"', '""') + '"',
+        )
+        fake_psycopg = types.SimpleNamespace(
+            sql=fake_sql,
+            conninfo=types.SimpleNamespace(
+                make_conninfo=lambda dsn, **kwargs: dsn + " " + repr(kwargs)
+            ),
+            connect=lambda *_args, **_kwargs: FakeConnection(),
+        )
+        fake_store = types.SimpleNamespace(close=lambda: None)
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}), patch(
+            "ecmwf_collector.postgres_state.PostgresStateStore", return_value=fake_store
+        ) as store:
+            app_dsn = provision_application_login("host=127.0.0.1 dbname=weatherdb user=admin password=admin-secret")
+
+        self.assertIn("ecmwf_webp_app", app_dsn)
+        self.assertNotIn("admin-secret", app_dsn)
+        create_role = next(item for item in calls if item[0].startswith("CREATE ROLE"))
+        self.assertEqual(len(create_role[1]), 1)
+        self.assertNotIn(create_role[1][0], create_role[0])
+        self.assertTrue(any("GRANT CONNECT ON DATABASE" in item[0] for item in calls))
+        self.assertTrue(any("GRANT USAGE, CREATE ON SCHEMA public" in item[0] for item in calls))
+        store.assert_called_once()
+
+    def test_existing_app_role_is_not_overwritten(self):
+        import contextlib
+        import sys
+        import types
+        from unittest.mock import patch
+
+        from ecmwf_collector.postgres_provision import provision_application_login
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, statement, params=None):
+                if "current_database" in str(statement):
+                    return types.SimpleNamespace(fetchone=lambda: ("weatherdb",))
+                if "FROM pg_roles" in str(statement):
+                    return types.SimpleNamespace(fetchone=lambda: (1,))
+                raise AssertionError("No provisioning SQL should run for an existing role.")
+
+            def transaction(self):
+                return contextlib.nullcontext()
+
+        fake_psycopg = types.SimpleNamespace(connect=lambda *_a, **_k: FakeConnection())
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
+            with self.assertRaisesRegex(RuntimeError, "موجود مسبقاً"):
+                provision_application_login("host=127.0.0.1 dbname=weatherdb")
+
+
 if __name__ == "__main__":
     unittest.main()
