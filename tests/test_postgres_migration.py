@@ -140,5 +140,63 @@ class PostgresProvisionTests(unittest.TestCase):
                 provision_application_login("host=127.0.0.1 dbname=weatherdb")
 
 
+    def test_failed_app_login_removes_new_role_grants(self):
+        import contextlib
+        import sys
+        import types
+        from unittest.mock import patch
+
+        from ecmwf_collector.postgres_provision import provision_application_login
+
+        statements = []
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def transaction(self):
+                return contextlib.nullcontext()
+
+            def execute(self, statement, params=None):
+                statement = str(statement)
+                statements.append(statement)
+                if "current_database" in statement:
+                    return types.SimpleNamespace(fetchone=lambda: ("weatherdb",))
+                if "FROM pg_roles" in statement:
+                    return types.SimpleNamespace(fetchone=lambda: None)
+                return types.SimpleNamespace(fetchone=lambda: None)
+
+        class FakeSQL(str):
+            def format(self, *values):
+                result = self
+                for value in values:
+                    result = result.replace("{}", str(value), 1)
+                return result
+
+        fake_sql = types.SimpleNamespace(
+            SQL=lambda value: FakeSQL(value),
+            Identifier=lambda value: '"' + value.replace('"', '""') + '"',
+            Literal=lambda value: "'" + value.replace("'", "''") + "'",
+        )
+        fake_psycopg = types.SimpleNamespace(
+            sql=fake_sql,
+            conninfo=types.SimpleNamespace(make_conninfo=lambda dsn, **kwargs: dsn),
+            connect=lambda *_a, **_k: FakeConnection(),
+        )
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}), patch(
+            "ecmwf_collector.postgres_state.PostgresStateStore",
+            side_effect=RuntimeError("connection failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "تعذّر تهيئة حساب PostgreSQL"):
+                provision_application_login("host=127.0.0.1 dbname=weatherdb")
+
+        self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL ON SCHEMA public" in item for item in statements))
+        self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
+
+
 if __name__ == "__main__":
     unittest.main()
