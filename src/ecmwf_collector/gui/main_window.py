@@ -324,7 +324,7 @@ class MainWindow(QMainWindow):
             self._log(f"اكتملت نسخة {kind} الاحتياطية والتحقق منها: {backup}")
             QMessageBox.information(
                 self, "اكتمل النسخ الاحتياطي",
-                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\\n\\n{backup}\\n\\n"
+                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\n\n{backup}\n\n"
                 "يُحتفظ بآخر 30 نسخة من هذا النوع.",
             )
         except Exception as exc:
@@ -505,9 +505,9 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.warning(
             self, "تثبيت PostgreSQL 16",
             "سيستخدم التطبيق Windows Package Manager لتنزيل مثبّت PostgreSQL الرسمي "
-            "من EDB وتشغيله بوضع تفاعلي. قد يطلب Windows صلاحية مسؤول.\\n\\n"
+            "من EDB وتشغيله بوضع تفاعلي. قد يطلب Windows صلاحية مسؤول.\n\n"
             "مهم: ستحدد كلمة مرور مدير قاعدة البيانات بنفسك داخل نافذة المثبّت. "
-            "لن ينشئ التطبيق كلمة مرور افتراضية ولن يحفظ كلمة مرور المدير.\\n\\n"
+            "لن ينشئ التطبيق كلمة مرور افتراضية ولن يحفظ كلمة مرور المدير.\n\n"
             "قد يستغرق التنزيل والتثبيت عدة دقائق. هل تريد المتابعة؟",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
