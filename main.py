@@ -35,8 +35,21 @@ def main() -> int:
     secrets = SecretStore()
     postgres_dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
     if postgres_dsn:
+        from PySide6.QtWidgets import QMessageBox
         from ecmwf_collector.postgres_state import PostgresStateStore
-        state_store = PostgresStateStore(postgres_dsn)
+        try:
+            state_store = PostgresStateStore(postgres_dsn)
+        except Exception as exc:
+            QMessageBox.critical(
+                None,
+                "تعذّر الاتصال بقاعدة PostgreSQL",
+                "تعذّر فتح قاعدة PostgreSQL المحفوظة. لم يتم تحويل البيانات أو حذفها.\\n\\n"
+                f"التفاصيل: {type(exc).__name__}: {exc}\\n\\n"
+                "تحقق من تشغيل خدمة PostgreSQL وصحة إعداد الاتصال. "
+                "يمكن إزالة الاتصال المحفوظ من مخزن بيانات اعتماد Windows "
+                "للعودة إلى SQLite في التشغيل التالي.",
+            )
+            return 2
     else:
         state_store = StateStore(data_root / "state" / "state.db")
     window = MainWindow(cfg, config_path, secrets, state_store)
