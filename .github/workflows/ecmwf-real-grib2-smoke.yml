@@ -139,12 +139,25 @@ jobs:
                   if values.ndim != 2 or not (regular_1d or curvilinear_2d):
                       raise SystemExit(f"Unexpected value/geolocation shapes in {layer['data_file']}")
                   if latitudes.ndim == 1:
-                      geo_valid = (np.isfinite(latitudes)[:, None]
-                                   & np.isfinite(longitudes)[None, :]
-                                   & (np.abs(latitudes[:, None]) <= 90.0))
+                      if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
+                          raise SystemExit("Regular geolocation coordinates must be finite")
+                      if np.any(np.abs(latitudes) > 90.0):
+                          raise SystemExit("Latitude coordinates are outside -90..90 degrees")
+                      if np.any(np.abs(longitudes) > 360.0):
+                          raise SystemExit("Longitude coordinates are outside -360..360 degrees")
+                      geo_valid = np.ones(values.shape, dtype=bool)
                   else:
-                      geo_valid = (np.isfinite(latitudes) & np.isfinite(longitudes)
-                                   & (np.abs(latitudes) <= 90.0))
+                      if np.any(np.isinf(latitudes)) or np.any(np.isinf(longitudes)):
+                          raise SystemExit("Curvilinear geolocation coordinates must not contain infinities")
+                      lat_finite = np.isfinite(latitudes)
+                      lon_finite = np.isfinite(longitudes)
+                      if np.any(lat_finite != lon_finite):
+                          raise SystemExit("Curvilinear latitude/longitude missing-cell masks differ")
+                      geo_valid = lat_finite & lon_finite
+                      if np.any(np.abs(latitudes[geo_valid]) > 90.0):
+                          raise SystemExit("Latitude coordinates are outside -90..90 degrees")
+                      if np.any(np.abs(longitudes[geo_valid]) > 360.0):
+                          raise SystemExit("Longitude coordinates are outside -360..360 degrees")
                   if int(geo_valid.sum()) < 3:
                       raise SystemExit(f"Too few valid geolocation cells in {layer['data_file']}")
                   if int((geo_valid & np.isfinite(values)).sum()) < 3:
