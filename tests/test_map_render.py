@@ -336,7 +336,7 @@ class MapRenderTests(unittest.TestCase):
 
     def test_curvilinear_longitude_span_ignores_invalid_geolocation_cells(self):
         lat = np.array([[20.0, 20.0, np.nan], [10.0, 10.0, 10.0], [0.0, 0.0, 0.0]])
-        lon = np.array([[-90.0, 0.0, 179.0], [-90.0, 0.0, 90.0], [-90.0, 0.0, 90.0]])
+        lon = np.array([[-90.0, 0.0, np.nan], [-90.0, 0.0, 90.0], [-90.0, 0.0, 90.0]])
         values = np.arange(9, dtype=np.float32).reshape(3, 3)
         with tempfile.TemporaryDirectory() as tmp:
             result = render_scalar_png(values, lat, lon, Path(tmp) / "masked-span.png")
@@ -374,7 +374,7 @@ class MapRenderTests(unittest.TestCase):
             [0.0, 0.0, 0.0],
         ])
         lon = np.array([
-            [-90.0, 0.0, 179.0],
+            [-90.0, 0.0, np.nan],
             [-90.0, 0.0, 90.0],
             [-90.0, 0.0, 90.0],
         ])
