@@ -1,6 +1,9 @@
 """Regression tests for the map server's filesystem exposure boundary."""
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+
+import serve_map
 
 from serve_map import ALLOWED_ROOTS, ROOT, MapOnlyHandler
 
@@ -58,6 +61,19 @@ class MapServerPathBoundaryTests(unittest.TestCase):
                 Path(self.handler.translate_path(request_path)),
                 ROOT / "__map_file_not_found__",
             )
+
+    @patch("serve_map.webbrowser.open")
+    @patch("serve_map.ThreadingHTTPServer")
+    def test_headless_mode_starts_server_without_browser(self, server_factory, browser_open):
+        server = server_factory.return_value
+        server.serve_forever.side_effect = KeyboardInterrupt
+
+        serve_map.main(open_browser=False)
+
+        server_factory.assert_called_once_with(("127.0.0.1", 8765), MapOnlyHandler)
+        server.serve_forever.assert_called_once()
+        server.server_close.assert_called_once()
+        browser_open.assert_not_called()
 
 
 if __name__ == "__main__":
