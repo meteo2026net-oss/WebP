@@ -6,6 +6,40 @@ import secrets
 APP_ROLE = "ecmwf_webp_app"
 
 
+def remove_new_application_login(admin_dsn: str) -> None:
+    """Remove only the dedicated app role created by this setup attempt.
+
+    The administrator-owned public.files table and every row are deliberately
+    retained. Call only when the caller knows this attempt created the role.
+    """
+    if not admin_dsn or not admin_dsn.strip():
+        raise ValueError("أدخل سلسلة اتصال PostgreSQL لحساب المدير.")
+    try:
+        import psycopg
+        from psycopg import sql
+    except ImportError as exc:
+        raise RuntimeError("وضع PostgreSQL يتطلب psycopg[binary].") from exc
+
+    with psycopg.connect(admin_dsn.strip(), connect_timeout=8) as admin:
+        database = admin.execute("SELECT current_database()").fetchone()[0]
+        admin.execute(
+            sql.SQL("REVOKE CONNECT ON DATABASE {} FROM {}").format(
+                sql.Identifier(database), sql.Identifier(APP_ROLE)
+            )
+        )
+        admin.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON TABLE public.files FROM {}").format(
+                sql.Identifier(APP_ROLE)
+            )
+        )
+        admin.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA public FROM {}").format(
+                sql.Identifier(APP_ROLE)
+            )
+        )
+        admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(APP_ROLE)))
+
+
 def provision_application_login(admin_dsn: str) -> str:
     """Create a dedicated app login in the database selected by an administrator DSN.
 
@@ -77,17 +111,7 @@ def provision_application_login(admin_dsn: str) -> str:
         # Remove the newly-created role if the app login cannot initialize.
         if role_created:
             try:
-                with psycopg.connect(admin_dsn.strip(), connect_timeout=8) as admin:
-                    database = admin.execute("SELECT current_database()").fetchone()[0]
-                    from psycopg import sql
-                    admin.execute(
-                        sql.SQL("REVOKE CONNECT ON DATABASE {} FROM ecmwf_webp_app").format(
-                            sql.Identifier(database)
-                        )
-                    )
-                    admin.execute("REVOKE ALL ON TABLE public.files FROM ecmwf_webp_app")
-                    admin.execute("REVOKE ALL ON SCHEMA public FROM ecmwf_webp_app")
-                    admin.execute("DROP ROLE IF EXISTS ecmwf_webp_app")
+                remove_new_application_login(admin_dsn)
             except Exception:
                 pass
         raise RuntimeError(
