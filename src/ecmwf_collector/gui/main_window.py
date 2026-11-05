@@ -932,7 +932,12 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(True)
         self.btn_pause.setText("إيقاف مؤقت")
         self._log(f"بدأ التنزيل: {len(items)} ملف")
-        self._run(lambda: manager.run(items), self._download_done, busy=False)
+        self._run(
+            lambda: manager.run(items),
+            self._download_done,
+            busy=False,
+            on_failed=self._download_failed,
+        )
 
     def _download_done(self, result):
         self._downloading = False
@@ -941,6 +946,23 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self._busy(False)
         self._log("انتهى:\n" + result.summary_ar())
+
+    def _download_failed(self, message: str):
+        """Restore the download controls after an unexpected worker failure."""
+        self._downloading = False
+        self._manager = None
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_pause.setText("إيقاف مؤقت")
+        self.pbar_label.setText("توقف التنزيل بسبب خطأ؛ يمكن مراجعة السجل ثم إعادة المحاولة.")
+        self._busy(False)
+        self._log(f"تعذّر إكمال التنزيل: {message}")
+        QMessageBox.warning(
+            self,
+            "تعذّر إكمال التنزيل",
+            f"توقفت مهمة التنزيل بسبب خطأ غير متوقع.\\n{message}\\n"
+            "يمكنك مراجعة السجل وإعادة المحاولة؛ الملفات المكتملة تبقى محفوظة.",
+        )
 
     def _on_progress(self, snap):
         total = max(snap.bytes_total, 1)
