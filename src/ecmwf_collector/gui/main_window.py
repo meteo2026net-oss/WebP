@@ -381,8 +381,6 @@ class MainWindow(QMainWindow):
             )
             return
 
-        from ..postgres_backup import validate_postgres_backup_manifest
-
         backup_dir = project_root() / "state" / "backups"
         selected, _ = QFileDialog.getOpenFileName(
             self, "اختر نسخة PostgreSQL الاحتياطية", str(backup_dir),
@@ -391,16 +389,10 @@ class MainWindow(QMainWindow):
         if not selected:
             return
         archive = Path(selected)
-        try:
-            metadata = validate_postgres_backup_manifest(archive)
-            from ..postgres_backup import _connection_parts
-            target = _connection_parts(self.state._dsn).get("dbname")
-            if metadata.get("database") != target:
-                raise ValueError("النسخة لا تخص قاعدة البيانات النشطة.")
-        except Exception as exc:
+        if not archive.is_file():
             QMessageBox.critical(
-                self, "نسخة PostgreSQL غير صالحة",
-                f"لن يتم تغيير قاعدة البيانات. {type(exc).__name__}: {redact(str(exc))}",
+                self, "نسخة PostgreSQL غير موجودة",
+                "الملف المحدد غير موجود. لم يتم تغيير قاعدة البيانات.",
             )
             return
 
@@ -416,9 +408,10 @@ class MainWindow(QMainWindow):
         register_secret(admin_dsn)
         answer = QMessageBox.warning(
             self, "تأكيد استعادة PostgreSQL",
-            "سيتم استبدال محتويات قاعدة PostgreSQL المحددة بمحتويات النسخة. "
-            "سينشأ التطبيق أولاً أرشيف أمان للحالة الحالية، ثم ينفذ الاستعادة "
-            "داخل معاملة واحدة. هل تريد المتابعة؟",
+            "سيتحقق التطبيق في الخلفية من بصمة النسخة وقاعدة البيانات وصلاحيات الاستعادة. "
+            "إذا اجتازت الفحوصات، سينشئ أرشيف أمان للحالة الحالية ثم ينفذ الاستعادة "
+            "داخل معاملة واحدة. قد يستغرق فحص النسخة الكبيرة بعض الوقت، وستبقى الواجهة مستجيبة. "
+            "هل تريد المتابعة؟",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if answer != QMessageBox.Yes:
@@ -431,7 +424,21 @@ class MainWindow(QMainWindow):
                 admin_dsn, archive, backup_dir, timeout=3600
             )
 
-        self._run(work, lambda safety: self._postgres_restore_done(archive, safety))
+        def restore_failed(message):
+            self._log(
+                f"فشلت استعادة PostgreSQL قبل اكتمالها أو التحقق منها: {message}"
+            )
+            QMessageBox.critical(
+                self, "تعذّرت استعادة PostgreSQL",
+                f"لم يُعتمد ملف النسخة قبل اجتياز التحقق، أو تعذّر تنفيذ الاستعادة.\\n{message}\\n"
+                "راجع سجل التطبيق ونسخة الأمان إن تم إنشاؤها.",
+            )
+
+        self._run(
+            work,
+            lambda safety: self._postgres_restore_done(archive, safety),
+            on_failed=restore_failed,
+        )
 
     def _postgres_restore_done(self, archive: Path, safety: Path):
         try:
