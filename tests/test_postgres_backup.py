@@ -9,6 +9,18 @@ from ecmwf_collector import postgres_backup
 
 class PostgresBackupTests(unittest.TestCase):
 
+    def test_postgres_client_tools_must_have_matching_major_versions(self):
+        with patch.object(postgres_backup, "_tool_major_version", side_effect=[17, 16]):
+            with self.assertRaisesRegex(RuntimeError, "same PostgreSQL major version"):
+                postgres_backup._validate_tool_pair("pg_dump.exe", "pg_restore.exe")
+
+    def test_postgres_tool_version_is_parsed_from_official_output(self):
+        result = type("Result", (), {
+            "returncode": 0, "stdout": "pg_dump (PostgreSQL) 17.4", "stderr": ""
+        })()
+        with patch.object(postgres_backup.subprocess, "run", return_value=result):
+            self.assertEqual(postgres_backup._tool_major_version("pg_dump.exe"), 17)
+
     def test_discovers_tools_from_standard_windows_install_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             bin_dir = Path(temp) / "PostgreSQL" / "17" / "bin"
@@ -39,6 +51,7 @@ class PostgresBackupTests(unittest.TestCase):
                 return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
             with patch.object(postgres_backup, "_tool", side_effect=["pg_dump.exe", "pg_restore.exe"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
                  patch.object(postgres_backup.subprocess, "run", side_effect=run):
                 backup = postgres_backup.create_postgres_backup(
                     "postgresql://limited:secret@127.0.0.1:5432/weather?sslmode=disable",
@@ -83,6 +96,7 @@ class PostgresBackupTests(unittest.TestCase):
                 Path(args[args.index("--file") + 1]).write_bytes(b"partial")
                 return type("Result", (), {"returncode": 1, "stdout": "", "stderr": "connection failed"})()
             with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
                  patch.object(postgres_backup.subprocess, "run", side_effect=fail):
                 with self.assertRaisesRegex(RuntimeError, "pg_dump failed"):
                     postgres_backup.create_postgres_backup(
@@ -101,6 +115,7 @@ class PostgresBackupTests(unittest.TestCase):
                     "stdout": "", "stderr": "bad archive",
                 })()
             with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
                  patch.object(postgres_backup.subprocess, "run", side_effect=run):
                 with self.assertRaisesRegex(RuntimeError, "validation"):
                     postgres_backup.create_postgres_backup(
@@ -111,6 +126,7 @@ class PostgresBackupTests(unittest.TestCase):
     def test_rotation_keeps_requested_number(self):
         with tempfile.TemporaryDirectory() as temp:
             with patch.object(postgres_backup, "_tool", side_effect=["pg_dump", "pg_restore"] * 3), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
                  patch.object(postgres_backup.subprocess, "run") as run:
                 def fake(args, **kwargs):
                     if "--format=custom" in args:
