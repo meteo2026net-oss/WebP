@@ -134,7 +134,7 @@ Regular 1-D global grids continue to use the separate regular-grid path.
 
 Synthetic xarray tests validate the conversion logic but do not replace testing against an independently produced GRIB message. For a reproducible real-file check, ECMWF publishes a static IFS GRIB2 sample dataset at [data.ecmwf.int/mtg2_sample](https://data.ecmwf.int/mtg2_sample/). ECMWF documents that the sample is available to users without ECMWF HPC/ECS login; its directory tree includes operational forecast surface fields, pressure-level fields, and ensemble examples.
 
-A practical first smoke test is the documented mean-sea-level pressure file in the operational forecast surface directory:
+A practical first smoke test is the documented mean-sea-level pressure file in the operational forecast surface directory (the URL is fixed, but no independently trusted SHA-256 is currently published for this fixture):
 
 `od/oper/fc/sfc/151_od_oper_fc_sfc_msl_2024_0001_regular_ll.grib2`
 
@@ -160,7 +160,7 @@ A network-dependent integration check is available separately from the normal un
 4. Open the resulting run and wait for the `real-grib2-smoke` job to finish. A run is successful only when download, ecCodes inventory, cfgrib conversion, and all output checks pass.
 5. In the run's **Artifacts** section, download `ecmwf-real-grib2-smoke-<run-id>` and inspect `SHA256SUMS.txt`, `inventory.json`, `validation-summary.json`, and the generated `map/` directory.
 
-The workflow checks the GRIB container markers, records a SHA-256 checksum, requires GRIB edition 2 and the requested short name, verifies PNG decoding and RGBA format, checks NPZ arrays and source-value/geolocation alignment, and uploads the inventory and outputs as a short-lived Actions artifact. The normal unit-test workflow intentionally does not download external weather data.
+The workflow checks the GRIB container markers, records the downloaded file's SHA-256 for audit (it does not compare against a trusted expected digest), requires GRIB edition 2 and the requested short name, verifies PNG decoding and RGBA format, checks NPZ arrays and source-value/geolocation alignment, and uploads the inventory and outputs as a short-lived Actions artifact. The normal unit-test workflow intentionally does not download external weather data.
 
 This workflow is deliberately manual: the regular pull-request and push test suite remains independent of external data-host availability. A successful run is evidence for this exact sample and conversion path only; it does not establish support for every GRIB product, global curvilinear grids, or a live WMO/ECMWF feed. If the download or external host is unavailable, report the run as an infrastructure/data-source failure rather than as a passing real-file validation.
 
