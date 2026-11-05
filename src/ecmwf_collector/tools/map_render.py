@@ -219,6 +219,32 @@ def _unwrap_curvilinear_longitudes(longitudes: np.ndarray, valid: np.ndarray) ->
 
 
 
+
+def _validate_curvilinear_geolocation(latitudes: np.ndarray,
+                                      longitudes: np.ndarray) -> np.ndarray:
+    """Validate 2-D geographic coordinates and return the paired-valid mask.
+
+    Paired NaNs represent legitimate missing cells. Infinities, mismatched
+    missing masks, and finite coordinates outside geographic conventions are
+    malformed source geolocation and must fail closed.
+    """
+    lat = np.asarray(latitudes, dtype=np.float64)
+    lon = np.asarray(longitudes, dtype=np.float64)
+    if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape:
+        raise ValueError("Curvilinear latitude/longitude must be matching 2-D arrays.")
+    if np.any(np.isinf(lat)) or np.any(np.isinf(lon)):
+        raise ValueError("Curvilinear geolocation coordinates must not contain infinite values.")
+    lat_valid = np.isfinite(lat)
+    lon_valid = np.isfinite(lon)
+    if np.any(lat_valid != lon_valid):
+        raise ValueError("Curvilinear latitude/longitude missing-cell masks differ.")
+    if np.any(np.abs(lat[lat_valid]) > 90.0):
+        raise ValueError("Curvilinear latitude coordinates must be within -90..90 degrees.")
+    if np.any(np.abs(lon[lon_valid]) > 360.0):
+        raise ValueError("Curvilinear longitude coordinates must be within -360..360 degrees.")
+    return lat_valid & lon_valid
+
+
 def _has_two_dimensional_spread(points: np.ndarray) -> bool:
     """Return whether projected points span a 2-D plane (not a line)."""
     coordinates = np.asarray(points, dtype=np.float64)
@@ -269,7 +295,7 @@ def _render_curvilinear_scalar_png(values: np.ndarray, latitudes: np.ndarray,
         raise ValueError("Curvilinear values, latitude and longitude must be matching 2-D arrays.")
     if min(data.shape) < 2:
         raise ValueError("Curvilinear grids must contain at least 2 rows and 2 columns.")
-    geo_valid = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90.0)
+    geo_valid = _validate_curvilinear_geolocation(lat, lon)
     if int(geo_valid.sum()) < 3:
         raise ValueError("At least three valid geolocation coordinates are required.")
     # Missing geolocation is normal outside some projected-grid domains.
@@ -408,7 +434,7 @@ def render_direction_png(direction_degrees: np.ndarray, latitudes: np.ndarray,
             raise RuntimeError("Curvilinear direction rendering requires scipy.") from exc
         if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape or direction.shape != lat.shape:
             raise ValueError("Curvilinear direction and geolocation arrays must have matching 2-D shapes.")
-        geo = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90)
+        geo = _validate_curvilinear_geolocation(lat, lon)
         usable = geo & valid
         if int(usable.sum()) < 3:
             raise ValueError("At least three valid direction cells with geolocation are required.")
