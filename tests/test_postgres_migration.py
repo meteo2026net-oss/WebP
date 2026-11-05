@@ -202,7 +202,8 @@ class PostgresProvisionTests(unittest.TestCase):
 
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
         self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
-        self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
+        self.assertTrue(any("DROP ROLE IF EXISTS" in item and '"ecmwf_webp_app"' in item for item in statements))
 
 
 class ConfigurePostgresCliTests(unittest.TestCase):
