@@ -46,11 +46,36 @@ class PostgresBackupTests(unittest.TestCase):
                 )
             self.assertTrue(backup.is_file())
             self.assertEqual(backup.read_bytes(), b"custom archive")
+            metadata = postgres_backup.validate_postgres_backup_manifest(backup)
+            self.assertEqual(metadata["database"], "weather")
+            self.assertEqual(metadata["size_bytes"], len(b"custom archive"))
             dump_args, dump_kwargs = calls[0]
             self.assertNotIn("secret", " ".join(dump_args))
             self.assertEqual(dump_kwargs["env"]["PGPASSWORD"], "secret")
             self.assertIn("--no-password", dump_args)
             self.assertEqual(calls[1][0][1], "--list")
+
+
+    def test_manifest_detects_archive_tampering(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"original archive")
+            import hashlib
+            import json
+            manifest = {
+                "format": "postgresql-custom",
+                "database": "weather",
+                "size_bytes": archive.stat().st_size,
+                "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+            archive.with_suffix(".dump.json").write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(
+                postgres_backup.validate_postgres_backup_manifest(archive)["database"],
+                "weather",
+            )
+            archive.write_bytes(b"modified archive")
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                postgres_backup.validate_postgres_backup_manifest(archive)
 
     def test_failed_dump_leaves_no_final_archive(self):
         with tempfile.TemporaryDirectory() as temp:
