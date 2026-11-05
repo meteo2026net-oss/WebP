@@ -43,6 +43,35 @@ class BundledMapPathTests(unittest.TestCase):
                     data / "layer.png",
                 )
 
+    def test_server_starts_when_frozen_stdout_is_unavailable(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.address = address
+                self.handler = handler
+                self.closed = False
+            def serve_forever(self):
+                return None
+            def server_close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            logger = serve_map.logging.getLogger("ecmwf_webp.map_server")
+            old_handlers = list(logger.handlers)
+            for handler in old_handlers:
+                logger.removeHandler(handler)
+            try:
+                with patch.object(serve_map, "project_root", return_value=Path(temp)), patch.object(
+                    serve_map, "ThreadingHTTPServer", FakeServer
+                ), patch.object(serve_map.sys, "stdout", None):
+                    serve_map.main(open_browser=False)
+                self.assertTrue((Path(temp) / "logs" / "map_server.log").is_file())
+            finally:
+                for handler in list(logger.handlers):
+                    handler.close()
+                    logger.removeHandler(handler)
+                for handler in old_handlers:
+                    logger.addHandler(handler)
+
     def test_path_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
