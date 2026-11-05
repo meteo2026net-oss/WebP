@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
+        btns.addWidget(self.btn_postgres)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -408,7 +409,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
