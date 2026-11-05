@@ -12,3 +12,6 @@ dependencies:
   - pandas
   - pyside6
   - keyring
+  - pip
+  - pip:
+      - psycopg[binary]>=3.2
