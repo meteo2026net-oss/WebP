@@ -21,7 +21,7 @@ class MapManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / "manifest.json"
-            original = b'{"version": 1, "layers": [\\xff]}'
+            original = b'{"version": 1, "layers": [\xff]}'
             path.write_bytes(original)
             with self.assertRaisesRegex(ValueError, "not valid UTF-8"):
                 update_manifest(root, [{"variable": "t", "image": "new.png"}])
