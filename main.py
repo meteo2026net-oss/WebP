@@ -1,5 +1,6 @@
 """Run the ECMWF desktop collector from source or a PyInstaller bundle."""
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def main() -> int:
     from ecmwf_collector.gui.main_window import MainWindow
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
-    postgres_dsn = __import__("os").environ.get("ECMWF_POSTGRES_DSN", "").strip()
+    postgres_dsn = os.environ.get("ECMWF_POSTGRES_DSN", "").strip()
     if postgres_dsn:
         from ecmwf_collector.postgres_state import PostgresStateStore
         state_store = PostgresStateStore(postgres_dsn)
