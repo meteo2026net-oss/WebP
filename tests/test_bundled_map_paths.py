@@ -72,6 +72,15 @@ class BundledMapPathTests(unittest.TestCase):
                 for handler in old_handlers:
                     logger.addHandler(handler)
 
+    def test_http_access_logging_does_not_require_stderr(self):
+        handler = object.__new__(serve_map.MapOnlyHandler)
+        handler.client_address = ("127.0.0.1", 12345)
+        logger = serve_map.logging.getLogger("ecmwf_webp.map_server")
+        with patch.object(logger, "info") as log_info, patch.object(serve_map.sys, "stderr", None):
+            handler.log_message('GET %s "%s"', "/map_viewer/", "200")
+        log_info.assert_called_once()
+        self.assertIn("127.0.0.1", log_info.call_args.args[1])
+
     def test_path_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
