@@ -21,16 +21,51 @@ def _connection_parts(dsn: str) -> dict[str, str]:
     return {str(key): str(value) for key, value in values.items() if value is not None}
 
 
+def _windows_tool_candidates(name: str) -> list[Path]:
+    """Find EDB client tools in standard Windows install folders, without a disk scan."""
+    executable = f"{name}.exe"
+    roots = {
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramW6432"),
+        os.environ.get("ProgramFiles(x86)"),
+    }
+    candidates: list[Path] = []
+    for root in sorted(value for value in roots if value):
+        install_root = Path(root) / "PostgreSQL"
+        try:
+            versions = sorted(
+                (path for path in install_root.iterdir() if path.is_dir()),
+                key=lambda path: tuple(int(part) if part.isdigit() else -1
+                                       for part in path.name.split(".")),
+                reverse=True,
+            )
+        except OSError:
+            continue
+        candidates.extend(version / "bin" / executable for version in versions)
+    return candidates
+
+
 def _tool(name: str, override: str | None = None) -> str:
-    candidate = override or os.environ.get(f"ECMWF_{name.upper()}") or shutil.which(name)
-    if not candidate:
-        raise FileNotFoundError(
-            f"{name} was not found. Install PostgreSQL client tools or set ECMWF_{name.upper()}."
-        )
-    path = Path(candidate)
-    if path.is_file():
-        return str(path)
-    raise FileNotFoundError(f"PostgreSQL tool does not exist: {candidate}")
+    configured = override or os.environ.get(f"ECMWF_{name.upper()}")
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            return str(path)
+        raise FileNotFoundError(f"PostgreSQL tool does not exist: {configured}")
+
+    located = shutil.which(name)
+    if located:
+        return located
+
+    # PostgreSQL's Windows installer normally uses Program Files/PostgreSQL/<version>/bin.
+    for path in _windows_tool_candidates(name):
+        if path.is_file():
+            return str(path)
+
+    raise FileNotFoundError(
+        f"{name} was not found. Install PostgreSQL client tools, add their bin "
+        f"folder to PATH, or set ECMWF_{name.upper()} to the executable path."
+    )
 
 
 def _command_options(values: Mapping[str, str]) -> tuple[list[str], dict[str, str]]:
