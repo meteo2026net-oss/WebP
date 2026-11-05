@@ -10,11 +10,15 @@ from ecmwf_collector import postgres_windows
 class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
     def test_finds_postgres_binaries_in_standard_windows_install_directory(self):
         with tempfile.TemporaryDirectory() as temp:
+            # Capture the host's concrete Path implementation before simulating
+            # os.name == "nt"; this keeps the filesystem fixture usable on Linux CI.
+            host_path_type = type(Path(temp))
             bin_dir = Path(temp) / "PostgreSQL" / "17" / "bin"
             bin_dir.mkdir(parents=True)
             for name in ("postgres", "pg_ctl", "initdb", "pg_dump", "pg_restore"):
                 (bin_dir / f"{name}.exe").write_bytes(b"")
-            with patch.object(postgres_windows.os, "name", "nt"), \
+            with patch.object(postgres_windows, "Path", host_path_type), \
+                 patch.object(postgres_windows.os, "name", "nt"), \
                  patch.dict(os.environ, {"ProgramFiles": temp}, clear=True), \
                  patch.object(postgres_windows.shutil, "which", return_value=None):
                 result = postgres_windows.diagnose_postgres_installation()
