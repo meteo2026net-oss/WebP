@@ -24,9 +24,6 @@ def _snapshot(source: Path, destination: Path) -> None:
         with closing(sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)) as src:
             with closing(sqlite3.connect(temp)) as dst:
                 src.backup(dst)
-                result = dst.execute("PRAGMA integrity_check").fetchone()
-                if not result or result[0] != "ok":
-                    raise sqlite3.DatabaseError(f"Backup integrity check failed: {result!r}")
                 _validate_database(dst, destination)
         os.replace(temp, destination)
     except BaseException:

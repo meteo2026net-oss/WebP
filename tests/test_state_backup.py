@@ -132,6 +132,17 @@ class StateBackupTests(unittest.TestCase):
             with closing(sqlite3.connect(target)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
 
+    def test_backup_rejects_incomplete_application_schema(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            invalid = root / "incomplete.db"
+            with closing(sqlite3.connect(invalid)) as db:
+                db.execute("CREATE TABLE files (remote_path TEXT PRIMARY KEY, status TEXT)")
+                db.commit()
+            with self.assertRaisesRegex(sqlite3.DatabaseError, "schema is incomplete"):
+                create_manual_backup(invalid, root / "backups")
+            self.assertEqual(list((root / "backups").glob("*.db")), [])
+
     def test_backup_failure_does_not_replace_original_database(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
