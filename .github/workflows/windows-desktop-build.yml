@@ -85,14 +85,16 @@ jobs:
           $handler = [System.Net.Http.HttpClientHandler]::new()
           $handler.UseProxy = $false
           $client = [System.Net.Http.HttpClient]::new($handler)
+          $client.Timeout = [TimeSpan]::FromSeconds(3)
           try {
             $ready = $false
             for ($i = 0; $i -lt 25; $i++) {
               Start-Sleep -Seconds 1
               try {
                 $response = $client.GetAsync("http://127.0.0.1:8765/map_viewer/").GetAwaiter().GetResult()
-                if ([int]$response.StatusCode -eq 200) { $ready = $true; break }
+                if ([int]$response.StatusCode -eq 200) { $ready = $true; $response.Dispose(); break }
                 Write-Host "Map server probe $($i + 1)/25 returned HTTP $([int]$response.StatusCode)"
+                $response.Dispose()
               } catch {
                 Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.GetBaseException().Message)"
               }
