@@ -17,9 +17,20 @@ from ecmwf_collector.state import StateStore
 
 def main() -> int:
     if "--map-server" in sys.argv[1:]:
-        from serve_map import main as map_main
-        map_main(open_browser="--no-browser" not in sys.argv[1:])
-        return 0
+        try:
+            from serve_map import main as map_main
+            map_main(open_browser="--no-browser" not in sys.argv[1:])
+            return 0
+        except Exception:
+            # Windowed PyInstaller builds have no visible console; preserve
+            # startup tracebacks in the writable per-user data directory.
+            import traceback
+            log_dir = project_root() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with (log_dir / "map_server_startup.log").open("a", encoding="utf-8") as log:
+                log.write(traceback.format_exc())
+                log.write("\n")
+            return 1
 
     data_root = project_root()
     for name in ("config", "downloads", "processed", "logs", "state", "output"):
