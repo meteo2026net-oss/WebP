@@ -40,6 +40,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip wheel
           python -m pip install -e . pyinstaller
+      - name: Compile Python sources
+        run: python -m compileall -q src main.py serve_map.py tests
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -t . -v
       - name: Build desktop directory
         run: python -m PyInstaller --noconfirm --clean ecmwf_webp.spec
       - name: Verify executable exists
