@@ -1,6 +1,11 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "APP_EXE=%~dp0ECMWFWebP.exe"
+if exist "%APP_EXE%" (
+  start "" "%APP_EXE%"
+  exit /b 0
+)
 set "APP_EXE=%~dp0dist\ECMWFWebP\ECMWFWebP.exe"
 if exist "%APP_EXE%" (
   start "" "%APP_EXE%"
