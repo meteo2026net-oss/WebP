@@ -1,6 +1,8 @@
 """Secure custom-format PostgreSQL backups using the official pg_dump tools."""
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -122,7 +124,25 @@ def create_postgres_backup(
         if verify.returncode:
             detail = (verify.stderr or verify.stdout or "pg_restore validation failed").strip()
             raise RuntimeError(f"PostgreSQL archive validation failed: {detail[-2000:]}")
+        digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
+        metadata = {
+            "format": "postgresql-custom",
+            "database": database,
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "size_bytes": temporary.stat().st_size,
+            "sha256": digest,
+        }
         os.replace(temporary, destination)
+        manifest_tmp = destination.with_suffix(destination.suffix + ".json.tmp")
+        manifest_path = destination.with_suffix(destination.suffix + ".json")
+        try:
+            manifest_tmp.write_text(
+                json.dumps(metadata, ensure_ascii=False, indent=2) + "\\n",
+                encoding="utf-8",
+            )
+            os.replace(manifest_tmp, manifest_path)
+        finally:
+            manifest_tmp.unlink(missing_ok=True)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
@@ -133,4 +153,23 @@ def create_postgres_backup(
     )
     for old in candidates[keep:]:
         old.unlink()
+        old.with_suffix(old.suffix + ".json").unlink(missing_ok=True)
     return destination
+
+
+def validate_postgres_backup_manifest(archive: Path) -> dict[str, object]:
+    """Verify sidecar metadata and SHA-256 before a backup is copied or restored."""
+    archive = Path(archive)
+    manifest_path = archive.with_suffix(archive.suffix + ".json")
+    try:
+        metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("PostgreSQL backup manifest is missing or invalid.") from exc
+    if metadata.get("format") != "postgresql-custom":
+        raise ValueError("Unsupported PostgreSQL backup manifest format.")
+    if not archive.is_file() or archive.stat().st_size != metadata.get("size_bytes"):
+        raise ValueError("PostgreSQL backup size does not match its manifest.")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if digest != metadata.get("sha256"):
+        raise ValueError("PostgreSQL backup checksum does not match its manifest.")
+    return metadata
