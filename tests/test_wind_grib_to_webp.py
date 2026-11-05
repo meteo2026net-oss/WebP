@@ -328,5 +328,43 @@ class WindGridTests(unittest.TestCase):
             spatial_layout(da)
 
 
+
+    def test_accepts_paired_missing_curvilinear_geolocation_cells(self):
+        da = FakeDataArray(
+            ("y", "x"),
+            {
+                "latitude": FakeCoordinate([[10.0, np.nan], [9.0, 9.0]], ("y", "x")),
+                "longitude": FakeCoordinate([[20.0, np.nan], [21.0, 22.0]], ("y", "x")),
+            },
+        )
+        _, _, lat, lon, grid_type = spatial_layout(da)
+        self.assertEqual(grid_type, "curvilinear_geolocation")
+        self.assertTrue(np.isnan(lat[0, 1]))
+        self.assertTrue(np.isnan(lon[0, 1]))
+
+    def test_accepts_inclusive_wind_geolocation_angular_boundaries(self):
+        da = FakeDataArray(
+            ("latitude", "longitude"),
+            {
+                "latitude": FakeCoordinate([90.0, -90.0], ("latitude",)),
+                "longitude": FakeCoordinate([-360.0, 360.0], ("longitude",)),
+            },
+        )
+        _, _, lat, lon, _ = spatial_layout(da)
+        np.testing.assert_array_equal(lat, [90.0, -90.0])
+        np.testing.assert_array_equal(lon, [-360.0, 360.0])
+
+    def test_rejects_non_finite_regular_wind_geolocation(self):
+        da = FakeDataArray(
+            ("latitude", "longitude"),
+            {
+                "latitude": FakeCoordinate([10.0, np.nan], ("latitude",)),
+                "longitude": FakeCoordinate([20.0, 21.0], ("longitude",)),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            spatial_layout(da)
+
+
 if __name__ == "__main__":
     unittest.main()
