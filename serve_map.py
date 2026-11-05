@@ -9,12 +9,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 import webbrowser
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+sys.path.insert(0, str(BUNDLE_ROOT / "src"))
+from ecmwf_collector.config import project_root  # noqa: E402
 from ecmwf_collector.tools.point_query import sample_npz  # noqa: E402
 
-MAP_DATA = (ROOT / "output" / "map_data").resolve()
-ALLOWED_ROOTS = ((ROOT / "map_viewer").resolve(), MAP_DATA)
+MAP_DATA = (project_root() / "output" / "map_data").resolve()
+MAP_VIEWER = (BUNDLE_ROOT / "map_viewer").resolve()
+ALLOWED_ROOTS = (MAP_VIEWER, MAP_DATA)
+ROOT = BUNDLE_ROOT
 
 
 class MapOnlyHandler(SimpleHTTPRequestHandler):
