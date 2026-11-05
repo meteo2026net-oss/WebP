@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QInputDialog,
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
@@ -108,6 +109,8 @@ class MainWindow(QMainWindow):
         form.addRow(self.remember)
         btns = QHBoxLayout()
         self.btn_test = QPushButton("اختبار الاتصال")
+        self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
+        self.btn_postgres.clicked.connect(self._on_configure_postgres)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
@@ -277,6 +280,86 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "بيانات ناقصة", "أدخل اسم المستخدم وكلمة مرور FTP.")
             return None
         return ConnectionSettings.from_config(cfg, self.password.text())
+
+    def _on_configure_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "أوقف التنزيل وانتظر انتهاء المهام الحالية قبل تغيير قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "PostgreSQL نشط بالفعل",
+                "التطبيق يستخدم PostgreSQL حالياً. لم يتم تغيير قاعدة البيانات.",
+            )
+            return
+        dsn, accepted = QInputDialog.getText(
+            self,
+            "ربط PostgreSQL",
+            "أدخل سلسلة اتصال PostgreSQL المحلية (سيُخفى النص):",
+            QLineEdit.Password,
+        )
+        if not accepted or not dsn.strip():
+            return
+
+        sqlite_store = self.state
+        postgres_store = None
+        backup_path = None
+        try:
+            from ..postgres_state import PostgresStateStore
+            from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
+
+            state_path = project_root() / "state" / "state.db"
+            backup_dir = project_root() / "state" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            backup_path = backup_dir / f"state-before-postgres-{stamp}.db"
+            create_sqlite_backup(state_path, backup_path)
+
+            source_records = sqlite_store.all_records()
+            postgres_store = PostgresStateStore(dsn.strip())
+            postgres_store.import_records(source_records)
+            target_records = postgres_store.all_records()
+            target_by_path = {record.remote_path: record for record in target_records}
+            mismatches = [
+                record.remote_path for record in source_records
+                if target_by_path.get(record.remote_path) != record
+            ]
+            if mismatches:
+                raise RuntimeError(
+                    f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
+                )
+            if not self.secrets.set_postgres_dsn(dsn.strip()):
+                raise RuntimeError(
+                    "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
+                    "لم يتم تبديل قاعدة البيانات الحالية."
+                )
+
+            self.state = postgres_store
+            postgres_store = None
+            sqlite_store.close()
+            self._log(
+                f"تم ربط PostgreSQL والتحقق من {len(source_records)} سجلات. "
+                f"نسخة SQLite الاحتياطية محفوظة في: {backup_path}"
+            )
+            QMessageBox.information(
+                self, "اكتمل ربط PostgreSQL",
+                f"تم نقل السجل والتحقق منه بنجاح.\\n"
+                f"عدد السجلات: {len(source_records)}\\n"
+                f"نسخة SQLite الاحتياطية: {backup_path}\\n"
+                "ستستخدم الجلسات القادمة PostgreSQL تلقائياً.",
+            )
+        except Exception as exc:
+            if postgres_store is not None:
+                postgres_store.close()
+            self._log(f"تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية كما هي: {type(exc).__name__}")
+            QMessageBox.critical(
+                self, "فشل ربط PostgreSQL",
+                f"لم يتم تبديل قاعدة البيانات الحالية.\\n"
+                f"السبب: {type(exc).__name__}: {exc}\\n"
+                f"النسخة الاحتياطية إن أُنشئت: {backup_path or 'لم تُنشأ'}",
+            )
 
     def _on_save(self):
         cfg = self._read_cfg()
