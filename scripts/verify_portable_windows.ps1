@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateRange(3, 60)]
-    [int]$StartupSeconds = 8,
+    [int]$StartupSeconds = 12,
 
     [ValidateRange(5, 90)]
     [int]$MapTimeoutSeconds = 30
@@ -134,9 +134,10 @@ try {
     Add-Check "Desktop application startup" $true "The packaged GUI remained running for $StartupSeconds seconds"
 
     $baseUri = "http://127.0.0.1:8765"
-    if (-not (Test-TcpPort -HostName "127.0.0.1" -Port 8765)) {
-        $mapProcess = Start-Process -FilePath $exe -ArgumentList @("--map-server", "--no-browser") -WorkingDirectory $root -PassThru -WindowStyle Hidden
+    if (Test-TcpPort -HostName "127.0.0.1" -Port 8765) {
+        throw "Port 8765 is already in use. Close any running ECMWFWebP map viewer and rerun this preflight."
     }
+    $mapProcess = Start-Process -FilePath $exe -ArgumentList @("--map-server", "--no-browser") -WorkingDirectory $root -PassThru -WindowStyle Hidden
 
     $handler = New-Object System.Net.Http.HttpClientHandler
     $handler.UseProxy = $false
