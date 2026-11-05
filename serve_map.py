@@ -59,7 +59,7 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
                 self._json_response(404, {"error": "This layer has no point-query data."})
                 return
             data_path = (MAP_DATA / data_name).resolve()
-            if data_path.parent != MAP_DATA or not data_path.is_file():
+            if data_path.parent != MAP_DATA.resolve() or not data_path.is_file():
                 self._json_response(404, {"error": "Scientific data file is unavailable."})
                 return
             method = query.get("method", ["nearest"])[0]
