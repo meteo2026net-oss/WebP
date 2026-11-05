@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,8 +21,8 @@ def _snapshot(source: Path, destination: Path) -> None:
     os.close(fd)
     temp = Path(temp_name)
     try:
-        with sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True) as src:
-            with sqlite3.connect(temp) as dst:
+        with closing(sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(temp)) as dst:
                 src.backup(dst)
                 result = dst.execute("PRAGMA integrity_check").fetchone()
                 if not result or result[0] != "ok":
@@ -105,7 +106,7 @@ def restore_sqlite_backup(
     return safety_copy
 
 def _verify(path: Path) -> None:
-    with sqlite3.connect(f"file:{Path(path).resolve().as_posix()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{Path(path).resolve().as_posix()}?mode=ro", uri=True)) as db:
         result = db.execute("PRAGMA integrity_check").fetchone()
         tables = {
             row[0] for row in db.execute(
