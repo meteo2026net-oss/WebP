@@ -311,8 +311,10 @@ def main() -> None:
             **display_grid,
         }
         map_records = [map_record]
-        direction_valid = rotation_applied or uv_relative_to_grid is False
-        if direction_valid:
+        direction_frame_valid = rotation_applied or uv_relative_to_grid is False
+        direction_has_valid_bearings = bool(np.any(np.isfinite(direction_from)))
+        direction_published = direction_frame_valid and direction_has_valid_bearings
+        if direction_published:
             direction_path = map_dir / f"{args.input_grib.stem}_{source_id}_wind_direction.png"
             direction_grid = render_direction_png(direction_from, lat, lon, direction_path)
             direction_data_path = direction_path.with_suffix(".npz")
@@ -345,7 +347,11 @@ def main() -> None:
         else:
             metadata["direction_display_layer"] = {
                 "published": False,
-                "reason": "U/V reference frame is not confirmed earth-relative and no explicit grid-to-earth rotation was applied.",
+                "reason": (
+                    "No valid wind bearings are available; all grid cells are calm or missing."
+                    if direction_frame_valid else
+                    "U/V reference frame is not confirmed earth-relative and no explicit grid-to-earth rotation was applied."
+                ),
             }
         update_manifest(map_dir, map_records)
         metadata["display_layer"] = {
@@ -357,8 +363,10 @@ def main() -> None:
         print(f"Created scientific texture: {args.output}")
         print(f"Created metadata: {metadata_path}")
         print(f"Created map overlay: {display_path}")
-        if direction_valid:
+        if direction_published:
             print(f"Created wind direction overlay: {direction_path}")
+        elif direction_frame_valid:
+            print("Skipped wind direction overlay: no valid bearings (all cells are calm or missing).")
         else:
             print("Skipped wind direction overlay: true-north bearing is not validated.")
         print(f"Updated map manifest: {map_dir / 'manifest.json'}")
