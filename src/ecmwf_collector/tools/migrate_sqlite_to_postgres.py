@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,9 +23,12 @@ def main() -> int:
     if not source.is_file():
         parser.error(f"SQLite database not found: {source}")
     args.backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     backup = args.backup_dir / f"state-{stamp}.db"
-    shutil.copy2(source, backup)
+    # SQLite's online backup API captures a consistent snapshot, including committed
+    # WAL content, even if the desktop app is still open.
+    with sqlite3.connect(source) as source_db, sqlite3.connect(backup) as backup_db:
+        source_db.backup(backup_db)
     sqlite = StateStore(source)
     postgres = None
     try:
