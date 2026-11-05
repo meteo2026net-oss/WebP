@@ -88,6 +88,51 @@ class PostgresBackupTests(unittest.TestCase):
             access.assert_not_called()
             safety.assert_not_called()
 
+
+    def test_restore_refuses_when_dsn_resolves_to_a_different_actual_database(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            import hashlib, json
+            metadata = {
+                "format": "postgresql-custom", "database": "weather",
+                "size_bytes": 7, "sha256": hashlib.sha256(b"archive").hexdigest(),
+            }
+            archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
+            with patch.object(
+                postgres_backup, "_assert_postgres_restore_access", return_value="production"
+            ), patch.object(postgres_backup, "create_postgres_backup") as safety:
+                with self.assertRaisesRegex(ValueError, "connected PostgreSQL database"):
+                    postgres_backup.restore_postgres_backup(
+                        "postgresql://admin@localhost/weather", archive, Path(temp)
+                    )
+            safety.assert_not_called()
+
+    def test_restore_access_rejects_database_owner_without_superuser(self):
+        import sys
+        import types
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, *_args, **_kwargs):
+                return types.SimpleNamespace(
+                    fetchone=lambda: ("weather", False, True, True)
+                )
+
+        fake_psycopg = types.SimpleNamespace(
+            connect=lambda *_args, **_kwargs: FakeConnection()
+        )
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
+            with self.assertRaisesRegex(PermissionError, "superuser"):
+                postgres_backup._assert_postgres_restore_access(
+                    "host=127.0.0.1 dbname=weather user=owner"
+                )
+
     def test_restore_creates_safety_backup_and_uses_single_transaction(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "backup.dump"
