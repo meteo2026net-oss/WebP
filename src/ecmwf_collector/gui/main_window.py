@@ -112,6 +112,8 @@ class MainWindow(QMainWindow):
         self.btn_test = QPushButton("اختبار الاتصال")
         self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
         self.btn_postgres.clicked.connect(self._on_configure_postgres)
+        self.btn_pg_diagnose = QPushButton("تشخيص PostgreSQL")
+        self.btn_pg_diagnose.clicked.connect(self._on_diagnose_postgres)
         self.btn_backup = QPushButton("نسخ احتياطي للسجل")
         self.btn_backup.clicked.connect(self._on_backup_sqlite)
         self.btn_restore = QPushButton("استعادة نسخة SQLite")
@@ -121,6 +123,7 @@ class MainWindow(QMainWindow):
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
         btns.addWidget(self.btn_postgres)
+        btns.addWidget(self.btn_pg_diagnose)
         btns.addWidget(self.btn_backup)
         btns.addWidget(self.btn_restore)
         btns.addWidget(self.btn_save)
@@ -396,6 +399,47 @@ class MainWindow(QMainWindow):
                 self, "تعذّرت الاستعادة",
                 f"سبب الفشل: {type(exc).__name__}: {redact(str(exc))}\\n"
                 "إذا أُنشئت نسخة أمان، ستجدها داخل مجلد state/backups.",
+            )
+
+    def _on_diagnose_postgres(self):
+        """Show read-only local PostgreSQL installation and service diagnostics."""
+        try:
+            from ..postgres_windows import diagnose_postgres_installation
+
+            result = diagnose_postgres_installation()
+            labels = {
+                "postgres": "خادم PostgreSQL",
+                "pg_ctl": "أداة إدارة الخدمة",
+                "initdb": "أداة تهيئة قاعدة البيانات",
+                "pg_dump": "أداة النسخ الاحتياطي",
+                "pg_restore": "أداة الاستعادة",
+            }
+            lines = [
+                "نتيجة تشخيص محلي للقراءة فقط؛ لم يتم تثبيت أو تشغيل أو إيقاف أي خدمة.",
+                "",
+                f"اكتشاف الخادم: {'نعم' if result['server_installation_detected'] else 'لا'}",
+                f"وجود أدوات العميل: {'مكتملة' if result['client_tools_found'] else 'غير مكتملة'}",
+                f"وجود خدمة تعمل: {'نعم' if result['service_running'] else 'لا'}",
+                "",
+                "الملفات التنفيذية:",
+            ]
+            for key, label in labels.items():
+                lines.append(f"{label}: {result['tools'].get(key) or 'غير موجود'}")
+            lines.append("")
+            lines.append("خدمات Windows:")
+            if result["services"]:
+                lines.extend(
+                    f"{service['name']}: {service['state']}"
+                    for service in result["services"]
+                )
+            else:
+                lines.append("لم يتم اكتشاف خدمة PostgreSQL مسجلة.")
+            QMessageBox.information(self, "تشخيص PostgreSQL", "\n".join(lines))
+        except Exception as exc:
+            self._log(f"فشل تشخيص PostgreSQL: {type(exc).__name__}: {redact(str(exc))}")
+            QMessageBox.warning(
+                self, "تعذّر التشخيص",
+                f"{type(exc).__name__}: {redact(str(exc))}",
             )
 
     def _on_configure_postgres(self):
