@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -103,13 +104,17 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
         return None
 
 
-def main():
+def main(open_browser: bool = True):
     address = ("127.0.0.1", 8765)
     server = ThreadingHTTPServer(address, MapOnlyHandler)
     url = f"http://{address[0]}:{address[1]}/map_viewer/"
     print(f"Map viewer: {url}")
     print("Local server exposes map assets and point sampling only. Press Ctrl+C to stop.")
-    webbrowser.open(url)
+    # Never let a desktop browser launch block the local HTTP server. The
+    # GUI opens the URL after its own readiness check; CLI use keeps the
+    # historical convenience, while CI can pass --no-browser.
+    if open_browser:
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
