@@ -18,7 +18,7 @@ def _install_roots() -> list[Path]:
         os.environ.get("ProgramW6432"),
         os.environ.get("ProgramFiles(x86)"),
     }
-    return [Path(value) / "PostgreSQL" for value in sorted(roots) if value]
+    return [Path(value) / "PostgreSQL" for value in sorted(value for value in roots if value)]
 
 
 def _find_binary(name: str) -> str | None:
