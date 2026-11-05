@@ -23,7 +23,7 @@ from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
-from ..logging_setup import register_secret
+from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
 from ..state import StateStore
 
@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self, "فشل ربط PostgreSQL",
                 f"لم يتم تبديل قاعدة البيانات الحالية.\\n"
-                f"السبب: {type(exc).__name__}: {exc}\\n"
+                f"السبب: {type(exc).__name__}: {redact(str(exc))}\\n"
                 f"النسخة الاحتياطية إن أُنشئت: {backup_path or 'لم تُنشأ'}",
             )
 
