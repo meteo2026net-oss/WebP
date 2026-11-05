@@ -7,7 +7,7 @@ datas = [
 ]
 binaries = []
 hiddenimports = ["serve_map", "eccodes", "cfgrib"]
-for package in ("eccodes", "cfgrib", "xarray", "scipy", "pyproj", "keyring"):
+for package in ("eccodes", "cfgrib", "xarray", "scipy", "pyproj", "keyring", "psycopg"):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas
     binaries += package_binaries
