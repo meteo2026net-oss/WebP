@@ -16,7 +16,22 @@ class StateBackupTests(unittest.TestCase):
         path = root / "state.db"
         with closing(sqlite3.connect(path)) as db:
             db.execute(
-                "CREATE TABLE files (remote_path TEXT PRIMARY KEY, status TEXT NOT NULL)"
+                """
+                CREATE TABLE files (
+                    remote_path TEXT PRIMARY KEY,
+                    remote_size INTEGER,
+                    local_path TEXT,
+                    status TEXT NOT NULL,
+                    local_size INTEGER,
+                    sha256 TEXT,
+                    detected_type TEXT,
+                    validation TEXT,
+                    downloaded_at TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL DEFAULT ''
+                )
+                """
             )
             db.execute(
                 "INSERT INTO files(remote_path,status) VALUES (?,?)",
