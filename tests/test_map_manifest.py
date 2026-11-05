@@ -7,6 +7,26 @@ from ecmwf_collector.tools.map_manifest import update_manifest
 
 
 class MapManifestTests(unittest.TestCase):
+    def test_invalid_json_manifest_is_preserved_and_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "manifest.json"
+            original = '{"version": 1, "layers": ['
+            path.write_text(original, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not valid JSON"):
+                update_manifest(root, [{"variable": "t", "image": "new.png"}])
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_invalid_manifest_structure_is_preserved(self):
+        for payload in ('[]', '{"version": 1}', '{"version": 1, "layers": [null]}'):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                path = root / "manifest.json"
+                path.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "invalid structure|non-object layer"):
+                    update_manifest(root, [{"variable": "t", "image": "new.png"}])
+                self.assertEqual(path.read_text(encoding="utf-8"), payload)
+
     def test_updates_same_layer_without_dropping_other_levels(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
