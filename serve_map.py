@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -105,11 +106,19 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
 
 
 def main(open_browser: bool = True):
+    # Frozen GUI builds may have stdout=None; never use print() for startup.
+    log_dir = project_root() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("ecmwf_webp.map_server")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.FileHandler(log_dir / "map_server.log", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
     address = ("127.0.0.1", 8765)
     server = ThreadingHTTPServer(address, MapOnlyHandler)
     url = f"http://{address[0]}:{address[1]}/map_viewer/"
-    print(f"Map viewer: {url}")
-    print("Local server exposes map assets and point sampling only. Press Ctrl+C to stop.")
+    logger.info("Map viewer server listening at %s", url)
     # Never let a desktop browser launch block the local HTTP server. The
     # GUI opens the URL after its own readiness check; CLI use keeps the
     # historical convenience, while CI can pass --no-browser.
@@ -118,9 +127,13 @@ def main(open_browser: bool = True):
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping map server...")
+        logger.info("Map server interrupted by user")
+    except Exception:
+        logger.exception("Map server failed")
+        raise
     finally:
         server.server_close()
+        logger.info("Map server stopped")
 
 
 if __name__ == "__main__":
