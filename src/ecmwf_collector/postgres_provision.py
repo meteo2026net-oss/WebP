@@ -60,6 +60,14 @@ def provision_application_login(admin_dsn: str) -> str:
         if role_created:
             try:
                 with psycopg.connect(admin_dsn.strip(), connect_timeout=8) as admin:
+                    database = admin.execute("SELECT current_database()").fetchone()[0]
+                    from psycopg import sql
+                    admin.execute(
+                        sql.SQL("REVOKE CONNECT ON DATABASE {} FROM ecmwf_webp_app").format(
+                            sql.Identifier(database)
+                        )
+                    )
+                    admin.execute("REVOKE ALL ON SCHEMA public FROM ecmwf_webp_app")
                     admin.execute("DROP ROLE IF EXISTS ecmwf_webp_app")
             except Exception:
                 pass
