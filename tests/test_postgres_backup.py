@@ -79,7 +79,7 @@ class PostgresBackupTests(unittest.TestCase):
                 "size_bytes": 7, "sha256": hashlib.sha256(b"archive").hexdigest(),
             }
             archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
-            with patch.object(postgres_backup, "_assert_postgres_restore_access") as access, \\
+            with patch.object(postgres_backup, "_assert_postgres_restore_access") as access, \
                  patch.object(postgres_backup, "create_postgres_backup") as safety:
                 with self.assertRaisesRegex(ValueError, "does not match"):
                     postgres_backup.restore_postgres_backup(
@@ -103,12 +103,12 @@ class PostgresBackupTests(unittest.TestCase):
             def fake_run(args, **kwargs):
                 calls.append(args)
                 return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-            with patch.object(postgres_backup, "_assert_postgres_restore_access", return_value="weather"), \\
-                 patch.object(postgres_backup, "_tool", side_effect=["pg_restore", "pg_dump"]), \\
-                 patch.object(postgres_backup, "_validate_tool_pair"), \\
-                 patch.object(postgres_backup, "_command_options", return_value=(["--dbname", "dbname=weather"], {})), \\
-                 patch.object(postgres_backup.subprocess, "run", side_effect=fake_run), \\
-                 patch.object(postgres_backup, "create_postgres_backup", return_value=safety), \\
+            with patch.object(postgres_backup, "_assert_postgres_restore_access", return_value="weather"), \
+                 patch.object(postgres_backup, "_tool", side_effect=["pg_restore", "pg_dump"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
+                 patch.object(postgres_backup, "_command_options", return_value=(["--dbname", "dbname=weather"], {})), \
+                 patch.object(postgres_backup.subprocess, "run", side_effect=fake_run), \
+                 patch.object(postgres_backup, "create_postgres_backup", return_value=safety), \
                  patch("psycopg.connect") as connect:
                 connect.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = (
                     "public.files", True, True
