@@ -315,5 +315,55 @@ class PostgresBackupTests(unittest.TestCase):
             self.assertEqual(len(list(Path(temp).glob("postgres-weather-*.dump"))), 2)
 
 
+
+    def test_grant_recovery_failure_always_reports_safety_backup(self):
+        import sys
+        import types
+
+        safety = Path("pre-restore-safety.dump")
+        fake_psycopg = types.SimpleNamespace(
+            connect=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                PermissionError("connection rejected")
+            )
+        )
+        with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
+            with self.assertRaisesRegex(RuntimeError, "pre-restore-safety.dump"):
+                postgres_backup._restore_application_grants(
+                    "postgresql://admin@localhost/weather", "weather", safety
+                )
+
+    def test_grant_failure_reports_database_restored_but_app_not_ready(self):
+        import sys
+        import types
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def execute(self, *_args, **_kwargs):
+                raise PermissionError("grant denied")
+
+        fake_psycopg = types.SimpleNamespace(
+            connect=lambda *_args, **_kwargs: FakeConnection()
+        )
+        fake_sql = types.SimpleNamespace(
+            SQL=lambda value: types.SimpleNamespace(
+                format=lambda *_args: value
+            ),
+            Identifier=lambda value: value,
+        )
+        safety = Path("pre-restore-safety.dump")
+        with patch.dict(sys.modules, {
+            "psycopg": fake_psycopg,
+            "psycopg.sql": fake_sql,
+        }):
+            with self.assertRaisesRegex(RuntimeError, "Do not start the collector") as caught:
+                postgres_backup._restore_application_grants(
+                    "postgresql://admin@localhost/weather", "weather", safety
+                )
+        self.assertIn(str(safety), str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

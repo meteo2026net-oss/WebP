@@ -346,22 +346,38 @@ def restore_postgres_backup(
 
     # --no-privileges avoids importing stale ACLs; reapply only the app's
     # required grants, then verify the table is present and readable.
-    import psycopg
-    from psycopg import sql
-    from .postgres_provision import APP_ROLE
-    with psycopg.connect(dsn, connect_timeout=8) as conn:
-        conn.execute(
-            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                sql.Identifier(database), sql.Identifier(APP_ROLE)
-            )
-        )
-        conn.execute(
-            sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(APP_ROLE))
-        )
-        conn.execute(
-            sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.files TO {}").format(
-                sql.Identifier(APP_ROLE)
-            )
-        )
-        _verify_restored_application_access(conn, APP_ROLE, safety_backup)
+    _restore_application_grants(dsn, database, safety_backup)
     return safety_backup
+
+
+def _restore_application_grants(dsn: str, database: str, safety_backup: Path) -> None:
+    """Reapply restricted app grants and always report the recovery archive on failure."""
+    try:
+        import psycopg
+        from psycopg import sql
+        from .postgres_provision import APP_ROLE
+
+        with psycopg.connect(dsn, connect_timeout=8) as conn:
+            conn.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                    sql.Identifier(database), sql.Identifier(APP_ROLE)
+                )
+            )
+            conn.execute(
+                sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(
+                    sql.Identifier(APP_ROLE)
+                )
+            )
+            conn.execute(
+                sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.files TO {}").format(
+                    sql.Identifier(APP_ROLE)
+                )
+            )
+            _verify_restored_application_access(conn, APP_ROLE, safety_backup)
+    except Exception as exc:
+        raise RuntimeError(
+            "The database archive was restored, but reapplying or verifying the "
+            "restricted application permissions failed. Do not start the collector "
+            "until PostgreSQL access is repaired. A pre-restore safety backup is "
+            f"available at: {safety_backup}"
+        ) from exc
