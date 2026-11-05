@@ -27,13 +27,7 @@ def _snapshot(source: Path, destination: Path) -> None:
                 result = dst.execute("PRAGMA integrity_check").fetchone()
                 if not result or result[0] != "ok":
                     raise sqlite3.DatabaseError(f"Backup integrity check failed: {result!r}")
-                tables = {
-                    row[0] for row in dst.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    ).fetchall()
-                }
-                if "files" not in tables:
-                    raise sqlite3.DatabaseError("Backup does not contain the application files table.")
+                _validate_database(dst, destination)
         os.replace(temp, destination)
     except BaseException:
         temp.unlink(missing_ok=True)
@@ -105,16 +99,37 @@ def restore_sqlite_backup(
         raise
     return safety_copy
 
+def _validate_database(db: sqlite3.Connection, path: Path) -> None:
+    """Reject incomplete state schemas before a backup is published or restored."""
+    result = db.execute("PRAGMA integrity_check").fetchone()
+    if not result or result[0] != "ok":
+        raise sqlite3.DatabaseError(f"Invalid application backup integrity: {path}")
+    tables = {
+        row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "files" not in tables:
+        raise sqlite3.DatabaseError(f"Backup does not contain the application files table: {path}")
+    columns = {
+        row[1] for row in db.execute("PRAGMA table_info(files)").fetchall()
+    }
+    required = {
+        "remote_path", "remote_size", "local_path", "status", "local_size",
+        "sha256", "detected_type", "validation", "downloaded_at", "attempts",
+        "last_error", "updated_at",
+    }
+    missing = sorted(required - columns)
+    if missing:
+        raise sqlite3.DatabaseError(
+            "Application files table schema is incomplete; missing columns: "
+            + ", ".join(missing)
+        )
+
+
 def _verify(path: Path) -> None:
     with closing(sqlite3.connect(f"file:{Path(path).resolve().as_posix()}?mode=ro", uri=True)) as db:
-        result = db.execute("PRAGMA integrity_check").fetchone()
-        tables = {
-            row[0] for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        if not result or result[0] != "ok" or "files" not in tables:
-            raise sqlite3.DatabaseError(f"Invalid application backup: {path}")
+        _validate_database(db, Path(path))
 
 
 def _rotate(directory: Path, prefix: str, keep: int, newest: Path) -> None:

@@ -46,6 +46,7 @@ class StateBackupTests(unittest.TestCase):
             first = ensure_daily_backup(source, root / "backups")
             with closing(sqlite3.connect(source)) as db:
                 db.execute("UPDATE files SET status='validated'")
+                db.commit()
             second = ensure_daily_backup(source, root / "backups")
             self.assertEqual(first, second)
             with closing(sqlite3.connect(second)) as db:
@@ -84,6 +85,7 @@ class StateBackupTests(unittest.TestCase):
             backup = create_manual_backup(target, root / "backups")
             with closing(sqlite3.connect(target)) as db:
                 db.execute("UPDATE files SET status='validated'")
+                db.commit()
             safety = restore_sqlite_backup(backup, target, root / "backups")
             with closing(sqlite3.connect(target)) as db:
                 self.assertEqual(db.execute("SELECT status FROM files").fetchone()[0], "downloaded")
@@ -97,6 +99,7 @@ class StateBackupTests(unittest.TestCase):
             backup = create_manual_backup(target, root / "backups")
             with closing(sqlite3.connect(target)) as db:
                 db.execute("UPDATE files SET status='validated'")
+                db.commit()
             Path(f"{target}-wal").write_bytes(b"active")
             with self.assertRaisesRegex(RuntimeError, "sidecar"):
                 restore_sqlite_backup(backup, target, root / "backups")
