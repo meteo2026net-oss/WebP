@@ -82,3 +82,5 @@ The RGB WebP wind texture uses 8-bit quantization. Lossless WebP preserves encod
 
 
 PostgreSQL backup tool discovery: on Windows, the application automatically searches standard EnterpriseDB installation folders under `Program Files/PostgreSQL/<version>/bin`, then falls back to `PATH`. Explicit `ECMWF_PG_DUMP` and `ECMWF_PG_RESTORE` environment overrides remain supported.
+
+Each PostgreSQL custom-format dump is accompanied by a JSON sidecar containing the database name, UTC creation time, archive size, and SHA-256 digest. Use `validate_postgres_backup_manifest(path)` to verify the archive before transfer or recovery; rotation removes the matching sidecar together with its dump.
