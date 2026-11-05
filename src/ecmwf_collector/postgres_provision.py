@@ -10,11 +10,15 @@ def provision_application_login(admin_dsn: str) -> str:
     """Create a dedicated app login in the database selected by an administrator DSN.
 
     The administrator DSN is used only for provisioning and is never returned or
-    persisted. The generated application password is sent as a bound SQL value
-    and is returned only inside a DSN for storage in the OS credential vault.
+    persisted. The generated password is safely SQL-quoted (not passed in process
+    arguments) and returned only inside a DSN for the OS credential vault. Server
+    statement logging may still record DDL, depending on the server configuration.
     """
     if not admin_dsn or not admin_dsn.strip():
         raise ValueError("أدخل سلسلة اتصال PostgreSQL لحساب المدير.")
+
+    from .logging_setup import register_secret
+    register_secret(admin_dsn.strip())
 
     try:
         import psycopg
@@ -52,7 +56,6 @@ def provision_application_login(admin_dsn: str) -> str:
     app_dsn = psycopg.conninfo.make_conninfo(
         admin_dsn.strip(), user=APP_ROLE, password=app_password
     )
-    from .logging_setup import register_secret
     register_secret(app_dsn)
     store = None
     try:
