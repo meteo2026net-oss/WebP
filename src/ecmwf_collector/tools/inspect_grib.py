@@ -28,9 +28,10 @@ KEYS = (
 )
 
 
-def safe_get(gid: Any, key: str) -> Any:
+def safe_get(gid: Any, key: str, getter) -> Any:
+    """Read one ecCodes key using the getter imported by inspect_file."""
     try:
-        return codes_get(gid, key)
+        return getter(gid, key)
     except Exception:
         return None
 
@@ -52,7 +53,7 @@ def inspect_file(path: Path) -> list[dict[str, Any]]:
             index += 1
             try:
                 record = {"message": index}
-                record.update({key: safe_get(gid, key) for key in KEYS})
+                record.update({key: safe_get(gid, key, codes_get) for key in KEYS})
                 messages.append(record)
             finally:
                 codes_release(gid)
