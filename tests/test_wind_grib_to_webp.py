@@ -193,18 +193,22 @@ class WindGridTests(unittest.TestCase):
             wind_speed_and_direction(np.zeros((2, 2)), np.zeros((2, 3)))
 
 
-    def _run_wind_cli(self, root, frame_flag, angle=None):
+    def _run_wind_cli(self, root, frame_flag, angle=None, u_values=None, v_values=None):
         lat = [10.0, 9.0]
         lon = [20.0, 21.0]
         coords = {"latitude": lat, "longitude": lon}
         attrs = {"units": "m s-1"}
         if frame_flag is not None:
             attrs["GRIB_uvRelativeToGrid"] = frame_flag
+        if u_values is None:
+            u_values = [[1.0, 2.0], [3.0, 4.0]]
+        if v_values is None:
+            v_values = [[2.0, 1.0], [4.0, 3.0]]
         dataset = xr.Dataset({
-            "u10": xr.DataArray([[1.0, 2.0], [3.0, 4.0]],
+            "u10": xr.DataArray(u_values,
                                 dims=("latitude", "longitude"), coords=coords,
                                 attrs=dict(attrs)),
-            "v10": xr.DataArray([[2.0, 1.0], [4.0, 3.0]],
+            "v10": xr.DataArray(v_values,
                                 dims=("latitude", "longitude"), coords=coords,
                                 attrs=dict(attrs)),
         })
@@ -240,6 +244,23 @@ class WindGridTests(unittest.TestCase):
                 "ecmwf_collector.tools.grib_to_map", fromlist=["_source_id"]
             )._source_id(Path(root) / "wind.grib2")
             self.assertEqual(source_ids, {expected})
+
+    def test_all_calm_earth_relative_wind_keeps_speed_layer_without_direction_layer(self):
+        with tempfile.TemporaryDirectory() as root:
+            metadata, map_dir = self._run_wind_cli(
+                root, "0",
+                u_values=[[0.0, 0.0], [0.0, 0.0]],
+                v_values=[[0.0, 0.0], [0.0, 0.0]],
+            )
+            self.assertFalse(metadata["direction_display_layer"]["published"])
+            self.assertIn("all grid cells are calm or missing",
+                          metadata["direction_display_layer"]["reason"])
+            manifest = json.loads((map_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual([item["variable"] for item in manifest["layers"]],
+                             ["wind_speed"])
+            with np.load(map_dir / manifest["layers"][0]["data_file"]) as data:
+                np.testing.assert_array_equal(data["values"], np.zeros((2, 2)))
+                self.assertTrue(np.all(np.isnan(data["wind_direction_from_degrees"])))
 
     def test_grid_relative_wind_does_not_publish_true_north_direction_layer(self):
         with tempfile.TemporaryDirectory() as root:
