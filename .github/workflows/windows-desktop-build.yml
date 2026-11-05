@@ -92,8 +92,14 @@ jobs:
               Start-Sleep -Seconds 1
               try {
                 $response = $client.GetAsync("http://127.0.0.1:8765/map_viewer/").GetAwaiter().GetResult()
-                if ([int]$response.StatusCode -eq 200) { $ready = $true; $response.Dispose(); break }
-                Write-Host "Map server probe $($i + 1)/25 returned HTTP $([int]$response.StatusCode)"
+                $status = [int]$response.StatusCode
+                $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ($status -eq 200 -and $body.Contains("ECMWF Weather Map")) {
+                  $ready = $true
+                  $response.Dispose()
+                  break
+                }
+                Write-Host "Map server probe $($i + 1)/25 returned HTTP $status or unexpected HTML"
                 $response.Dispose()
               } catch {
                 Write-Host "Map server probe $($i + 1)/25 failed: $($_.Exception.GetBaseException().Message)"
@@ -104,6 +110,18 @@ jobs:
                 Get-ChildItem $logRoot -Filter "map_server*.log" -ErrorAction SilentlyContinue |
                   ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content $_.FullName }
                 throw "Bundled map server exited with code $($process.ExitCode)"
+              }
+            }
+            if ($ready) {
+              foreach ($asset in @("style.css", "app.js")) {
+                $assetResponse = $client.GetAsync("http://127.0.0.1:8765/map_viewer/$asset").GetAwaiter().GetResult()
+                try {
+                  if ([int]$assetResponse.StatusCode -ne 200) {
+                    throw "Map viewer asset $asset returned HTTP $([int]$assetResponse.StatusCode)"
+                  }
+                } finally {
+                  $assetResponse.Dispose()
+                }
               }
             }
             if (-not $ready) {
