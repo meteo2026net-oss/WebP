@@ -90,6 +90,30 @@ class PostgresBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "checksum"):
                 postgres_backup.validate_postgres_backup_manifest(archive)
 
+
+    def test_manifest_rejects_non_object_json(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            archive.with_suffix(".dump.json").write_text("[]", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "JSON object"):
+                postgres_backup.validate_postgres_backup_manifest(archive)
+
+    def test_manifest_rejects_invalid_metadata_fields(self):
+        import json
+        cases = [
+            {"format": "postgresql-custom", "database": "weather", "size_bytes": True, "sha256": "0" * 64},
+            {"format": "postgresql-custom", "database": "weather", "size_bytes": 7, "sha256": "bad"},
+            {"format": "postgresql-custom", "database": "", "size_bytes": 7, "sha256": "0" * 64},
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            for metadata in cases:
+                archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
+                with self.subTest(metadata=metadata), self.assertRaises(ValueError):
+                    postgres_backup.validate_postgres_backup_manifest(archive)
+
     def test_manifest_write_failure_does_not_publish_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             def run(args, **kwargs):
