@@ -114,6 +114,8 @@ class MainWindow(QMainWindow):
         self.btn_postgres.clicked.connect(self._on_configure_postgres)
         self.btn_pg_diagnose = QPushButton("تشخيص PostgreSQL")
         self.btn_pg_diagnose.clicked.connect(self._on_diagnose_postgres)
+        self.btn_pg_install = QPushButton("تثبيت PostgreSQL")
+        self.btn_pg_install.clicked.connect(self._on_install_postgres)
         self.btn_backup = QPushButton("نسخ احتياطي للسجل")
         self.btn_backup.clicked.connect(self._on_backup_sqlite)
         self.btn_restore = QPushButton("استعادة نسخة SQLite")
@@ -126,6 +128,7 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.btn_test)
         btns.addWidget(self.btn_postgres)
         btns.addWidget(self.btn_pg_diagnose)
+        btns.addWidget(self.btn_pg_install)
         btns.addWidget(self.btn_backup)
         btns.addWidget(self.btn_restore)
         btns.addWidget(self.btn_pg_restore)
@@ -492,6 +495,52 @@ class MainWindow(QMainWindow):
                 "إذا أُنشئت نسخة أمان، ستجدها داخل مجلد state/backups.",
             )
 
+    def _on_install_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل تثبيت PostgreSQL.",
+            )
+            return
+        answer = QMessageBox.warning(
+            self, "تثبيت PostgreSQL 16",
+            "سيستخدم التطبيق Windows Package Manager لتنزيل مثبّت PostgreSQL الرسمي "
+            "من EDB وتشغيله بوضع تفاعلي. قد يطلب Windows صلاحية مسؤول.
+
+"
+            "مهم: ستحدد كلمة مرور مدير قاعدة البيانات بنفسك داخل نافذة المثبّت. "
+            "لن ينشئ التطبيق كلمة مرور افتراضية ولن يحفظ كلمة مرور المدير.
+
+"
+            "قد يستغرق التنزيل والتثبيت عدة دقائق. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log("بدء تثبيت PostgreSQL 16 عبر Windows Package Manager...")
+        from ..postgres_windows import install_postgres_with_winget
+        self._run(install_postgres_with_winget, self._postgres_install_done)
+
+    def _postgres_install_done(self, result):
+        diagnostics = result.get("diagnostics", {})
+        services = diagnostics.get("services", [])
+        service_text = "\n".join(
+            f"{item['name']}: {item['state']}" for item in services
+        ) or "لم تُكتشف خدمة مسجلة بعد."
+        self._log(
+            "اكتمل فحص ما بعد تثبيت PostgreSQL. "
+            f"الخادم مكتشف: {diagnostics.get('server_installation_detected')}"
+        )
+        QMessageBox.information(
+            self, "نتيجة تثبيت PostgreSQL",
+            ("PostgreSQL موجود مسبقاً." if result.get("already_present")
+             else "اكتمل تثبيت PostgreSQL واكتشف التطبيق الخادم.")
+            + "\n\nخدمات Windows:\n" + service_text
+            + "\n\nالخطوة التالية: استخدم «ربط PostgreSQL ونقل السجل»، "
+              "وأدخل سلسلة اتصال المدير التي أنشأتها داخل مثبّت EDB. "
+              "لن تُحفظ بيانات اعتماد المدير.",
+        )
+
     def _on_diagnose_postgres(self):
         """Show read-only local PostgreSQL installation and service diagnostics."""
         try:
@@ -676,7 +725,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_pg_install, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 

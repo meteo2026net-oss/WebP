@@ -93,3 +93,58 @@ def diagnose_postgres_installation() -> dict[str, Any]:
         "server_installation_detected": tools["postgres"] is not None or bool(services),
         "read_only": True,
     }
+
+
+
+def install_postgres_with_winget(
+    *,
+    package_id: str = "PostgreSQL.PostgreSQL.16",
+    timeout: int = 1800,
+) -> dict[str, Any]:
+    """Install PostgreSQL through the verified EDB WinGet package interactively.
+
+    Interactive mode is intentional: EDB's unattended defaults use a known
+    administrator password. The user must choose the database administrator
+    password in the official installer UI; this function never supplies,
+    stores, or logs that password.
+    """
+    if os.name != "nt":
+        raise RuntimeError("تثبيت PostgreSQL التلقائي مدعوم على Windows فقط.")
+    existing = diagnose_postgres_installation()
+    if existing["server_installation_detected"]:
+        return {"installed": False, "already_present": True, "diagnostics": existing}
+
+    winget = shutil.which("winget.exe") or shutil.which("winget")
+    if not winget:
+        raise RuntimeError(
+            "لم يتم العثور على Windows Package Manager (winget). "
+            "ثبّت App Installer من Microsoft Store ثم أعد المحاولة."
+        )
+    if package_id != "PostgreSQL.PostgreSQL.16":
+        raise ValueError("معرّف حزمة PostgreSQL غير معتمد في هذا المثبّت.")
+
+    command = [
+        winget, "install", "--id", package_id, "--exact", "--source", "winget",
+        "--interactive", "--accept-package-agreements", "--accept-source-agreements",
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=timeout, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "انتهت مهلة تثبيت PostgreSQL. تحقق من نافذة المثبّت وحالة التثبيت قبل إعادة المحاولة."
+        ) from exc
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "winget installation failed").strip()
+        raise RuntimeError(
+            f"فشل تثبيت PostgreSQL عبر winget (exit {result.returncode}): {detail[-1200:]}"
+        )
+
+    diagnostics = diagnose_postgres_installation()
+    if not diagnostics["server_installation_detected"]:
+        raise RuntimeError(
+            "انتهى winget دون خطأ، لكن لم يُكتشف خادم PostgreSQL. "
+            "أعد تشغيل التشخيص وافحص سجل المثبّت."
+        )
+    return {"installed": True, "already_present": False, "diagnostics": diagnostics}

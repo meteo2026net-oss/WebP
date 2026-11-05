@@ -23,6 +23,41 @@ class PostgreSQLWindowsDiagnosticsTests(unittest.TestCase):
             self.assertEqual(result["tools"]["pg_ctl"], str(bin_dir / "pg_ctl.exe"))
             self.assertTrue(result["read_only"])
 
+    def test_installer_refuses_non_windows(self):
+        with patch.object(postgres_windows.os, "name", "posix"):
+            with self.assertRaisesRegex(RuntimeError, "Windows"):
+                postgres_windows.install_postgres_with_winget()
+
+    def test_installer_uses_interactive_winget_and_never_passes_password(self):
+        detected = {
+            "server_installation_detected": True,
+            "services": [{"name": "postgresql-x64-16", "state": "RUNNING"}],
+        }
+        with patch.object(postgres_windows.os, "name", "nt"), \\
+             patch.object(postgres_windows, "diagnose_postgres_installation",
+                          side_effect=[{"server_installation_detected": False}, detected]), \\
+             patch.object(postgres_windows.shutil, "which", return_value="C:/Windows/winget.exe"), \\
+             patch.object(postgres_windows.subprocess, "run") as run:
+            run.return_value = type("Result", (), {
+                "returncode": 0, "stdout": "", "stderr": "",
+            })()
+            result = postgres_windows.install_postgres_with_winget()
+        args = run.call_args.args[0]
+        self.assertIn("--interactive", args)
+        self.assertNotIn("--silent", args)
+        self.assertNotIn("--override", args)
+        self.assertTrue(result["installed"])
+        self.assertEqual(result["diagnostics"], detected)
+
+    def test_installer_does_not_reinstall_existing_server(self):
+        detected = {"server_installation_detected": True, "services": []}
+        with patch.object(postgres_windows.os, "name", "nt"), \\
+             patch.object(postgres_windows, "diagnose_postgres_installation", return_value=detected), \\
+             patch.object(postgres_windows.subprocess, "run") as run:
+            result = postgres_windows.install_postgres_with_winget()
+        run.assert_not_called()
+        self.assertTrue(result["already_present"])
+
     def test_reports_missing_installation_without_mutating_machine(self):
         with patch.object(postgres_windows, "_find_binary", return_value=None), \
              patch.object(postgres_windows, "_windows_services", return_value=[]):
