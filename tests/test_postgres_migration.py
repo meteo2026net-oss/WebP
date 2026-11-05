@@ -105,7 +105,7 @@ class PostgresProvisionTests(unittest.TestCase):
         self.assertTrue(any("GRANT CONNECT ON DATABASE" in item[0] for item in calls))
         self.assertTrue(any("GRANT USAGE ON SCHEMA public" in item[0] for item in calls))
         self.assertTrue(any("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.files" in item[0] for item in calls))
-        self.assertTrue(any("CREATE TABLE IF NOT EXISTS files" in item[0] for item in calls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS public.files" in item[0] for item in calls))
         self.assertFalse(any("GRANT USAGE, CREATE ON SCHEMA public" in item[0] for item in calls))
         store.assert_called_once()
 
