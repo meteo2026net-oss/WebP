@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import re
 import json
 import os
 import shutil
@@ -78,7 +80,6 @@ def _tool_major_version(executable: str, *, timeout: int = 10) -> int:
     output = (result.stdout or result.stderr or "").strip()
     if result.returncode or "PostgreSQL" not in output:
         raise RuntimeError(f"Could not determine PostgreSQL tool version: {executable}")
-    import re
     match = re.search(r"PostgreSQL\)\s+(\d+)", output)
     if not match:
         raise RuntimeError(f"Unrecognized PostgreSQL tool version: {output[:200]}")
@@ -111,6 +112,7 @@ def _command_options(values: Mapping[str, str]) -> tuple[list[str], dict[str, st
         # Keep credentials out of process command-line arguments.
         env["PGPASSWORD"] = password
     return ["--dbname", make_conninfo(**connection)], env
+
 
 def _sha256_file(path: Path) -> str:
     """Hash large archives incrementally instead of loading them into RAM."""
@@ -204,11 +206,22 @@ def validate_postgres_backup_manifest(archive: Path) -> dict[str, object]:
         metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("PostgreSQL backup manifest is missing or invalid.") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError("PostgreSQL backup manifest must contain a JSON object.")
     if metadata.get("format") != "postgresql-custom":
         raise ValueError("Unsupported PostgreSQL backup manifest format.")
-    if not archive.is_file() or archive.stat().st_size != metadata.get("size_bytes"):
+    expected_size = metadata.get("size_bytes")
+    expected_digest = metadata.get("sha256")
+    database = metadata.get("database")
+    if not isinstance(database, str) or not database.strip():
+        raise ValueError("PostgreSQL backup manifest has no valid database name.")
+    if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 1:
+        raise ValueError("PostgreSQL backup manifest has an invalid archive size.")
+    if not isinstance(expected_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise ValueError("PostgreSQL backup manifest has an invalid SHA-256 digest.")
+    if not archive.is_file() or archive.stat().st_size != expected_size:
         raise ValueError("PostgreSQL backup size does not match its manifest.")
     digest = _sha256_file(archive)
-    if digest != metadata.get("sha256"):
+    if not hmac.compare_digest(digest, expected_digest):
         raise ValueError("PostgreSQL backup checksum does not match its manifest.")
     return metadata
