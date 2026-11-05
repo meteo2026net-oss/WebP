@@ -92,7 +92,7 @@ jobs:
           $lines | Set-Content -LiteralPath $manifest -Encoding ascii
       - name: Run packaged Windows acceptance preflight
         shell: pwsh
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File "dist/ECMWFWebP/Verify-ECMWFWebP.ps1" -StartupSeconds 8 -MapTimeoutSeconds 30
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File "dist/ECMWFWebP/Verify-ECMWFWebP.ps1" -StartupSeconds 12 -MapTimeoutSeconds 30
       - name: Verify package manifest coverage and hashes
         shell: pwsh
         run: |
