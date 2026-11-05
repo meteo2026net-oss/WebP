@@ -1,4 +1,4 @@
-"""Configure the local PostgreSQL DSN without writing credentials to disk."""
+"""Provision a restricted PostgreSQL app login and store it in the OS credential vault."""
 from __future__ import annotations
 
 import argparse
