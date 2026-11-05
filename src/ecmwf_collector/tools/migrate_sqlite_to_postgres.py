@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from ecmwf_collector.secrets_store import SecretStore
 
 def create_sqlite_backup(source: Path, backup: Path) -> None:
     """Create a consistent SQLite snapshot using the online backup API."""
-    with sqlite3.connect(source) as source_db, sqlite3.connect(backup) as backup_db:
+    with closing(sqlite3.connect(source)) as source_db, closing(sqlite3.connect(backup)) as backup_db:
         source_db.backup(backup_db)
 
 
