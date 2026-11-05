@@ -40,6 +40,44 @@ class PostgresStateStore:
         self._dsn = dsn
         self._lock = threading.RLock()
         with self._connect() as conn:
+            # Never allow an environment-variable DSN or manual configuration to
+            # silently bypass the restricted application account provisioner.
+            role = conn.execute(
+                """
+                SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+                FROM pg_roles WHERE rolname = current_user
+                """
+            ).fetchone()
+            if role is None:
+                raise RuntimeError("تعذّر التحقق من صلاحيات حساب PostgreSQL الحالي.")
+            if any(bool(flag) for flag in role):
+                raise RuntimeError(
+                    "رفض الاتصال: حساب PostgreSQL يجب ألا يملك صلاحيات مدير أو إنشاء قواعد/أدوار أو تجاوز RLS."
+                )
+            elevated_membership = conn.execute(
+                """
+                SELECT r.rolname
+                FROM pg_roles AS r
+                WHERE r.oid <> current_user::regrole::oid
+                  AND (
+                    r.rolsuper OR r.rolcreatedb OR r.rolcreaterole
+                    OR r.rolreplication OR r.rolbypassrls
+                    OR r.rolname IN (
+                      'pg_read_all_data', 'pg_write_all_data',
+                      'pg_execute_server_program', 'pg_read_server_files',
+                      'pg_write_server_files', 'pg_monitor',
+                      'pg_read_all_settings', 'pg_read_all_stats',
+                      'pg_signal_backend'
+                    )
+                  )
+                  AND pg_has_role(current_user, r.oid, 'MEMBER')
+                LIMIT 1
+                """
+            ).fetchone()
+            if elevated_membership:
+                raise RuntimeError(
+                    "رفض الاتصال: حساب PostgreSQL عضو في دور ذي صلاحيات مرتفعة."
+                )
             conn.execute(CREATE_TABLE)
 
     def _connect(self):
