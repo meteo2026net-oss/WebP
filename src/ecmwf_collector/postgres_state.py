@@ -144,27 +144,59 @@ class PostgresStateStore:
             return int(conn.execute("SELECT COUNT(*) FROM public.files").fetchone()[0])
 
     def import_records(self, records: list[FileRecord]) -> int:
-        """Insert missing records and reject conflicting keys; never overwrite target data."""
-        inserted = 0
-        with self._lock, self._connect() as conn:
-            for record in records:
-                values = tuple(getattr(record, name) for name in (
-                    "remote_path", "remote_size", "local_path", "status", "local_size", "sha256",
-                    "detected_type", "validation", "downloaded_at", "attempts", "last_error", "updated_at"
-                ))
-                cur = conn.execute(
-                    f"INSERT INTO public.files ({SELECT_COLUMNS}) VALUES ({', '.join(['%s'] * 12)}) "
-                    "ON CONFLICT (remote_path) DO NOTHING",
-                    values,
+        """Bulk-insert missing records and reject conflicting keys; never overwrite target data."""
+        if not records:
+            return 0
+
+        columns = (
+            "remote_path", "remote_size", "local_path", "status", "local_size", "sha256",
+            "detected_type", "validation", "downloaded_at", "attempts", "last_error", "updated_at",
+        )
+        expected_by_path: dict[str, tuple] = {}
+        for record in records:
+            values = tuple(getattr(record, name) for name in columns)
+            previous = expected_by_path.get(record.remote_path)
+            if previous is not None and previous != values:
+                raise RuntimeError(
+                    f"Conflicting source records for {record.remote_path!r}; import was refused."
                 )
-                inserted += cur.rowcount
-                existing = conn.execute(
-                    f"SELECT {SELECT_COLUMNS} FROM public.files WHERE remote_path=%s", (record.remote_path,)
-                ).fetchone()
-                if existing != values:
+            expected_by_path[record.remote_path] = values
+
+        items = list(expected_by_path.items())
+        inserted = 0
+        # Bound each statement well below PostgreSQL's parameter limit while
+        # reducing migration round trips from two per row to two per batch.
+        batch_size = 500
+        row_placeholder = "(" + ", ".join(["%s"] * len(columns)) + ")"
+        with self._lock, self._connect() as conn:
+            for offset in range(0, len(items), batch_size):
+                batch = items[offset:offset + batch_size]
+                paths = [path for path, _ in batch]
+                placeholders = ", ".join([row_placeholder] * len(batch))
+                parameters = tuple(value for _, row in batch for value in row)
+                cursor = conn.execute(
+                    f"INSERT INTO public.files ({SELECT_COLUMNS}) VALUES {placeholders} "
+                    "ON CONFLICT (remote_path) DO NOTHING RETURNING remote_path",
+                    parameters,
+                )
+                inserted += len(cursor.fetchall())
+                existing_rows = conn.execute(
+                    f"SELECT {SELECT_COLUMNS} FROM public.files WHERE remote_path = ANY(%s)",
+                    (paths,),
+                ).fetchall()
+                existing_by_path = {row[0]: tuple(row) for row in existing_rows}
+                if set(existing_by_path) != set(paths):
+                    missing = sorted(set(paths) - set(existing_by_path))
                     raise RuntimeError(
-                        f"Conflict for {record.remote_path!r}; target row differs. No source data was removed."
+                        f"Import verification failed; missing target rows: {missing[:5]!r}. "
+                        "No source data was removed."
                     )
+                for remote_path, expected in batch:
+                    if existing_by_path[remote_path] != expected:
+                        raise RuntimeError(
+                            f"Conflict for {remote_path!r}; target row differs. "
+                            "No source data was removed."
+                        )
         return inserted
 
     def export_csv(self, path: Path) -> int:
