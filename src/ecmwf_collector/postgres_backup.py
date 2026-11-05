@@ -79,7 +79,7 @@ def _tool_major_version(executable: str, *, timeout: int = 10) -> int:
     if result.returncode or "PostgreSQL" not in output:
         raise RuntimeError(f"Could not determine PostgreSQL tool version: {executable}")
     import re
-    match = re.search(r"PostgreSQL\\)\\s+(\\d+)(?:\\.(\\d+))?", output)
+    match = re.search(r"PostgreSQL\)\s+(\d+)", output)
     if not match:
         raise RuntimeError(f"Unrecognized PostgreSQL tool version: {output[:200]}")
     return int(match.group(1))
