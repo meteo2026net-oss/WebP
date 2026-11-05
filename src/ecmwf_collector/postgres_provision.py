@@ -27,6 +27,7 @@ def provision_application_login(admin_dsn: str) -> str:
         raise RuntimeError("وضع PostgreSQL يتطلب psycopg[binary].") from exc
 
     app_password = secrets.token_urlsafe(36)
+    register_secret(app_password)
     role_created = False
     with psycopg.connect(admin_dsn.strip(), connect_timeout=8) as admin:
         database = admin.execute("SELECT current_database()").fetchone()[0]
