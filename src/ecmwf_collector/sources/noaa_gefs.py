@@ -181,3 +181,60 @@ def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
         except Exception as exc:
             failed.append((member, f"{type(exc).__name__}: {exc}"))
     return completed, failed
+
+
+
+def write_gefs_ensemble_manifest(
+    request: GefsRequest,
+    output_dir: Path,
+    completed: list[tuple[str, Path, Path]],
+    failed: list[tuple[str, str]],
+    *,
+    requested_members: tuple[str, ...] | None = None,
+) -> Path:
+    """Persist an atomic, auditable summary for one GEFS multi-member batch."""
+    request.validate()
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    members = requested_members or ("c00", *(f"p{number:02d}" for number in range(1, 31)))
+    for member in members:
+        replace(request, member=member).validate()
+    completed_rows = []
+    for member, grib_path, metadata_path in completed:
+        completed_rows.append({
+            "member": member,
+            "file_name": Path(grib_path).name,
+            "metadata_file": Path(metadata_path).name,
+        })
+    failed_rows = [{"member": member, "error": error} for member, error in failed]
+    payload = {
+        "source": "NOAA/NCEP NOMADS",
+        "model": "GEFS",
+        "run": f"{request.run_date:%Y%m%d}T{request.cycle:02d}:00:00Z",
+        "forecast_hour": request.forecast_hour,
+        "valid_time": request.valid_time.isoformat().replace("+00:00", "Z"),
+        "resolution": "0p50",
+        "variables": list(request.variables),
+        "levels": list(request.levels),
+        "requested_members": list(members),
+        "completed_members": completed_rows,
+        "failed_members": failed_rows,
+        "summary": {
+            "requested": len(members),
+            "completed": len(completed_rows),
+            "failed": len(failed_rows),
+        },
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "note": "Member downloads are independent; this manifest does not contain ensemble statistics.",
+    }
+    day = request.run_date.strftime("%Y%m%d")
+    stem = f"gefs_{day}_{request.cycle:02d}z_f{request.forecast_hour:03d}_ensemble"
+    destination = output_dir / f"{stem}.manifest.json"
+    temporary = destination.with_suffix(destination.suffix + ".part")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, destination)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+    return destination

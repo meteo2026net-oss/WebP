@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ecmwf_collector.sources.noaa_gefs import (
-    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,
+    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,\n    write_gefs_ensemble_manifest,
 )
 
 
@@ -103,6 +103,21 @@ class NoaaGefsTests(unittest.TestCase):
             self.assertEqual([item[0] for item in failed], ["p02"])
             self.assertEqual(len(list(Path(tmp).glob("*.grib2"))), 2)
             self.assertEqual(len(list(Path(tmp).glob("*.source.json"))), 2)
+
+    def test_ensemble_manifest_records_partial_batch_without_claiming_statistics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request = self.request()
+            completed = [("c00", Path("c00.grib2"), Path("c00.source.json"))]
+            failed = [("p01", "network unavailable")]
+            manifest = write_gefs_ensemble_manifest(
+                request, Path(tmp), completed, failed, requested_members=("c00", "p01")
+            )
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(data["summary"], {"requested": 2, "completed": 1, "failed": 1})
+            self.assertEqual(data["completed_members"][0]["member"], "c00")
+            self.assertEqual(data["failed_members"][0]["member"], "p01")
+            self.assertIn("does not contain ensemble statistics", data["note"])
+            self.assertFalse(list(Path(tmp).glob("*.part")))
 
     def test_batch_rejects_duplicate_members_before_download(self):
         with tempfile.TemporaryDirectory() as tmp:

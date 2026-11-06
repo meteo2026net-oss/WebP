@@ -30,7 +30,7 @@ from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
-from ..sources.noaa_gefs import GefsRequest, download_gefs, download_gefs_ensemble
+from ..sources.noaa_gefs import (\n    GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,\n)
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)
@@ -809,18 +809,31 @@ class MainWindow(QMainWindow):
 
         download_all = self.gefs_all_members.isChecked()
 
+        requested_members = (
+            ("c00", *(f"p{number:02d}" for number in range(1, 31)))
+            if download_all else (request.member,)
+        )
+
         def work():
             if download_all:
-                return download_gefs_ensemble(request, output)
-            grib, metadata = download_gefs(request, output)
-            return [(request.member, grib, metadata)], []
+                completed, failed = download_gefs_ensemble(
+                    request, output, members=requested_members
+                )
+            else:
+                grib, metadata = download_gefs(request, output)
+                completed, failed = [(request.member, grib, metadata)], []
+            manifest = write_gefs_ensemble_manifest(
+                request, output, completed, failed, requested_members=requested_members
+            )
+            return completed, failed, manifest
 
         def done(result):
-            completed, failed = result
+            completed, failed, manifest = result
             report = [
                 f"اكتمل تنزيل {len(completed)} عضو/أعضاء من GEFS.",
                 f"تعذر تنزيل {len(failed)} عضو/أعضاء.",
-                f"الصلاحية UTC: {request.valid_time.isoformat()}", "",
+                f"الصلاحية UTC: {request.valid_time.isoformat()}",
+                f"سجل المجموعة: {manifest.name}", "",
             ]
             for member, grib, metadata in completed:
                 report.extend([f"{member}: {grib.name}", f"Metadata: {metadata.name}"])
