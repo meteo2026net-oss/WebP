@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
         self._build_ecmwf_tab()
         self._build_eccharts_tab()
         self._build_eta_tab()
-        self._build_placeholder_source_tab("NOAA / NCEP", "GFS وGEFS وRRFS", "موصل NOAA لم يُربط بعد.")
+        self._build_windy_gfs_tab()
         self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
         self._build_placeholder_source_tab("UK Met Office", "Global / UKV", "موصل Met Office لم يُربط بعد.")
         self._build_placeholder_source_tab("JMA", "GSM / MSM", "موصل JMA لم يُربط بعد.")
@@ -511,6 +511,106 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.eta_log)
         layout.addStretch()
         self.source_tabs.addTab(page, "CPTEC ETA")
+
+    def _build_windy_gfs_tab(self):
+        """Windy GFS point forecast UI; response remains in memory only."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA GFS عبر Windy Point Forecast API"))
+        note = QLabel(
+            "هذا تكامل توقعات نقطية عبر Windy باستخدام نموذج GFS، وليس تنزيل ملفات GRIB "
+            "مباشرة من NOAA. لا يحفظ البرنامج استجابة Windy أو يعيد توزيعها. "
+            "يُحفظ مفتاح API في Windows Credential Manager فقط."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.windy_api_key = QLineEdit()
+        self.windy_api_key.setEchoMode(QLineEdit.Password)
+        self.windy_api_key.setLayoutDirection(Qt.LeftToRight)
+        self.windy_api_key.setPlaceholderText("Windy Point Forecast API key")
+        saved_key = self.secrets.get_password("windy_gfs_api_key")
+        if saved_key:
+            self.windy_api_key.setText(saved_key)
+            register_secret(saved_key)
+        self.windy_latitude = QLineEdit("33.5138")
+        self.windy_longitude = QLineEdit("36.2765")
+        self.windy_latitude.setLayoutDirection(Qt.LeftToRight)
+        self.windy_longitude.setLayoutDirection(Qt.LeftToRight)
+        form.addRow("مفتاح API", self.windy_api_key)
+        form.addRow("خط العرض", self.windy_latitude)
+        form.addRow("خط الطول", self.windy_longitude)
+        layout.addLayout(form)
+        self.btn_windy_fetch = QPushButton("جلب توقع GFS لهذا الموقع")
+        self.btn_windy_fetch.clicked.connect(self._on_windy_gfs_fetch)
+        layout.addWidget(self.btn_windy_fetch)
+        self.windy_status = QLabel("لم يتم طلب بيانات Windy بعد.")
+        self.windy_status.setWordWrap(True)
+        layout.addWidget(self.windy_status)
+        self.windy_table = QTableWidget(0, 3)
+        self.windy_table.setHorizontalHeaderLabels(["وقت UTC", "المتغير", "القيمة"])
+        self.windy_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.windy_table.setAlternatingRowColors(True)
+        self.windy_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.windy_table, 1)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "NOAA GFS / Windy")
+
+    def _on_windy_gfs_fetch(self):
+        api_key = self.windy_api_key.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, "مفتاح API مطلوب", "أدخل مفتاح Windy Point Forecast API.")
+            return
+        if not self.secrets.available:
+            QMessageBox.warning(
+                self, "مخزن الأسرار غير متاح",
+                "لن نخزن مفتاح API في ملف إعدادات عادي. فعّل Windows Credential Manager أولاً."
+            )
+            return
+        try:
+            latitude = float(self.windy_latitude.text().strip())
+            longitude = float(self.windy_longitude.text().strip())
+            if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "إحداثيات غير صالحة", "خط العرض بين -90 و90 وخط الطول بين -180 و180.")
+            return
+        if not self.secrets.set_password("windy_gfs_api_key", api_key):
+            QMessageBox.critical(self, "تعذر حفظ المفتاح", "رفض Windows Credential Manager حفظ مفتاح Windy.")
+            return
+        register_secret(api_key)
+        self.windy_status.setText("جارٍ طلب توقع GFS النقطي…")
+        self.btn_windy_fetch.setEnabled(False)
+
+        def work():
+            from ..windy_gfs import WindyGFSClient
+            return WindyGFSClient(api_key).fetch(latitude, longitude)
+
+        def done(forecast):
+            rows = forecast.rows()
+            display = []
+            for row in rows:
+                timestamp = row["time"].strftime("%Y-%m-%d %H:%M")
+                for name, value in row.items():
+                    if name == "time":
+                        continue
+                    unit = forecast.units.get(name, "")
+                    display.append((timestamp, name, f"{value if value is not None else '—'} {unit}".strip()))
+            self.windy_table.setRowCount(len(display))
+            for row_index, values in enumerate(display):
+                for col, value in enumerate(values):
+                    self.windy_table.setItem(row_index, col, QTableWidgetItem(str(value)))
+            self.windy_status.setText(
+                f"وصلت {len(rows)} أوقات تنبؤ و{len(forecast.values)} سلاسل متغيرات "
+                f"من {forecast.model_name} عبر Windy. البيانات معروضة مؤقتاً في الذاكرة فقط."
+            )
+            self.btn_windy_fetch.setEnabled(True)
+
+        def failed(message):
+            self.windy_status.setText("تعذر جلب توقع GFS: " + redact(message))
+            self.btn_windy_fetch.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
 
     def _build_placeholder_source_tab(self, title, models, status):
         page = QWidget()
