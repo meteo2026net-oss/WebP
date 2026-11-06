@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import project_root
+from ..model_catalog import IMPLEMENTATION_LABELS, MODEL_CATALOG
 
 
 SOURCE_CATALOG = [
@@ -180,6 +181,24 @@ class SynergieWorkspace(QWidget):
                 source_table.setItem(row, col, QTableWidgetItem(value))
         source_layout.addWidget(source_table)
         layout.addWidget(source_group, 2)
+        model_group = QGroupBox("فهرس النماذج العددية والمنتجات — حالة التنفيذ داخل WebP")
+        model_layout = QVBoxLayout(model_group)
+        model_table = QTableWidget(len(MODEL_CATALOG), 4)
+        model_table.setHorizontalHeaderLabels(["المركز / المزود", "النموذج / المنتج", "نوع البيانات", "حالة التنفيذ"])
+        model_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        model_table.setSelectionBehavior(QTableWidget.SelectRows)
+        model_table.setAlternatingRowColors(True)
+        model_table.horizontalHeader().setStretchLastSection(True)
+        for row, entry in enumerate(MODEL_CATALOG):
+            values = (entry.provider, entry.model, entry.product_type,
+                      IMPLEMENTATION_LABELS[entry.implementation])
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if entry.notes:
+                    item.setToolTip(entry.notes)
+                model_table.setItem(row, col, item)
+        model_layout.addWidget(model_table)
+        layout.addWidget(model_group, 2)
         observation_group = QGroupBox("طبقات الرصد والتحليل التي ستُجمع")
         observation_layout = QVBoxLayout(observation_group)
         observation_table = QTableWidget(len(OBSERVATION_LAYERS), 2)
