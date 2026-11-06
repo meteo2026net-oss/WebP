@@ -741,6 +741,7 @@ class MainWindow(QMainWindow):
         self.gefs_forecast_hour.setRange(3, 384)
         self.gefs_forecast_hour.setSingleStep(3)
         self.gefs_forecast_hour.setValue(24)
+        self.gefs_forecast_hour.valueChanged.connect(lambda hour: self.gefs_forecast_hour.setSingleStep(3 if hour <= 192 else 6))
         self.gefs_variables = QLineEdit("TMP,UGRD,VGRD")
         self.gefs_variables.setPlaceholderText("TMP,UGRD,VGRD")
         self.gefs_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
