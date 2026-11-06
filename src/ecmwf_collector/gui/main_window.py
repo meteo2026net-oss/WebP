@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
+from ..storage_layout import data_root, default_wmo_download_root, processing_output_dir, source_output_dir
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
@@ -298,7 +299,7 @@ class MainWindow(QMainWindow):
         self.ecmwf_step = QLineEdit("24")
         self.ecmwf_params = QLineEdit("2t msl")
         self.ecmwf_params.setPlaceholderText("مثال: 2t msl")
-        self.ecmwf_output = QLineEdit(str(project_root() / "downloads" / "ecmwf_open_data"))
+        self.ecmwf_output = QLineEdit(str(source_output_dir("ECMWF", project_root())))
         choose = QPushButton("اختيار مجلد…")
         choose.clicked.connect(lambda: self._choose_source_dir(self.ecmwf_output))
         output_row = QHBoxLayout()
@@ -334,7 +335,7 @@ class MainWindow(QMainWindow):
         self.eta_domain.addItems(["ams_08km", "ams_40km", "ons_40km", "rjsp_01km"])
         self.eta_filename = QLineEdit()
         self.eta_filename.setPlaceholderText("اختر اسماً من قائمة الملفات")
-        self.eta_output = QLineEdit(str(project_root() / "downloads" / "cptec_eta"))
+        self.eta_output = QLineEdit(str(source_output_dir("CPTEC_ETA", project_root())))
         choose = QPushButton("اختيار مجلد…")
         choose.clicked.connect(lambda: self._choose_source_dir(self.eta_output))
         output_row = QHBoxLayout()
@@ -461,7 +462,7 @@ class MainWindow(QMainWindow):
         self.allow_plain.setChecked(c.allow_plain_ftp)
         self.remember.setChecked(c.remember_password and self.secrets.available)
         self.protocol.setCurrentIndex(max(self.protocol.findData(c.protocol), 0))
-        self.dl_dir.setText(c.download_root)
+        self.dl_dir.setText(str(default_wmo_download_root(c.download_root, project_root())))
         for k, cb in self.kind_boxes.items():
             cb.setChecked(k in c.selected_kinds)
         for k, cb in self.cycle_boxes.items():
@@ -1242,7 +1243,7 @@ class MainWindow(QMainWindow):
 
     def _on_process_downloads(self):
         download_root = self._download_root()
-        output_root = project_root() / "output" / "map_data"
+        output_root = processing_output_dir(project_root())
         self._log(f"بدء فحص ملفات GRIB المنزلة وتحويل الحقول المتوافقة: {download_root}")
 
         def work():
@@ -1258,7 +1259,7 @@ class MainWindow(QMainWindow):
         self._log(
             f"انتهت المعالجة: ملفات حُوّلت={len(converted)}، طبقات={layer_count}، "
             f"ملفات لم تُحوّل أو تعذّر فحصها={len(failed)}.\n"
-            f"قائمة الطبقات: {project_root() / 'output' / 'map_data' / 'manifest.json'}\n"
+            f"قائمة الطبقات: {processing_output_dir(project_root()) / 'manifest.json'}\n"
             "لعرضها شغّل serve_map.py من مجلد المشروع ثم افتح الرابط الذي يظهر."
         )
         for item in failed[:10]:
