@@ -132,10 +132,12 @@ class DownloaderTests(unittest.TestCase):
                 raise OSError(28, "No space left on device")
 
         worker = _Worker(manager)
-        worker.session = type("Session", (), {"ftp": st.ftp()})()
+        ftp = make_factory(st)(True, 5)
+        ftp.cwd("/20261027")
+        item = self.plan(st).items[0]
         with patch("builtins.open", return_value=FlushFails()):
             with self.assertRaises(DiskFullError):
-                worker._transfer(worker.session.ftp, self.plan(st).items[0], 0, hashlib.sha256())
+                worker._transfer(ftp, item, 0, hashlib.sha256())
 
     def test_disk_space_guard(self):
         st = self.server({FP: grib2(1000)})
