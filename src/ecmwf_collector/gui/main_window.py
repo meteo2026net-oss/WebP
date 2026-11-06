@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
@@ -373,6 +373,21 @@ class MainWindow(QMainWindow):
         self.eccharts_layers.setAlternatingRowColors(True)
         self.eccharts_layers.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.eccharts_layers, 1)
+        map_controls = QFormLayout()
+        self.eccharts_layer_select = QComboBox()
+        self.eccharts_bbox = QLineEdit("-180,-90,180,90")
+        self.eccharts_bbox.setLayoutDirection(Qt.LeftToRight)
+        map_controls.addRow("الطبقة المراد عرضها", self.eccharts_layer_select)
+        map_controls.addRow("النطاق الجغرافي BBOX (CRS:84)", self.eccharts_bbox)
+        layout.addLayout(map_controls)
+        self.btn_eccharts_map = QPushButton("عرض الخريطة للطبقة المحددة")
+        self.btn_eccharts_map.clicked.connect(self._on_eccharts_get_map)
+        layout.addWidget(self.btn_eccharts_map)
+        self.eccharts_map_preview = QLabel("ستظهر صورة الطبقة هنا بعد جلبها.")
+        self.eccharts_map_preview.setAlignment(Qt.AlignCenter)
+        self.eccharts_map_preview.setMinimumHeight(320)
+        self.eccharts_map_preview.setStyleSheet("background: #17202b; color: #d8e2ee;")
+        layout.addWidget(self.eccharts_map_preview, 2)
         self.source_tabs.addTab(page, "ECMWF ecCharts")
 
     def _on_eccharts_capabilities(self):
@@ -400,6 +415,8 @@ class MainWindow(QMainWindow):
             return EcChartsWMSClient(endpoint, token).get_capabilities()
 
         def done(capabilities):
+            self.eccharts_layer_select.clear()
+            self.eccharts_layer_select.addItems([layer.name for layer in capabilities.layers])
             self.eccharts_layers.setRowCount(len(capabilities.layers))
             for row, layer in enumerate(capabilities.layers):
                 values = [
@@ -418,6 +435,42 @@ class MainWindow(QMainWindow):
 
         self._run(work, done, on_failed=lambda message: self.eccharts_status.setText(
             "تعذر جلب الطبقات: " + redact(message)
+        ))
+
+
+    def _on_eccharts_get_map(self):
+        endpoint = self.eccharts_endpoint.text().strip()
+        token = self.eccharts_token.text().strip()
+        layer = self.eccharts_layer_select.currentText().strip()
+        try:
+            bbox = tuple(float(value.strip()) for value in self.eccharts_bbox.text().split(","))
+            if len(bbox) != 4:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "نطاق غير صالح", "أدخل أربع قيم رقمية مفصولة بفواصل: west,south,east,north.")
+            return
+        if not endpoint or not token or not layer:
+            QMessageBox.warning(self, "بيانات ناقصة", "أدخل بيانات الاتصال واجلب الطبقات أولاً.")
+            return
+        self.eccharts_map_preview.setText("جارٍ تحميل صورة الخريطة…")
+
+        def work():
+            return EcChartsWMSClient(endpoint, token).get_map(
+                layers=(layer,), bbox=bbox, crs="CRS:84", width=1400, height=900
+            )
+
+        def done(image_data):
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(image_data):
+                self.eccharts_map_preview.setText("وصلت استجابة غير قابلة للعرض كصورة.")
+                return
+            self.eccharts_map_preview.setPixmap(
+                pixmap.scaled(self.eccharts_map_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            self.eccharts_status.setText(f"تم عرض الطبقة: {layer}")
+
+        self._run(work, done, on_failed=lambda message: self.eccharts_map_preview.setText(
+            "تعذر تحميل الخريطة: " + redact(message)
         ))
 
     def _build_eta_tab(self):
