@@ -23,7 +23,7 @@ SOURCE_CATALOG = [
     ("WMO Support", "FMD / FPD / FSD / AND", "موصل FTP موجود"),
     ("ECMWF Open Data", "IFS / AIFS Single / AIFS ENS", "موصل تنزيل وفحص GRIB موجود"),
     ("CPTEC/INPE ETA", "ETA 8 km / 40 km / 1 km", "موصل استعراض وتنزيل وفحص GRIB موجود"),
-    ("NOAA / NCEP", "GFS / GEFS / RRFS", "قيد الربط"),
+    ("NOAA / NCEP", "GFS / GEFS / RRFS", "GFS وGEFS: موصل تنزيل GRIB2 موجود؛ RRFS قيد الربط"),
     ("DWD", "ICON / ICON-EU", "قيد الربط"),
     ("UK Met Office", "Global / UKV", "قيد الربط"),
     ("JMA", "GSM / MSM", "قيد الربط"),
@@ -90,17 +90,20 @@ class ForecastCatalogWidget(QWidget):
                 meta = json.loads(sidecar.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError):
                 continue
-            filename = str(meta.get("file") or sidecar.name.removesuffix(".source.json"))
+            filename = str(
+                meta.get("file_name") or meta.get("file")
+                or sidecar.name.removesuffix(".source.json")
+            )
             data = meta.get("request") or {}
             source = meta.get("provider") or meta.get("source") or "مصدر غير محدد"
             model = meta.get("model") or meta.get("domain") or "غير محدد"
-            run = meta.get("cycle_utc")
+            run = meta.get("run") or meta.get("cycle_utc")
             if run is None and data.get("time") is not None:
                 run = f"{data.get('time')}:00"
             if run is None and meta.get("date"):
                 run = "غير متاح"
-            step = data.get("step")
-            params = data.get("param") or []
+            step = meta.get("forecast_hour", data.get("step"))
+            params = meta.get("variables") or meta.get("params") or data.get("param") or []
             if isinstance(params, str):
                 params = [params]
             records.append({
