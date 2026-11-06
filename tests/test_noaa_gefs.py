@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from datetime import date
@@ -74,7 +75,12 @@ class NoaaGefsTests(unittest.TestCase):
     def test_failed_metadata_write_removes_unpaired_grib(self):
         payload = b"GRIB" + b"x" * 128 + b"7777"
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("ecmwf_collector.sources.noaa_gefs.os.replace", side_effect=OSError("disk full")):
+            real_replace = os.replace
+            def fail_metadata_replace(source, destination):
+                if str(destination).endswith(".source.json"):
+                    raise OSError("disk full")
+                return real_replace(source, destination)
+            with patch("ecmwf_collector.sources.noaa_gefs.os.replace", side_effect=fail_metadata_replace):
                 with self.assertRaises(OSError):
                     download_gefs(
                         self.request(), Path(tmp),
