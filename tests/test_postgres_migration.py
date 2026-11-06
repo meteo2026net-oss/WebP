@@ -7,6 +7,19 @@ from ecmwf_collector.tools.migrate_sqlite_to_postgres import create_sqlite_backu
 
 
 class SQLiteBackupTests(unittest.TestCase):
+    def test_iter_records_yields_all_rows_in_bounded_batches(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = StateStore(Path(temp) / "state.db")
+            try:
+                for index in range(7):
+                    store.upsert(f"/archive/{index}.grib", status="downloaded")
+                expected = store.all_records()
+                self.assertEqual(list(store.iter_records(batch_size=2)), expected)
+                with self.assertRaises(ValueError):
+                    list(store.iter_records(batch_size=0))
+            finally:
+                store.close()
+
     def test_online_backup_preserves_all_state_records(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -331,8 +344,10 @@ class MigrationSnapshotTests(unittest.TestCase):
             class FakeSQLite:
                 def __init__(self, path):
                     opened_paths.append(Path(path))
-                def all_records(self):
-                    return []
+                def count(self):
+                    return 0
+                def iter_records(self, batch_size=500):
+                    return iter(())
                 def close(self):
                     pass
 

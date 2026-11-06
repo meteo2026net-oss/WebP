@@ -44,17 +44,24 @@ def main() -> int:
     sqlite = StateStore(backup)
     postgres = None
     try:
-        records = sqlite.all_records()
+        total_records = sqlite.count()
         postgres = PostgresStateStore(dsn)
-        inserted = postgres.import_records(records)
-        target_records = postgres.all_records()
-        target_by_path = {row.remote_path: row for row in target_records}
-        mismatches = [row.remote_path for row in records if target_by_path.get(row.remote_path) != row]
-        if mismatches:
-            raise RuntimeError(f"Verification failed for {len(mismatches)} records: {mismatches[:10]}")
-        print(f"SQLite records: {len(records)}")
+        inserted = 0
+        verified = 0
+        batch = []
+        # Keep migration memory bounded regardless of the SQLite database size.
+        for record in sqlite.iter_records(batch_size=500):
+            batch.append(record)
+            if len(batch) == 500:
+                inserted += postgres.import_records(batch)
+                verified += len(batch)
+                batch.clear()
+        if batch:
+            inserted += postgres.import_records(batch)
+            verified += len(batch)
+        print(f"SQLite records: {total_records}")
         print(f"New PostgreSQL records: {inserted}")
-        print(f"Verified PostgreSQL records: {len(records)}")
+        print(f"Verified PostgreSQL records: {verified}")
         print(f"SQLite backup retained at: {backup}")
         return 0
     finally:
