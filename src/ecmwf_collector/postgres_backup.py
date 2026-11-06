@@ -281,6 +281,23 @@ def _verify_restored_application_access(conn, app_role: str, safety_backup: Path
         )
 
 
+
+def _validate_restore_archive_contains_application_table(toc_listing: str) -> None:
+    """Refuse a valid but unrelated PostgreSQL archive before touching the live database."""
+    for line in toc_listing.splitlines():
+        entry = line.split(";", 1)
+        if len(entry) != 2:
+            continue
+        fields = entry[1].split()
+        # pg_restore --list TOC entries use: OID OID TABLE schema name owner.
+        if len(fields) >= 5 and fields[2:5] == ["TABLE", "public", "files"]:
+            return
+    raise ValueError(
+        "PostgreSQL backup does not contain the required public.files application table; "
+        "restore was refused before creating a safety backup."
+    )
+
+
 def restore_postgres_backup(
     dsn: str,
     archive: Path,
@@ -323,6 +340,7 @@ def restore_postgres_backup(
     if listing.returncode:
         detail = (listing.stderr or listing.stdout or "pg_restore archive inspection failed").strip()
         raise RuntimeError(f"PostgreSQL archive inspection failed: {detail[-1500:]}")
+    _validate_restore_archive_contains_application_table(listing.stdout or "")
 
     # Preserve the live database immediately before any destructive restore.
     safety_backup = create_postgres_backup(

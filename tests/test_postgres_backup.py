@@ -133,6 +133,43 @@ class PostgresBackupTests(unittest.TestCase):
                     "host=127.0.0.1 dbname=weather user=owner"
                 )
 
+    def test_restore_refuses_archive_without_application_table_before_safety_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "backup.dump"
+            archive.write_bytes(b"archive")
+            import hashlib, json
+            metadata = {
+                "format": "postgresql-custom", "database": "weather",
+                "size_bytes": 7, "sha256": hashlib.sha256(b"archive").hexdigest(),
+            }
+            archive.with_suffix(".dump.json").write_text(json.dumps(metadata), encoding="utf-8")
+            with patch.object(postgres_backup, "_assert_postgres_restore_access", return_value="weather"), \
+                 patch.object(postgres_backup, "_tool", side_effect=["pg_restore", "pg_dump"]), \
+                 patch.object(postgres_backup, "_validate_tool_pair"), \
+                 patch.object(postgres_backup, "_command_options", return_value=(["--dbname", "dbname=weather"], {})), \
+                 patch.object(postgres_backup.subprocess, "run", return_value=type(
+                     "Result", (), {
+                         "returncode": 0,
+                         "stdout": ";  1259 16385 TABLE public unrelated_table postgres\\n",
+                         "stderr": "",
+                     }
+                 )()), \
+                 patch.object(postgres_backup, "create_postgres_backup") as safety:
+                with self.assertRaisesRegex(ValueError, "does not contain the required public.files"):
+                    postgres_backup.restore_postgres_backup(
+                        "postgresql://admin@localhost/weather", archive, Path(temp)
+                    )
+            safety.assert_not_called()
+
+    def test_restore_toc_validator_accepts_required_table_and_rejects_other_tables(self):
+        postgres_backup._validate_restore_archive_contains_application_table(
+            "; Archive created at 2026-11-06\\n;  1259 16385 TABLE public files postgres"
+        )
+        with self.assertRaisesRegex(ValueError, "public.files"):
+            postgres_backup._validate_restore_archive_contains_application_table(
+                ";  1259 16385 TABLE public another_table postgres"
+            )
+
     def test_restore_creates_safety_backup_and_uses_single_transaction(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "backup.dump"
@@ -147,7 +184,8 @@ class PostgresBackupTests(unittest.TestCase):
             calls = []
             def fake_run(args, **kwargs):
                 calls.append(args)
-                return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+                listing = ";  1259 16385 TABLE public files postgres\\n" if "--list" in args else ""
+                return type("Result", (), {"returncode": 0, "stdout": listing, "stderr": ""})()
             with patch.object(postgres_backup, "_assert_postgres_restore_access", return_value="weather"), \
                  patch.object(postgres_backup, "_tool", side_effect=["pg_restore", "pg_dump"]), \
                  patch.object(postgres_backup, "_validate_tool_pair"), \
