@@ -45,7 +45,7 @@ OBSERVATION_LAYERS = [
 class ForecastCatalogWidget(QWidget):
     """Index forecast files and source metadata available in the local downloads tree."""
 
-    HEADERS = ["المصدر", "النموذج", "دورة التشغيل UTC", "وقت الصلاحية", "خطوة التنبؤ",
+    HEADERS = ["المصدر", "النموذج", "العضو", "دورة التشغيل UTC", "وقت الصلاحية", "خطوة التنبؤ",
                "المتغيرات", "سلامة الملف", "اسم الملف"]
 
     def __init__(self, root: Path | None = None):
@@ -107,7 +107,8 @@ class ForecastCatalogWidget(QWidget):
             if isinstance(params, str):
                 params = [params]
             records.append({
-                "source": str(source), "model": str(model), "run": str(run or "غير متاح"),
+                "source": str(source), "model": str(model), "member": str(meta.get("member") or "—"),
+                "run": str(run or "غير متاح"),
                 "valid": str(meta.get("returned_forecast_datetime") or meta.get("valid_time") or "غير متاح"),
                 "step": f"{step} ساعة" if step is not None else "غير متاح",
                 "params": ", ".join(map(str, params)) or "غير محدد",
@@ -120,7 +121,7 @@ class ForecastCatalogWidget(QWidget):
                 if path.resolve() in known_files or path.name.endswith(".part"):
                     continue
                 records.append({
-                    "source": "غير مصنف", "model": "غير محدد", "run": "غير متاح",
+                    "source": "غير مصنف", "model": "غير محدد", "member": "—", "run": "غير متاح",
                     "valid": "غير متاح", "step": "غير متاح", "params": "افحص الملف",
                     "integrity": "لم يُفحص بواسطة الفهرس", "file": path.name,
                 })
@@ -143,7 +144,7 @@ class ForecastCatalogWidget(QWidget):
             records = [r for r in records if r["source"] == chosen]
         self.table.setRowCount(len(records))
         for row, record in enumerate(records):
-            values = [record[k] for k in ("source", "model", "run", "valid", "step",
+            values = [record[k] for k in ("source", "model", "member", "run", "valid", "step",
                                            "params", "integrity", "file")]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)

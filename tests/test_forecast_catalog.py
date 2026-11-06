@@ -43,6 +43,33 @@ class ForecastCatalogTests(unittest.TestCase):
             self.assertEqual(record["step"], "6 ساعة")
             self.assertEqual(record["params"], "TMP, UGRD")
             self.assertEqual(record["file"], grib.name)
+            self.assertEqual(record["member"], "—")
+            widget.close()
+
+    def test_gefs_member_is_visible_in_catalog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            grib = root / "gefs_20261107_00z_p07_f024_0p50.grib2"
+            grib.write_bytes(b"GRIB" + b"x" * 32 + b"7777")
+            sidecar = root / "gefs_20261107_00z_p07_f024_0p50.source.json"
+            sidecar.write_text(json.dumps({
+                "source": "NOAA/NCEP NOMADS",
+                "model": "GEFS",
+                "member": "p07",
+                "run": "20261107T00:00:00Z",
+                "valid_time": "2026-11-08T00:00:00Z",
+                "forecast_hour": 24,
+                "variables": ["TMP"],
+                "file_name": grib.name,
+                "integrity": "GRIB2 framing checked; SHA-256 recorded",
+            }), encoding="utf-8")
+
+            widget = ForecastCatalogWidget(root)
+            records = widget._records()
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["model"], "GEFS")
+            self.assertEqual(records[0]["member"], "p07")
+            self.assertEqual(records[0]["step"], "24 ساعة")
             widget.close()
 
 
