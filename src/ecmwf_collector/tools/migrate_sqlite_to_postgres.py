@@ -12,6 +12,8 @@ from ecmwf_collector.state import StateStore
 from ecmwf_collector.postgres_state import PostgresStateStore
 from ecmwf_collector.secrets_store import SecretStore
 
+MIGRATION_BATCH_SIZE = 500
+
 
 def create_sqlite_backup(source: Path, backup: Path) -> None:
     """Create a consistent SQLite snapshot using the online backup API."""
@@ -50,15 +52,21 @@ def main() -> int:
         verified = 0
         batch = []
         # Keep migration memory bounded regardless of the SQLite database size.
-        for record in sqlite.iter_records(batch_size=500):
+        for record in sqlite.iter_records(batch_size=MIGRATION_BATCH_SIZE):
             batch.append(record)
-            if len(batch) == 500:
+            if len(batch) == MIGRATION_BATCH_SIZE:
                 inserted += postgres.import_records(batch)
                 verified += len(batch)
                 batch.clear()
+                percent = (verified / total_records * 100) if total_records else 100.0
+                print(f"Migration progress: {verified}/{total_records} ({percent:.1f}%)", flush=True)
         if batch:
             inserted += postgres.import_records(batch)
             verified += len(batch)
+            percent = (verified / total_records * 100) if total_records else 100.0
+            print(f"Migration progress: {verified}/{total_records} ({percent:.1f}%)", flush=True)
+        if total_records == 0:
+            print("Migration progress: 0/0 (100.0%)", flush=True)
         print(f"SQLite records: {total_records}")
         print(f"New PostgreSQL records: {inserted}")
         print(f"Verified PostgreSQL records: {verified}")

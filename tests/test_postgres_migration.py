@@ -345,9 +345,9 @@ class MigrationSnapshotTests(unittest.TestCase):
                 def __init__(self, path):
                     opened_paths.append(Path(path))
                 def count(self):
-                    return 0
+                    return 2
                 def iter_records(self, batch_size=500):
-                    return iter(())
+                    return iter((object(), object()))
                 def close(self):
                     pass
 
@@ -355,7 +355,7 @@ class MigrationSnapshotTests(unittest.TestCase):
                 def __init__(self, _dsn):
                     pass
                 def import_records(self, records):
-                    return 0
+                    return len(records)
                 def all_records(self):
                     return []
                 def close(self):
@@ -381,6 +381,7 @@ class MigrationSnapshotTests(unittest.TestCase):
             # Windows may expose the same directory through its 8.3 short name.
             self.assertTrue(os.path.samefile(opened_paths[0].parent, backup_dir))
             self.assertTrue(opened_paths[0].is_file())
+            self.assertIn("Migration progress: 2/2 (100.0%)", output.getvalue())
             self.assertIn("SQLite backup retained at:", output.getvalue())
 
 
