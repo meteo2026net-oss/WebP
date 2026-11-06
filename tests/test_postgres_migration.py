@@ -363,7 +363,8 @@ class MigrationSnapshotTests(unittest.TestCase):
 
             self.assertEqual(len(opened_paths), 1)
             self.assertNotEqual(opened_paths[0], source.resolve())
-            self.assertEqual(opened_paths[0].parent, backup_dir.resolve())
+            # Windows may expose the same directory through its 8.3 short name.
+            self.assertTrue(os.path.samefile(opened_paths[0].parent, backup_dir))
             self.assertTrue(opened_paths[0].is_file())
             self.assertIn("SQLite backup retained at:", output.getvalue())
 
