@@ -352,6 +352,18 @@ class _Worker:
                     self.close()
                     m._push_front(item)
                     m._fatal(fatal_message=str(exc))
+                except Exception as exc:
+                    # A worker-thread exception must reach the GUI result; otherwise
+                    # threading prints it and the application can report a false success.
+                    self.close()
+                    message = f"خطأ داخلي غير متوقع: {type(exc).__name__}: {exc}"
+                    log.exception("%s: %s", item.name, message)
+                    try:
+                        m.state.upsert(item.remote_path, status="failed", last_error=message[:500])
+                    except Exception:
+                        log.exception("تعذّر تحديث حالة الملف بعد خطأ العامل: %s", item.name)
+                    m._finish_item(item.name, "failed", message)
+                    m._fatal(fatal_message=f"توقفت المهمة بسبب خطأ داخلي أثناء تنزيل {item.name}: {type(exc).__name__}")
         finally:
             self.close()
 

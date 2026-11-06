@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime
 from pathlib import Path
 
@@ -198,6 +199,19 @@ class DownloaderTests(unittest.TestCase):
         self.assertEqual(res.downloaded, 4)
         for path, data in files.items():
             self.assertEqual(self.local(path.split("/")[-1]).read_bytes(), data)
+
+    def test_unexpected_worker_exception_is_reported_to_run_result(self):
+        st = self.server({FP: grib2(100)})
+        plan = self.plan(st)
+        manager = self.manager(st)
+        with patch("ecmwf_collector.downloader._Worker.process",
+                   side_effect=RuntimeError("unexpected worker failure")):
+            result = manager.run(plan.to_download)
+
+        self.assertEqual(result.failed, 1)
+        self.assertIn("FPD10270000102703001", result.errors[0])
+        self.assertIn("RuntimeError", result.fatal_message)
+        self.assertEqual(self.state.get(FP).status, "failed")
 
     def test_bad_password_is_fatal_and_not_retried(self):
         st = self.server({FP: grib2(100)})
