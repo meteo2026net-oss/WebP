@@ -149,6 +149,11 @@ def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 12
         os.replace(temp_meta, metadata_path)
     except OSError:
         temp_meta.unlink(missing_ok=True)
+        try:
+            if final_path.exists() and not metadata_path.exists():
+                final_path.unlink()
+        except OSError:
+            pass
         raise
     return final_path, metadata_path
 

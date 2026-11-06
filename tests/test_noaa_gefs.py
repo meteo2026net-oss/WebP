@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from ecmwf_collector.sources.noaa_gefs import (
     GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,
@@ -69,6 +70,18 @@ class NoaaGefsTests(unittest.TestCase):
             with self.subTest(hour=hour):
                 self.request(forecast_hour=hour).validate()
 
+
+    def test_failed_metadata_write_removes_unpaired_grib(self):
+        payload = b"GRIB" + b"x" * 128 + b"7777"
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("ecmwf_collector.sources.noaa_gefs.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    download_gefs(
+                        self.request(), Path(tmp),
+                        opener=lambda url, timeout: FakeResponse(payload),
+                    )
+            self.assertFalse(list(Path(tmp).glob("*.grib2")))
+            self.assertFalse(list(Path(tmp).glob("*.part")))
 
     def test_batch_download_records_success_and_member_failure(self):
         payload = b"GRIB" + b"x" * 128 + b"7777"
