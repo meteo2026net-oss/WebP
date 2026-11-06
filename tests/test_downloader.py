@@ -200,6 +200,25 @@ class DownloaderTests(unittest.TestCase):
         for path, data in files.items():
             self.assertEqual(self.local(path.split("/")[-1]).read_bytes(), data)
 
+    def test_worker_session_close_error_does_not_escape_cleanup(self):
+        st = self.server({FP: grib2(100)})
+        worker = self.manager(st)._Worker if False else None
+        from ecmwf_collector.downloader import _Worker
+        manager = self.manager(st)
+        worker = _Worker(manager)
+
+        class BrokenSession:
+            def close(self):
+                raise RuntimeError("socket close failed")
+
+        worker.session = BrokenSession()
+        worker.cwd = "/20261027"
+        with self.assertLogs("ecmwf_collector.downloader", level="ERROR"):
+            worker.close()
+
+        self.assertIsNone(worker.session)
+        self.assertIsNone(worker.cwd)
+
     def test_unexpected_worker_exception_is_reported_to_run_result(self):
         st = self.server({FP: grib2(100)})
         plan = self.plan(st)

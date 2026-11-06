@@ -318,9 +318,15 @@ class _Worker:
         self.cwd: str | None = None
 
     def close(self) -> None:
-        if self.session is not None:
-            self.session.close()
-        self.session, self.cwd = None, None
+        session, self.session = self.session, None
+        self.cwd = None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                # Cleanup errors must not mask the original download result or
+                # terminate a worker before its failure is reported to the GUI.
+                log.exception("تعذّر إغلاق جلسة FTP للعامل")
 
     def loop(self) -> None:
         m = self.m
