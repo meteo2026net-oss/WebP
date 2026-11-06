@@ -7,7 +7,7 @@
 - Artifact ID: `13539074610`
 - رابط التنزيل: https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305/artifacts/13539074610
 - تاريخ الإنشاء: 2026-11-06 20:54:55 UTC
-- تاريخ انتهاء صلاحية Artifact: 2026-11-20 20:54:43 UTC
+- تاريخ انتهاء صلاحية Artifact: 2026-11-20 21:01:04 UTC
 - SHA-256 للحزمة ZIP: `98919303a180d2c5e78406135ecb1a4a2bee6bbff41e3e6f7c4e5a1e4b32ee90`
 
 ## مصدر البناء
