@@ -17,8 +17,10 @@ class EnsembleStatisticsTests(unittest.TestCase):
         np.testing.assert_allclose(result["mean"], [[3.0, 4.0]])
         np.testing.assert_allclose(result["spread"], [[np.sqrt(8 / 3), np.sqrt(8 / 3)]])
         np.testing.assert_allclose(
-            result["probability_exceeding_threshold_percent"], [[66.6666667, 100.0]]
+            result["probability_exceeding_threshold_percent"], [[33.3333333, 66.6666667]]
         )
+        # The threshold is strictly exceeded: a member exactly at 3.0 is not counted.
+        self.assertEqual(result["threshold"], 3.0)
         np.testing.assert_array_equal(result["member_count"], [[3, 3]])
 
     def test_missing_values_use_gridpoint_valid_member_denominator(self):
