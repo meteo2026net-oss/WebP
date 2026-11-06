@@ -62,6 +62,9 @@ class NoaaGfsTests(unittest.TestCase):
             build_gfs_url(self.request(cycle=3))
         with self.assertRaises(NoaaGfsError):
             build_gfs_url(self.request(forecast_hour=121))
+        with self.assertRaises(NoaaGfsError):
+            build_gfs_url(self.request(forecast_hour=243))
+        self.request(forecast_hour=246).validate()
 
     def test_rejects_untrusted_variable_or_level(self):
         with self.assertRaises(NoaaGfsError):

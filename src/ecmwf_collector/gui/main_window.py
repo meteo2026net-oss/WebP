@@ -30,6 +30,7 @@ from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
+from ..sources.noaa_gefs import GefsRequest, download_gefs
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)
@@ -268,6 +269,7 @@ class MainWindow(QMainWindow):
         self._build_eta_tab()
         self._build_windy_gfs_tab()
         self._build_noaa_gfs_tab()
+        self._build_noaa_gefs_tab()
         self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
         self._build_placeholder_source_tab("UK Met Office", "Global / UKV", "موصل Met Office لم يُربط بعد.")
         self._build_placeholder_source_tab("JMA", "GSM / MSM", "موصل JMA لم يُربط بعد.")
@@ -709,6 +711,111 @@ class MainWindow(QMainWindow):
         def failed(message):
             self.noaa_status.setPlainText("تعذر تنزيل NOAA GFS: " + redact(message))
             self.btn_noaa_download.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _build_noaa_gefs_tab(self):
+        """Direct NOAA/NCEP GEFS ensemble-member GRIB2 download from NOMADS."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA / NCEP GEFS — تنزيل بيانات المجموعة التجميعية"))
+        note = QLabel(
+            "شبكة 0.50 درجة، عضو ضابط c00 أو عضو اضطرابي p01–p30. "
+            "تُحفظ كل نتيجة كملف GRIB2 مستقل مع بيانات المصدر والعضو ودورة التشغيل "
+            "ووقت الصلاحية وبصمة SHA-256."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.gefs_date = QDateEdit(QDate.currentDate())
+        self.gefs_date.setCalendarPopup(True)
+        self.gefs_date.setDisplayFormat("yyyy-MM-dd")
+        self.gefs_cycle = QComboBox()
+        self.gefs_cycle.addItems(["00", "06", "12", "18"])
+        self.gefs_member = QComboBox()
+        self.gefs_member.addItem("العضو الضابط c00", "c00")
+        for member_number in range(1, 31):
+            member = f"p{member_number:02d}"
+            self.gefs_member.addItem(f"العضو {member}", member)
+        self.gefs_forecast_hour = QSpinBox()
+        self.gefs_forecast_hour.setRange(3, 384)
+        self.gefs_forecast_hour.setSingleStep(3)
+        self.gefs_forecast_hour.setValue(24)
+        self.gefs_variables = QLineEdit("TMP,UGRD,VGRD")
+        self.gefs_variables.setPlaceholderText("TMP,UGRD,VGRD")
+        self.gefs_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
+        self.gefs_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.gefs_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.gefs_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.gefs_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("تاريخ التشغيل UTC", self.gefs_date)
+        form.addRow("دورة التشغيل UTC", self.gefs_cycle)
+        form.addRow("عضو المجموعة", self.gefs_member)
+        form.addRow("ساعة التنبؤ", self.gefs_forecast_hour)
+        form.addRow("المتغيرات", self.gefs_variables)
+        form.addRow("المستويات", self.gefs_levels)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        self.btn_gefs_download = QPushButton("تنزيل عضو GEFS GRIB2 والتحقق منه")
+        self.btn_gefs_download.clicked.connect(self._on_noaa_gefs_download)
+        layout.addWidget(self.btn_gefs_download)
+        self.gefs_status = QPlainTextEdit()
+        self.gefs_status.setReadOnly(True)
+        self.gefs_status.setMinimumHeight(220)
+        self.gefs_status.setPlainText("لم يبدأ تنزيل GEFS بعد.")
+        layout.addWidget(self.gefs_status, 1)
+        self.source_tabs.addTab(page, "NOAA GEFS")
+
+    def _on_noaa_gefs_download(self):
+        try:
+            variables = tuple(dict.fromkeys(
+                item.strip().upper() for item in self.gefs_variables.text().split(",") if item.strip()
+            ))
+            levels = tuple(dict.fromkeys(
+                item.strip().lower() for item in self.gefs_levels.text().split(",") if item.strip()
+            ))
+            request = GefsRequest(
+                run_date=self.gefs_date.date().toPython(),
+                cycle=int(self.gefs_cycle.currentText()),
+                forecast_hour=self.gefs_forecast_hour.value(),
+                member=self.gefs_member.currentData(),
+                variables=variables,
+                levels=levels,
+            )
+            request.validate()
+            output = Path(self.gefs_output.text().strip())
+            if not str(output):
+                raise ValueError("حدد مجلد الحفظ.")
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "إعدادات GEFS غير صالحة", str(exc))
+            return
+
+        self.btn_gefs_download.setEnabled(False)
+        self.gefs_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل عضو GEFS…")
+
+        def work():
+            return download_gefs(request, output)
+
+        def done(result):
+            grib_path, metadata_path = result
+            self.gefs_status.setPlainText(
+                "اكتمل التنزيل والتحقق من بنية GRIB2.\n"
+                f"العضو: {request.member}\n"
+                f"الملف: {grib_path}\n"
+                f"بيانات المصدر: {metadata_path}\n"
+                f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
+                "تم تسجيل SHA-256 في ملف metadata."
+            )
+            self.btn_gefs_download.setEnabled(True)
+            self._log(f"اكتمل تنزيل NOAA GEFS ({request.member}): {grib_path}")
+
+        def failed(message):
+            self.gefs_status.setPlainText("تعذر تنزيل NOAA GEFS: " + redact(message))
+            self.btn_gefs_download.setEnabled(True)
 
         self._run(work, done, on_failed=failed)
 

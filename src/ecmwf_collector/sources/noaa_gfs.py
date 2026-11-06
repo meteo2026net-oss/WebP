@@ -14,7 +14,6 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
 
 BASE_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 DEFAULT_VARIABLES = {
@@ -55,8 +54,10 @@ class GfsRequest:
             raise NoaaGfsError("دورة GFS يجب أن تكون 00 أو 06 أو 12 أو 18 UTC")
         if not 0 <= self.forecast_hour <= 384:
             raise NoaaGfsError("ساعة التنبؤ يجب أن تكون بين 000 و384")
-        if self.forecast_hour > 120 and self.forecast_hour % 3:
-            raise NoaaGfsError("بعد الساعة 120 يجب اختيار ساعة من مضاعفات 3")
+        if 120 < self.forecast_hour <= 240 and self.forecast_hour % 3:
+            raise NoaaGfsError("من الساعة 123 إلى 240 يجب اختيار ساعة من مضاعفات 3")
+        if self.forecast_hour > 240 and self.forecast_hour % 6:
+            raise NoaaGfsError("بعد الساعة 240 يجب اختيار ساعة من مضاعفات 6")
         if self.resolution != "0p25":
             raise NoaaGfsError("الإصدار الحالي يدعم شبكة GFS بدقة 0.25 درجة فقط")
         if not self.variables or not self.levels:
