@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
+from ..eccharts_wms import EcChartsWMSClient
 from ..storage_layout import default_wmo_download_root, processing_output_dir, source_output_dir
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
@@ -262,6 +263,7 @@ class MainWindow(QMainWindow):
         self.source_tabs.setLayoutDirection(Qt.RightToLeft)
         self.source_tabs.addTab(scroll, "WMO Support")
         self._build_ecmwf_tab()
+        self._build_eccharts_tab()
         self._build_eta_tab()
         self._build_placeholder_source_tab("NOAA / NCEP", "GFS وGEFS وRRFS", "موصل NOAA لم يُربط بعد.")
         self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
@@ -322,6 +324,95 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.ecmwf_log)
         layout.addStretch()
         self.source_tabs.addTab(page, "ECMWF Open Data")
+
+
+    def _build_eccharts_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        title = QLabel("ECMWF ecCharts — خرائط WMS التفاعلية")
+        title.setStyleSheet("font-size: 17px; font-weight: 700;")
+        layout.addWidget(title)
+        note = QLabel(
+            "أدخل عنوان WMS الذي يتيحه اشتراككم. يُحفظ رمز الوصول في Windows Credential Manager "
+            "ولا يُكتب في ملف الإعدادات أو السجل. هذه الواجهة تسترجع خرائط مصوّرة وبيانات الطبقات، "
+            "ولا توفر ملفات GRIB الخام."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.eccharts_endpoint = QLineEdit()
+        self.eccharts_endpoint.setPlaceholderText("https://…/wms")
+        self.eccharts_endpoint.setLayoutDirection(Qt.LeftToRight)
+        self.eccharts_token = QLineEdit()
+        self.eccharts_token.setEchoMode(QLineEdit.Password)
+        self.eccharts_token.setPlaceholderText("رمز WMS من حساب ECMWF")
+        self.eccharts_token.setLayoutDirection(Qt.LeftToRight)
+        saved_token = self.secrets.get_password("eccharts_wms_token")
+        if saved_token:
+            self.eccharts_token.setText(saved_token)
+            register_secret(saved_token)
+        form.addRow("عنوان WMS", self.eccharts_endpoint)
+        form.addRow("رمز الوصول", self.eccharts_token)
+        layout.addLayout(form)
+        actions = QHBoxLayout()
+        self.btn_eccharts_capabilities = QPushButton("حفظ الرمز وجلب الطبقات")
+        self.btn_eccharts_capabilities.clicked.connect(self._on_eccharts_capabilities)
+        actions.addWidget(self.btn_eccharts_capabilities)
+        actions.addStretch()
+        layout.addLayout(actions)
+        self.eccharts_status = QLabel("لم يتم الاتصال بعد.")
+        self.eccharts_status.setWordWrap(True)
+        layout.addWidget(self.eccharts_status)
+        self.eccharts_layers = QTableWidget(0, 4)
+        self.eccharts_layers.setHorizontalHeaderLabels(["اسم الطبقة", "العنوان", "أنماط العرض", "الأوقات المتاحة"])
+        self.eccharts_layers.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.eccharts_layers.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.eccharts_layers.setAlternatingRowColors(True)
+        self.eccharts_layers.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.eccharts_layers, 1)
+        self.source_tabs.addTab(page, "ECMWF ecCharts")
+
+    def _on_eccharts_capabilities(self):
+        endpoint = self.eccharts_endpoint.text().strip()
+        token = self.eccharts_token.text().strip()
+        if not endpoint or not token:
+            QMessageBox.warning(self, "بيانات ناقصة", "أدخل عنوان WMS ورمز الوصول.")
+            return
+        if not self.secrets.available:
+            QMessageBox.warning(
+                self, "مخزن الأسرار غير متاح",
+                "لم يتوفر Windows Credential Manager عبر keyring؛ لن نحفظ الرمز في ملف عادي."
+            )
+            return
+        if not self.secrets.set_password("eccharts_wms_token", token):
+            QMessageBox.critical(self, "تعذر حفظ الرمز", "رفض مخزن أسرار Windows حفظ رمز ecCharts.")
+            return
+        register_secret(token)
+        self.eccharts_status.setText("جارٍ طلب قائمة الطبقات من ecCharts…")
+
+        def work():
+            return EcChartsWMSClient(endpoint, token).get_capabilities()
+
+        def done(capabilities):
+            self.eccharts_layers.setRowCount(len(capabilities.layers))
+            for row, layer in enumerate(capabilities.layers):
+                values = [
+                    layer.name, layer.title, ", ".join(layer.styles) or "الافتراضي",
+                    ", ".join(layer.time_values[:4]) + (" …" if len(layer.time_values) > 4 else "")
+                    if layer.time_values else "غير معلنة",
+                ]
+                for col, value in enumerate(values):
+                    item = QTableWidgetItem(value)
+                    item.setToolTip(value)
+                    self.eccharts_layers.setItem(row, col, item)
+            self.eccharts_status.setText(
+                f"نجح الاتصال — {len(capabilities.layers)} طبقة | "
+                f"الخدمة: {capabilities.title or 'ecCharts WMS'} | WMS {capabilities.version}"
+            )
+
+        self._run(work, done, on_failed=lambda message: self.eccharts_status.setText(
+            "تعذر جلب الطبقات: " + redact(message)
+        ))
 
     def _build_eta_tab(self):
         page = QWidget()
