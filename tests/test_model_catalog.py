@@ -11,7 +11,7 @@ class ModelCatalogTests(unittest.TestCase):
         names = {(item.provider, item.model) for item in MODEL_CATALOG}
         for expected in (
             ("ECMWF", "IFS HRES"), ("ECMWF", "AIFS Single"),
-            ("NOAA", "GFS"), ("DWD", "ICON Global"),
+            ("NOAA", "GFS"), ("NOAA", "GEFS"), ("DWD", "ICON Global"),
             ("JMA", "GSM"), ("Météo-France", "AROME"),
             ("CPTEC/INPE", "ETA"), ("Copernicus", "ERA5"),
         ):
@@ -22,10 +22,17 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertEqual(by_name[("Copernicus", "ERA5")].product_type, "إعادة تحليل مناخي")
         self.assertEqual(by_name[("ECMWF", "ecCharts WMS")].implementation, "wms")
 
-    def test_gfs_is_not_misrepresented_as_direct_noaa_grib(self):
+    def test_gfs_is_marked_as_direct_grib_adapter(self):
         gfs = next(item for item in MODEL_CATALOG if item.provider == "NOAA" and item.model == "GFS")
-        self.assertEqual(gfs.implementation, "point_adapter")
-        self.assertIn("ليس تنزيل GRIB مباشر", gfs.notes)
+        self.assertEqual(gfs.implementation, "adapter")
+        self.assertIn("GRIB2 مباشر", gfs.notes)
+        self.assertIn("Windy", gfs.notes)
+
+    def test_gefs_is_marked_as_member_aware_grib_adapter_without_claiming_statistics(self):
+        gefs = next(item for item in MODEL_CATALOG if item.provider == "NOAA" and item.model == "GEFS")
+        self.assertEqual(gefs.implementation, "adapter")
+        self.assertIn("p01–p30", gefs.notes)
+        self.assertIn("لا يحسب إحصاءات", gefs.notes)
 
     def test_unimplemented_models_are_explicitly_marked(self):
         self.assertEqual(

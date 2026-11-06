@@ -18,12 +18,12 @@ class ModelEntry:
 
 
 MODEL_CATALOG: tuple[ModelEntry, ...] = (
-    ModelEntry("ECMWF", "IFS HRES", "تنبؤ حتمي عالمي", "adapter", "ECMWF Open Data؛ خيارات الدورة والحقول حسب النشر"),
-    ModelEntry("ECMWF", "IFS ENS", "تنبؤ احتمالي عالمي", "planned", "يحتاج مسار تنزيل واختبارات مستقلة"),
-    ModelEntry("ECMWF", "AIFS Single", "تنبؤ ذكاء اصطناعي حتمي", "adapter", "خيار نموذج في موصل Open Data؛ لم يُختبر التنزيل الفعلي هنا"),
-    ModelEntry("ECMWF", "AIFS ENS", "تنبؤ ذكاء اصطناعي احتمالي", "adapter", "خيار نموذج في موصل Open Data؛ لم يُختبر التنزيل الفعلي هنا"),
-    ModelEntry("NOAA", "GFS", "تنبؤ حتمي عالمي", "point_adapter", "Windy Point Forecast فقط؛ ليس تنزيل GRIB مباشر من NOAA"),
-    ModelEntry("NOAA", "GEFS", "تنبؤ احتمالي عالمي", "planned", "موصل NOAA مباشر غير مكتمل"),
+    ModelEntry("ECMWF", "IFS HRES", "تنبؤ حتمي عالمي", "adapter", "موصل ECMWF Open Data؛ يلزم اختبار التنزيل الفعلي لكل دورة وحقل"),
+    ModelEntry("ECMWF", "IFS ENS", "تنبؤ احتمالي عالمي", "planned", "يحتاج مسار تنزيل واختبارات مستقلة للأعضاء والإحصاءات"),
+    ModelEntry("ECMWF", "AIFS Single", "تنبؤ ذكاء اصطناعي حتمي", "adapter", "خيار نموذج في موصل Open Data؛ لم يُثبت التنزيل الفعلي هنا"),
+    ModelEntry("ECMWF", "AIFS ENS", "تنبؤ ذكاء اصطناعي احتمالي", "adapter", "خيار نموذج في موصل Open Data؛ لم يُثبت التنزيل الفعلي هنا"),
+    ModelEntry("NOAA", "GFS", "تنبؤ حتمي عالمي", "adapter", "تنزيل GRIB2 مباشر من NOAA/NCEP NOMADS؛ تكامل Windy النقطي منفصل"),
+    ModelEntry("NOAA", "GEFS", "تنبؤ احتمالي عالمي", "adapter", "تنزيل GRIB2 للأعضاء c00 وp01–p30، مع manifest للمجموعة؛ لا يحسب إحصاءات ensemble بعد"),
     ModelEntry("NOAA", "RRFS", "تنبؤ إقليمي سريع التحديث", "planned", "يتطلب تحديد منتجات الأرشيف والتوزيع"),
     ModelEntry("DWD", "ICON Global", "تنبؤ حتمي عالمي", "planned"),
     ModelEntry("DWD", "ICON-EU", "تنبؤ حتمي إقليمي", "planned"),
@@ -42,7 +42,7 @@ MODEL_CATALOG: tuple[ModelEntry, ...] = (
 )
 
 IMPLEMENTATION_LABELS = {
-    "adapter": "موصل موجود — يحتاج اختبار تشغيل",
+    "adapter": "موصل موجود — يحتاج اختبار تشغيل حي",
     "point_adapter": "موصل نقطي فقط — لا ينزّل GRIB",
     "wms": "موصل خرائط WMS — يتطلب اشتراكاً",
     "planned": "لم يُنفّذ بعد",

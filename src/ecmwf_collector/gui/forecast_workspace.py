@@ -20,10 +20,10 @@ from ..model_catalog import IMPLEMENTATION_LABELS, MODEL_CATALOG
 
 
 SOURCE_CATALOG = [
-    ("WMO Support", "FMD / FPD / FSD / AND", "موصل FTP موجود"),
-    ("ECMWF Open Data", "IFS / AIFS Single / AIFS ENS", "موصل تنزيل وفحص GRIB موجود"),
+    ("WMO Support", "FMD / FPD / FSD / AND", "موصل FTP/FTPS موجود — يحتاج اختبار حساب"),
+    ("ECMWF Open Data", "IFS / AIFS Single / AIFS ENS", "موصل تنزيل وفحص GRIB موجود — يلزم اختبار حي"),
     ("CPTEC/INPE ETA", "ETA 8 km / 40 km / 1 km", "موصل استعراض وتنزيل وفحص GRIB موجود"),
-    ("NOAA / NCEP", "GFS / GEFS / RRFS", "GFS وGEFS: موصل تنزيل GRIB2 موجود؛ RRFS قيد الربط"),
+    ("NOAA / NCEP", "GFS / GEFS / RRFS", "GFS وGEFS: تنزيل GRIB2 مباشر؛ GEFS يدعم تنزيل الأعضاء وmanifest؛ RRFS قيد الربط"),
     ("DWD", "ICON / ICON-EU", "قيد الربط"),
     ("UK Met Office", "Global / UKV", "قيد الربط"),
     ("JMA", "GSM / MSM", "قيد الربط"),
