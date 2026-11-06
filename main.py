@@ -84,17 +84,17 @@ def main() -> int:
         box.setWindowTitle("تعذّر الاتصال بقاعدة PostgreSQL")
         box.setText("لم يتمكن التطبيق من فتح PostgreSQL. بيانات SQLite الأصلية لم تُحذف أو تُعدّل.")
         details = (
-            f"السبب: {type(exc).__name__}: {redact(str(exc))}\\n\\n"
+            f"السبب: {type(exc).__name__}: {redact(str(exc))}\n\n"
             "تحقق من تشغيل خدمة PostgreSQL وصحة إعداد الاتصال."
         )
         if environment_dsn:
             details += (
-                "\\n\\nمصدر الاتصال هو متغير البيئة ECMWF_POSTGRES_DSN؛ "
+                "\n\nمصدر الاتصال هو متغير البيئة ECMWF_POSTGRES_DSN؛ "
                 "سيبقى كما هو، وسيؤدي اختيار SQLite إلى تجاوز PostgreSQL لهذه الجلسة فقط."
             )
         else:
             details += (
-                "\\n\\nيمكنك استخدام SQLite لهذه الجلسة فقط، أو إزالة اتصال PostgreSQL "
+                "\n\nيمكنك استخدام SQLite لهذه الجلسة فقط، أو إزالة اتصال PostgreSQL "
                 "المحفوظ من مخزن بيانات اعتماد Windows والعودة إلى SQLite بشكل دائم."
             )
         box.setInformativeText(details)
@@ -122,7 +122,7 @@ def main() -> int:
         QMessageBox.critical(
             None,
             "تعذّر الرجوع إلى SQLite",
-            f"لم يغيّر التطبيق قاعدة البيانات.\\nالسبب: {type(exc).__name__}: {redact(str(exc))}",
+            f"لم يغيّر التطبيق قاعدة البيانات.\nالسبب: {type(exc).__name__}: {redact(str(exc))}",
         )
         return 2
     if state_store is None:
