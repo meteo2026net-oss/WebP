@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget, QInputDialog,
+    QVBoxLayout, QWidget, QInputDialog, QTabWidget,
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
@@ -254,7 +254,199 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
-        self.setCentralWidget(scroll)
+
+        # تبويب مستقل لكل مزود بيانات؛ تبويب WMO يحتفظ بواجهة FTP الحالية.
+        self.source_tabs = QTabWidget()
+        self.source_tabs.setLayoutDirection(Qt.RightToLeft)
+        self.source_tabs.addTab(scroll, "WMO Support")
+        self._build_ecmwf_tab()
+        self._build_eta_tab()
+        self._build_placeholder_source_tab("NOAA / NCEP", "GFS وGEFS وRRFS", "موصل NOAA لم يُربط بعد.")
+        self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
+        self._build_placeholder_source_tab("UK Met Office", "Global / UKV", "موصل Met Office لم يُربط بعد.")
+        self._build_placeholder_source_tab("JMA", "GSM / MSM", "موصل JMA لم يُربط بعد.")
+        self._build_placeholder_source_tab("Météo-France", "ARPEGE / AROME", "موصل Météo-France لم يُربط بعد.")
+        self._build_placeholder_source_tab("Copernicus", "ERA5 / CAMS", "موصل Copernicus لم يُربط بعد.")
+        self._build_placeholder_source_tab("EUMETSAT", "Satellite products", "موصل EUMETSAT لم يُربط بعد.")
+        compare = QWidget()
+        compare_layout = QVBoxLayout(compare)
+        compare_layout.addWidget(QLabel("مركز مقارنة المصادر"))
+        compare_layout.addWidget(QLabel(
+            "ستُعرض هنا مقارنة الحقول بعد توحيد وقت الصلاحية والشبكة والمستوى والوحدات، "
+            "مع إظهار دورة التشغيل لكل مصدر."
+        ))
+        compare_layout.addStretch()
+        self.source_tabs.addTab(compare, "مقارنة المصادر")
+        self.setCentralWidget(self.source_tabs)
+
+    def _build_ecmwf_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("ECMWF Open Data — مصدر عام مستقل عن حساب WMO"))
+        form = QFormLayout()
+        self.ecmwf_date = QLineEdit()
+        self.ecmwf_date.setPlaceholderText("YYYYMMDD — اتركه فارغاً لأحدث دورة")
+        self.ecmwf_time = QComboBox()
+        self.ecmwf_time.addItems(["00", "06", "12", "18"])
+        self.ecmwf_model = QComboBox()
+        self.ecmwf_model.addItems(["ifs", "aifs-single", "aifs-ens"])
+        self.ecmwf_resolution = QComboBox()
+        self.ecmwf_resolution.addItems(["0p25", "0p1"])
+        self.ecmwf_step = QLineEdit("24")
+        self.ecmwf_params = QLineEdit("2t msl")
+        self.ecmwf_params.setPlaceholderText("مثال: 2t msl")
+        self.ecmwf_output = QLineEdit(str(project_root() / "downloads" / "ecmwf_open_data"))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.ecmwf_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.ecmwf_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("التاريخ", self.ecmwf_date)
+        form.addRow("دورة UTC", self.ecmwf_time)
+        form.addRow("النموذج", self.ecmwf_model)
+        form.addRow("الدقة", self.ecmwf_resolution)
+        form.addRow("خطوة التنبؤ (ساعة)", self.ecmwf_step)
+        form.addRow("المتغيرات", self.ecmwf_params)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        self.btn_ecmwf_download = QPushButton("تنزيل بيانات ECMWF")
+        self.btn_ecmwf_download.clicked.connect(self._on_ecmwf_download)
+        layout.addWidget(self.btn_ecmwf_download)
+        self.ecmwf_log = QPlainTextEdit()
+        self.ecmwf_log.setReadOnly(True)
+        self.ecmwf_log.setMinimumHeight(260)
+        layout.addWidget(self.ecmwf_log)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "ECMWF Open Data")
+
+    def _build_eta_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("CPTEC/INPE ETA — البرازيل"))
+        form = QFormLayout()
+        self.eta_date = QLineEdit(datetime.now(timezone.utc).strftime("%Y%m%d"))
+        self.eta_cycle = QComboBox()
+        self.eta_cycle.addItems(["00", "06", "12", "18"])
+        self.eta_domain = QComboBox()
+        self.eta_domain.addItems(["ams_08km", "ams_40km", "ons_40km", "rjsp_01km"])
+        self.eta_filename = QLineEdit()
+        self.eta_filename.setPlaceholderText("اختر اسماً من قائمة الملفات")
+        self.eta_output = QLineEdit(str(project_root() / "downloads" / "cptec_eta"))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.eta_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.eta_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("التاريخ UTC", self.eta_date)
+        form.addRow("دورة UTC", self.eta_cycle)
+        form.addRow("النطاق", self.eta_domain)
+        form.addRow("اسم ملف GRIB", self.eta_filename)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        actions = QHBoxLayout()
+        self.btn_eta_list = QPushButton("استعراض الملفات المتاحة")
+        self.btn_eta_download = QPushButton("تنزيل الملف المحدد")
+        self.btn_eta_list.clicked.connect(self._on_eta_list)
+        self.btn_eta_download.clicked.connect(self._on_eta_download)
+        actions.addWidget(self.btn_eta_list)
+        actions.addWidget(self.btn_eta_download)
+        layout.addLayout(actions)
+        self.eta_log = QPlainTextEdit()
+        self.eta_log.setReadOnly(True)
+        self.eta_log.setMinimumHeight(260)
+        layout.addWidget(self.eta_log)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "CPTEC ETA")
+
+    def _build_placeholder_source_tab(self, title, models, status):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel(title))
+        layout.addWidget(QLabel(f"النماذج المستهدفة: {models}"))
+        note = QLabel(status + " سيُضاف الاتصال والاستعراض والتنزيل وسجل الملفات داخل هذا التبويب.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch()
+        self.source_tabs.addTab(page, title)
+
+    def _choose_source_dir(self, field):
+        selected = QFileDialog.getExistingDirectory(self, "اختر مجلد الحفظ", field.text())
+        if selected:
+            field.setText(selected)
+
+    def _source_command(self, args, output_widget):
+        def work():
+            result = subprocess.run(
+                [sys.executable, *args], cwd=str(project_root()),
+                env={**__import__("os").environ, "PYTHONPATH": str(project_root() / "src")},
+                capture_output=True, text=True, timeout=60 * 60,
+            )
+            text = (result.stdout or "") + (("\\n" + result.stderr) if result.stderr else "")
+            if result.returncode:
+                raise RuntimeError(text or f"انتهى الأمر برمز {result.returncode}")
+            return text or "اكتملت العملية."
+        def done(result):
+            output_widget.setPlainText(result)
+            self._log("اكتملت مهمة مصدر البيانات.")
+        self._run(work, done, on_failed=lambda message: output_widget.setPlainText(message))
+
+    def _on_ecmwf_download(self):
+        try:
+            step = int(self.ecmwf_step.text().strip())
+            if step < 0:
+                raise ValueError
+            params = self.ecmwf_params.text().split()
+            if not params:
+                raise ValueError
+            date = self.ecmwf_date.text().strip()
+            if date and (len(date) != 8 or not date.isdigit()):
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "إعدادات غير صالحة", "أدخل تاريخاً بصيغة YYYYMMDD إن لزم، وخطوة صحيحة ومتغيراً واحداً على الأقل.")
+            return
+        output = Path(self.ecmwf_output.text().strip())
+        output.mkdir(parents=True, exist_ok=True)
+        filename = f"{self.ecmwf_model.currentText()}_{date or 'latest'}_{self.ecmwf_time.currentText()}_step{step}.grib2"
+        target = output / filename
+        args = ["-m", "ecmwf_collector.sources.ecmwf_open_data",
+                "--time", self.ecmwf_time.currentText(), "--step", str(step),
+                "--param", *params, "--type", "fc", "--model", self.ecmwf_model.currentText(),
+                "--resolution", self.ecmwf_resolution.currentText(), "--output", str(target)]
+        if date:
+            args.extend(["--date", date])
+        self.ecmwf_log.setPlainText("جارٍ تنفيذ طلب ECMWF…")
+        self._source_command(args, self.ecmwf_log)
+
+    def _eta_args(self):
+        date = self.eta_date.text().strip()
+        if len(date) != 8 or not date.isdigit():
+            raise ValueError("أدخل التاريخ بصيغة YYYYMMDD.")
+        return ["-m", "ecmwf_collector.sources.eta_cptec", "--date", date,
+                "--cycle", self.eta_cycle.currentText(), "--domain", self.eta_domain.currentText()]
+
+    def _on_eta_list(self):
+        try:
+            args = self._eta_args() + ["--list"]
+        except ValueError as exc:
+            QMessageBox.warning(self, "تاريخ غير صالح", str(exc))
+            return
+        self.eta_log.setPlainText("جارٍ استعراض فهرس CPTEC…")
+        self._source_command(args, self.eta_log)
+
+    def _on_eta_download(self):
+        try:
+            args = self._eta_args()
+            filename = self.eta_filename.text().strip()
+            if not filename:
+                raise ValueError("أدخل اسم ملف GRIB بعد استعراض الملفات.")
+            output = Path(self.eta_output.text().strip())
+            output.mkdir(parents=True, exist_ok=True)
+            args.extend(["--file", filename, "--output", str(output / filename)])
+        except (ValueError, OSError) as exc:
+            QMessageBox.warning(self, "إعدادات غير صالحة", str(exc))
+            return
+        self.eta_log.setPlainText("جارٍ تنزيل ملف ETA وفحص GRIB…")
+        self._source_command(args, self.eta_log)
 
     # ---------- الإعدادات ----------
     def _load_from_config(self):
