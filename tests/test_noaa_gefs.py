@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from ecmwf_collector.sources.noaa_gefs import (
-    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs,
+    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,
 )
 
 
@@ -68,6 +68,31 @@ class NoaaGefsTests(unittest.TestCase):
         for hour in (3, 192, 198, 384):
             with self.subTest(hour=hour):
                 self.request(forecast_hour=hour).validate()
+
+
+    def test_batch_download_records_success_and_member_failure(self):
+        payload = b"GRIB" + b"x" * 128 + b"7777"
+        def opener(url, timeout):
+            if "gep02." in url:
+                raise OSError("simulated member outage")
+            return FakeResponse(payload)
+        with tempfile.TemporaryDirectory() as tmp:
+            completed, failed = download_gefs_ensemble(
+                self.request(), Path(tmp), members=("c00", "p01", "p02"), opener=opener
+            )
+            self.assertEqual([item[0] for item in completed], ["c00", "p01"])
+            self.assertEqual([item[0] for item in failed], ["p02"])
+            self.assertEqual(len(list(Path(tmp).glob("*.grib2"))), 2)
+            self.assertEqual(len(list(Path(tmp).glob("*.source.json"))), 2)
+
+    def test_batch_rejects_duplicate_members_before_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(NoaaGefsError):
+                download_gefs_ensemble(
+                    self.request(), Path(tmp), members=("c00", "c00"),
+                    opener=lambda url, timeout: FakeResponse(b"GRIB" + b"x" * 128 + b"7777"),
+                )
+            self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_rejects_invalid_variables_and_levels(self):
         with self.assertRaises(NoaaGefsError):

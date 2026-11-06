@@ -7,7 +7,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -151,3 +151,28 @@ def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 12
         temp_meta.unlink(missing_ok=True)
         raise
     return final_path, metadata_path
+
+
+def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
+                           members: tuple[str, ...] | None = None,
+                           timeout: float = 120,
+                           opener=urllib.request.urlopen
+                           ) -> tuple[list[tuple[str, Path, Path]], list[tuple[str, str]]]:
+    """Download selected members sequentially and retain individual outcomes."""
+    selected = members or ("c00", *(f"p{number:02d}" for number in range(1, 31)))
+    if len(set(selected)) != len(selected):
+        raise NoaaGefsError("قائمة أعضاء GEFS تحتوي على تكرار")
+    for member in selected:
+        replace(request, member=member).validate()
+    completed: list[tuple[str, Path, Path]] = []
+    failed: list[tuple[str, str]] = []
+    for member in selected:
+        try:
+            grib, metadata = download_gefs(
+                replace(request, member=member), output_dir,
+                timeout=timeout, opener=opener,
+            )
+            completed.append((member, grib, metadata))
+        except Exception as exc:
+            failed.append((member, f"{type(exc).__name__}: {exc}"))
+    return completed, failed

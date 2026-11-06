@@ -30,7 +30,7 @@ from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
-from ..sources.noaa_gefs import GefsRequest, download_gefs
+from ..sources.noaa_gefs import GefsRequest, download_gefs, download_gefs_ensemble
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)
@@ -747,6 +747,7 @@ class MainWindow(QMainWindow):
         self.gefs_variables.setPlaceholderText("TMP,UGRD,VGRD")
         self.gefs_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
         self.gefs_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.gefs_all_members = QCheckBox("تنزيل المجموعة كاملة (c00 و p01–p30) — قد يستغرق وقتاً ومساحة كبيرة")
         self.gefs_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
         choose = QPushButton("اختيار مجلد…")
         choose.clicked.connect(lambda: self._choose_source_dir(self.gefs_output))
@@ -761,8 +762,15 @@ class MainWindow(QMainWindow):
         form.addRow("المستويات", self.gefs_levels)
         form.addRow("مجلد الحفظ", output_row)
         layout.addLayout(form)
+        layout.addWidget(self.gefs_all_members)
         self.btn_gefs_download = QPushButton("تنزيل عضو GEFS GRIB2 والتحقق منه")
         self.btn_gefs_download.clicked.connect(self._on_noaa_gefs_download)
+        self.gefs_all_members.toggled.connect(
+            lambda checked: self.btn_gefs_download.setText(
+                "تنزيل جميع أعضاء GEFS (31 عضواً)" if checked
+                else "تنزيل عضو GEFS GRIB2 والتحقق منه"
+            )
+        )
         layout.addWidget(self.btn_gefs_download)
         self.gefs_status = QPlainTextEdit()
         self.gefs_status.setReadOnly(True)
@@ -799,21 +807,29 @@ class MainWindow(QMainWindow):
         self.btn_gefs_download.setEnabled(False)
         self.gefs_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل عضو GEFS…")
 
+        download_all = self.gefs_all_members.isChecked()
+
         def work():
-            return download_gefs(request, output)
+            if download_all:
+                return download_gefs_ensemble(request, output)
+            grib, metadata = download_gefs(request, output)
+            return [(request.member, grib, metadata)], []
 
         def done(result):
-            grib_path, metadata_path = result
-            self.gefs_status.setPlainText(
-                "اكتمل التنزيل واجتاز الملف فحص إطار GRIB2 الأولي.\n"
-                f"العضو: {request.member}\n"
-                f"الملف: {grib_path}\n"
-                f"بيانات المصدر: {metadata_path}\n"
-                f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
-                "تم تسجيل SHA-256 في ملف metadata."
-            )
+            completed, failed = result
+            report = [
+                f"اكتمل تنزيل {len(completed)} عضو/أعضاء من GEFS.",
+                f"تعذر تنزيل {len(failed)} عضو/أعضاء.",
+                f"الصلاحية UTC: {request.valid_time.isoformat()}", "",
+            ]
+            for member, grib, metadata in completed:
+                report.extend([f"{member}: {grib.name}", f"Metadata: {metadata.name}"])
+            for member, error in failed:
+                report.append(f"فشل {member}: {redact(error)}")
+            report.extend(["", "فحص إطار GRIB2 أولي؛ SHA-256 مسجل لكل ملف مكتمل."])
+            self.gefs_status.setPlainText("\n".join(report))
             self.btn_gefs_download.setEnabled(True)
-            self._log(f"اكتمل تنزيل NOAA GEFS ({request.member}): {grib_path}")
+            self._log(f"GEFS: اكتمل {len(completed)} وفشل {len(failed)}.")
 
         def failed(message):
             self.gefs_status.setPlainText("تعذر تنزيل NOAA GEFS: " + redact(message))

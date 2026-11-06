@@ -128,29 +128,35 @@ def download_gfs(request: GfsRequest, output_dir: Path, *, timeout: float = 90,
                 digest.update(chunk)
         _verify_grib2(part_path)
         os.replace(part_path, final_path)
+        metadata = {
+            "source": "NOAA/NCEP NOMADS", "model": "GFS",
+            "product": "0.25 degree GRIB2 filtered subset",
+            "run": f"{day}T{cycle}:00:00Z",
+            "forecast_hour": request.forecast_hour,
+            "valid_time": request.valid_time.isoformat().replace("+00:00", "Z"),
+            "variables": list(request.variables), "levels": list(request.levels),
+            "resolution": request.resolution,
+            "downloaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "file_name": final_path.name, "size_bytes": final_path.stat().st_size,
+            "sha256": digest.hexdigest(), "source_url": url,
+            "integrity": "GRIB2 framing checked; SHA-256 recorded",
+        }
+        temp_meta = metadata_path.with_suffix(metadata_path.suffix + ".part")
+        temp_meta.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp_meta, metadata_path)
     except Exception as exc:
+        for temporary in (part_path, metadata_path.with_suffix(metadata_path.suffix + ".part")):
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            if final_path.exists() and not metadata_path.exists():
+                final_path.unlink()
+        except OSError:
+            pass
         if isinstance(exc, NoaaGfsError):
             raise
-        raise NoaaGfsError(f"تعذر تنزيل GFS من NOMADS: {type(exc).__name__}: {exc}") from exc
+        raise NoaaGfsError(f"تعذر تنزيل/اعتماد GFS من NOMADS: {type(exc).__name__}: {exc}") from exc
 
-    metadata = {
-        "source": "NOAA/NCEP NOMADS",
-        "model": "GFS",
-        "product": "0.25 degree GRIB2 filtered subset",
-        "run": f"{day}T{cycle}:00:00Z",
-        "forecast_hour": request.forecast_hour,
-        "valid_time": request.valid_time.isoformat().replace("+00:00", "Z"),
-        "variables": list(request.variables),
-        "levels": list(request.levels),
-        "resolution": request.resolution,
-        "downloaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "file_name": final_path.name,
-        "size_bytes": final_path.stat().st_size,
-        "sha256": digest.hexdigest(),
-        "source_url": url,
-        "integrity": "GRIB2 framing checked; SHA-256 recorded",
-    }
-    temp_meta = metadata_path.with_suffix(metadata_path.suffix + ".part")
-    temp_meta.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp_meta, metadata_path)
     return final_path, metadata_path
