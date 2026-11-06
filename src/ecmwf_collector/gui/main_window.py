@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
-from ..storage_layout import data_root, default_wmo_download_root, processing_output_dir, source_output_dir
+from ..storage_layout import default_wmo_download_root, processing_output_dir, source_output_dir
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
