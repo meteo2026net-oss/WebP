@@ -49,6 +49,17 @@ $env:PYTHONPATH = "src"
 python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json
 ```
 
+### 2.1 جرد جميع ملفات WMO (AND / FMD / FPD / FSD)
+
+للمجموعات الكبيرة (17 GiB أو أكثر)، أنشئ فهرساً محلياً يحسب الحجم لكل نوع، وبصمات SHA-256، ويكشف النسخ المتطابقة، ويفحص رسائل GRIB وحقولها عند توفر ecCodes:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m ecmwf_collector.tools.catalog_grib "E:\\ECMWF\\downloads" --output output/grib_catalog.json
+```
+
+تقرأ الأداة الملفات بكتل 4 MiB ولا تحذف الملفات الأصلية أو المكررة. يمكن مراجعة التفاصيل وخيارات التشغيل في [دليل فهرسة GRIB](docs/GRIB_CATALOG.md). لا ترفع ملف الفهرس المحلي أو ملفات WMO المقيدة إلى مستودع عام.
+
 ### 3. تحويل الحقول إلى طبقات خريطة
 ```powershell
 python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
