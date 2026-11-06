@@ -1,1 +1,0 @@
-"""External meteorological data sources."""

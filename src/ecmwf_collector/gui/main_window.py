@@ -27,6 +27,7 @@ from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
+from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)
 
@@ -268,6 +269,8 @@ class MainWindow(QMainWindow):
         self._build_placeholder_source_tab("Météo-France", "ARPEGE / AROME", "موصل Météo-France لم يُربط بعد.")
         self._build_placeholder_source_tab("Copernicus", "ERA5 / CAMS", "موصل Copernicus لم يُربط بعد.")
         self._build_placeholder_source_tab("EUMETSAT", "Satellite products", "موصل EUMETSAT لم يُربط بعد.")
+        self.source_tabs.addTab(SynergieWorkspace(), "SYNERGIE")
+        self.source_tabs.addTab(ForecastCatalogWidget(), "جميع التنبؤات")
         compare = QWidget()
         compare_layout = QVBoxLayout(compare)
         compare_layout.addWidget(QLabel("مركز مقارنة المصادر"))
