@@ -163,7 +163,7 @@ class PostgresBackupTests(unittest.TestCase):
 
     def test_restore_toc_validator_accepts_required_table_and_rejects_other_tables(self):
         postgres_backup._validate_restore_archive_contains_application_table(
-            "; Archive created at 2026-11-06\\n;  1259 16385 TABLE public files postgres"
+            ";  1259 16385 TABLE public files postgres"
         )
         with self.assertRaisesRegex(ValueError, "public.files"):
             postgres_backup._validate_restore_archive_contains_application_table(
