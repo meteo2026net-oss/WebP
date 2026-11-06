@@ -156,6 +156,19 @@ class DownloaderTests(unittest.TestCase):
         self.assertEqual(self.sleeps, [1.0])  # backoff before rechecking a changing ECMWF product
         self.assertEqual(self.local("FPD10270000102703001").read_bytes(), data)
 
+    def test_source_that_keeps_changing_is_failed_without_publishing_partial_file(self):
+        data = grib2(3000)
+        st = self.server({FP: data}, size_sequence={FP: [len(data), len(data) + 1] * 3})
+        result = self.manager(st).run(self.plan(st).to_download)
+
+        self.assertEqual((result.downloaded, result.failed), (0, 1))
+        self.assertEqual(self.state.get(FP).status, "failed")
+        final = self.local("FPD10270000102703001")
+        self.assertFalse(final.exists())
+        self.assertFalse(final.with_name(final.name + ".part").exists())
+        self.assertEqual(self.sleeps, [1.0, 2.0])
+        self.assertEqual(len(st.retr_calls), 3)
+
     def test_permanent_failure_marks_failed(self):
         st = self.server({FP: grib2(3000)}, drop_after_bytes=[0] * 50)
         res = self.manager(st).run(self.plan(st).to_download)
