@@ -3,20 +3,20 @@
 ## حزمة Windows x64 الأحدث
 
 - الاسم: `ECMWFWebP-Windows-x64`
-- الحجم: 150703282 بايت (نحو 150.7 MB)
-- Artifact ID: `13540102605`
-- رابط التنزيل: https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228/artifacts/13540102605
+- الحجم: 150702869 بايت (نحو 150.7 MB)
+- Artifact ID: `13539074610`
+- رابط التنزيل: https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305/artifacts/13539074610
 - تاريخ الإنشاء: 2026-11-06 20:54:55 UTC
 - تاريخ انتهاء صلاحية Artifact: 2026-11-20 20:54:43 UTC
-- SHA-256 للحزمة ZIP: `7241ff1ee9d6027ad8e880eb4f418b5b2ff6c460f3186d54726e13893d7de534`
+- SHA-256 للحزمة ZIP: `98919303a180d2c5e78406135ecb1a4a2bee6bbff41e3e6f7c4e5a1e4b32ee90`
 
 ## مصدر البناء
 
 - المستودع: `meteo2026net-oss/WebP`
 - الفرع: `feat/windows-one-click-desktop-package`
-- الالتزام: `de76cbd237191d471946e7785c1c03947823d309`
-- سجل Windows Actions: https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228
-- سجل اختبارات Python: https://github.com/meteo2026net-oss/WebP/actions/runs/42291850400
+- الالتزام: `9337c500c4061f8e6696e24b10a58acc91012be4`
+- سجل Windows Actions: https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305
+- سجل اختبارات Python: https://github.com/meteo2026net-oss/WebP/actions/runs/42292635419
 
 ## ما اجتازته هذه النسخة آلياً
 
