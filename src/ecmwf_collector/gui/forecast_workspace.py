@@ -116,6 +116,30 @@ class ForecastCatalogWidget(QWidget):
                 "file": filename,
             })
             known_files.add((sidecar.parent / filename).resolve())
+        # Index GEFS batch manifests as first-class catalogue rows. The manifest
+        # summarizes member outcomes; it is not a substitute for individual GRIB files.
+        for manifest_path in sorted(self.root.rglob("*.manifest.json")):
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("model") != "GEFS":
+                    continue
+                summary = manifest.get("summary") or {}
+                requested = int(summary.get("requested", len(manifest.get("requested_members", []))))
+                completed = int(summary.get("completed", len(manifest.get("completed_members", []))))
+                failed = int(summary.get("failed", len(manifest.get("failed_members", []))))
+                records.append({
+                    "source": str(manifest.get("source") or "NOAA/NCEP NOMADS"),
+                    "model": "GEFS — ملخص مجموعة",
+                    "member": f"{completed}/{requested} أعضاء",
+                    "run": str(manifest.get("run") or "غير متاح"),
+                    "valid": str(manifest.get("valid_time") or "غير متاح"),
+                    "step": f"{manifest.get('forecast_hour')} ساعة" if manifest.get("forecast_hour") is not None else "غير متاح",
+                    "params": ", ".join(map(str, manifest.get("variables") or [])) or "غير محدد",
+                    "integrity": f"{completed} ناجح | {failed} فاشل — ملخص تنزيل وليس فحصاً علمياً",
+                    "file": manifest_path.name,
+                })
+            except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+                continue
         for suffix in ("*.grib", "*.grb", "*.grib2", "*.grb2"):
             for path in self.root.rglob(suffix):
                 if path.resolve() in known_files or path.name.endswith(".part"):
