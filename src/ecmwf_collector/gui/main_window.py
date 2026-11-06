@@ -29,6 +29,7 @@ from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
+from ..sources.noaa_gfs import GfsRequest, download_gfs
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)
@@ -266,6 +267,7 @@ class MainWindow(QMainWindow):
         self._build_eccharts_tab()
         self._build_eta_tab()
         self._build_windy_gfs_tab()
+        self._build_noaa_gfs_tab()
         self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
         self._build_placeholder_source_tab("UK Met Office", "Global / UKV", "موصل Met Office لم يُربط بعد.")
         self._build_placeholder_source_tab("JMA", "GSM / MSM", "موصل JMA لم يُربط بعد.")
@@ -609,6 +611,104 @@ class MainWindow(QMainWindow):
         def failed(message):
             self.windy_status.setText("تعذر جلب توقع GFS: " + redact(message))
             self.btn_windy_fetch.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _build_noaa_gfs_tab(self):
+        """Direct NOAA/NCEP GFS GRIB2 subset download from NOMADS."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA / NCEP GFS — تنزيل GRIB2 مباشر من NOMADS"))
+        note = QLabel(
+            "يتم تنزيل ملف فرعي للمتغيرات والمستويات المحددة، مع فحص ترويسة GRIB2 "
+            "وتسجيل SHA-256 وبيانات دورة التشغيل ووقت الصلاحية في ملف source.json. "
+            "لا يحتاج هذا المصدر إلى مفتاح API."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.noaa_date = QDateEdit(QDate.currentDate())
+        self.noaa_date.setCalendarPopup(True)
+        self.noaa_date.setDisplayFormat("yyyy-MM-dd")
+        self.noaa_cycle = QComboBox()
+        self.noaa_cycle.addItems(["00", "06", "12", "18"])
+        self.noaa_forecast_hour = QSpinBox()
+        self.noaa_forecast_hour.setRange(0, 384)
+        self.noaa_forecast_hour.setSingleStep(3)
+        self.noaa_forecast_hour.setValue(24)
+        self.noaa_variables = QLineEdit("TMP,UGRD,VGRD")
+        self.noaa_variables.setPlaceholderText("TMP,UGRD,VGRD")
+        self.noaa_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
+        self.noaa_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.noaa_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.noaa_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.noaa_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("تاريخ التشغيل UTC", self.noaa_date)
+        form.addRow("دورة التشغيل UTC", self.noaa_cycle)
+        form.addRow("ساعة التنبؤ (fXXX)", self.noaa_forecast_hour)
+        form.addRow("المتغيرات", self.noaa_variables)
+        form.addRow("المستويات", self.noaa_levels)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        self.btn_noaa_download = QPushButton("تنزيل GFS GRIB2 والتحقق منه")
+        self.btn_noaa_download.clicked.connect(self._on_noaa_gfs_download)
+        layout.addWidget(self.btn_noaa_download)
+        self.noaa_status = QPlainTextEdit()
+        self.noaa_status.setReadOnly(True)
+        self.noaa_status.setMinimumHeight(220)
+        self.noaa_status.setPlainText("لم يبدأ تنزيل NOAA GFS بعد.")
+        layout.addWidget(self.noaa_status, 1)
+        self.source_tabs.addTab(page, "NOAA GFS GRIB2")
+
+    def _on_noaa_gfs_download(self):
+        try:
+            run_date = self.noaa_date.date().toPython()
+            variables = tuple(dict.fromkeys(
+                item.strip().upper() for item in self.noaa_variables.text().split(",") if item.strip()
+            ))
+            levels = tuple(dict.fromkeys(
+                item.strip().lower() for item in self.noaa_levels.text().split(",") if item.strip()
+            ))
+            request = GfsRequest(
+                run_date=run_date,
+                cycle=int(self.noaa_cycle.currentText()),
+                forecast_hour=self.noaa_forecast_hour.value(),
+                variables=variables,
+                levels=levels,
+            )
+            request.validate()
+            output = Path(self.noaa_output.text().strip())
+            if not str(output):
+                raise ValueError("حدد مجلد الحفظ.")
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "إعدادات NOAA غير صالحة", str(exc))
+            return
+
+        self.btn_noaa_download.setEnabled(False)
+        self.noaa_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل ملف GRIB2…")
+
+        def work():
+            return download_gfs(request, output)
+
+        def done(result):
+            grib_path, metadata_path = result
+            self.noaa_status.setPlainText(
+                "اكتمل التنزيل والتحقق من بنية GRIB2.\n"
+                f"الملف: {grib_path}\n"
+                f"بيانات المصدر: {metadata_path}\n"
+                f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
+                "تم تسجيل SHA-256 في ملف metadata."
+            )
+            self.btn_noaa_download.setEnabled(True)
+            self._log(f"اكتمل تنزيل NOAA GFS: {grib_path}")
+
+        def failed(message):
+            self.noaa_status.setPlainText("تعذر تنزيل NOAA GFS: " + redact(message))
+            self.btn_noaa_download.setEnabled(True)
 
         self._run(work, done, on_failed=failed)
 
