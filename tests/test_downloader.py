@@ -116,6 +116,27 @@ class DownloaderTests(unittest.TestCase):
         self.assertEqual(rec.detected_type, "unknown")
         self.assertTrue(rec.validation.startswith("unverified"))
 
+    def test_transfer_flush_reports_disk_full(self):
+        st = self.server({FP: grib2(1000)})
+        manager = self.manager(st)
+        from ecmwf_collector.downloader import _Worker, DiskFullError
+
+        class FlushFails:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def write(self, chunk):
+                return len(chunk)
+            def flush(self):
+                raise OSError(28, "No space left on device")
+
+        worker = _Worker(manager)
+        worker.session = type("Session", (), {"ftp": st.ftp()})()
+        with patch("builtins.open", return_value=FlushFails()):
+            with self.assertRaises(DiskFullError):
+                worker._transfer(worker.session.ftp, self.plan(st).items[0], 0, hashlib.sha256())
+
     def test_disk_space_guard(self):
         st = self.server({FP: grib2(1000)})
         res = self.manager(st, min_free_bytes=10 ** 18).run(self.plan(st).to_download)

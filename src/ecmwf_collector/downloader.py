@@ -446,6 +446,14 @@ class _Worker:
                 h.update(chunk)
                 m._add_bytes(len(chunk), item.name)
             ftp.retrbinary(f"RETR {item.name}", cb, blocksize=m.blocksize, rest=offset if offset else None)
+            try:
+                # Detect buffered write failures (notably ENOSPC) before treating
+                # the transfer as complete or leaving the file handle.
+                fh.flush()
+            except OSError as exc:
+                if exc.errno == errno.ENOSPC:
+                    raise DiskFullError("امتلأ القرص أثناء تفريغ البيانات إلى الملف") from exc
+                raise
 
     def download_one(self, item: PlanItem) -> None:
         m, ftp = self.m, self.session.ftp
