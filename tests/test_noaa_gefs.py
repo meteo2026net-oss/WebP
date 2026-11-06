@@ -34,7 +34,6 @@ class NoaaGefsTests(unittest.TestCase):
 
     def test_url_contains_member_grid_cycle_and_filters(self):
         url = build_gefs_url(self.request(member="p07"))
-        self.assertIn("ge p07", url.replace("gep07", "ge p07"))  # readable member token
         self.assertIn("gep07.t12z.pgrb2a.0p50.f006", url)
         self.assertIn("var_TMP=on", url)
         self.assertIn("lev_10_m_above_ground=on", url)
@@ -59,7 +58,7 @@ class NoaaGefsTests(unittest.TestCase):
     def test_rejects_invalid_member_cycle_and_hours(self):
         for changes in (
             {"member": "p31"}, {"member": "c01"}, {"cycle": 3},
-            {"forecast_hour": 1}, {"forecast_hour": 195}, {"forecast_hour": 198},
+            {"forecast_hour": 1}, {"forecast_hour": 195}, {"forecast_hour": 201},
             {"forecast_hour": 385},
         ):
             with self.subTest(changes=changes), self.assertRaises(NoaaGefsError):
