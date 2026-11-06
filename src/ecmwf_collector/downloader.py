@@ -390,6 +390,12 @@ class _Worker:
             except _SourceChanged as exc:
                 last = exc
                 log.warning("%s: %s", item.name, exc)
+                # ECMWF may still be writing the product. Back off before
+                # checking its size again instead of immediately polling FTP.
+                if attempt < m.settings.max_retries:
+                    delay = min(2.0 ** (attempt - 1), 30.0)
+                    log.info("%s: إعادة فحص حجم المصدر بعد %.0f ثانية", item.name, delay)
+                    m.sleep(delay)
             except NetworkError as exc:
                 last = exc
                 break  # open_session استنفد محاولاته بالفعل

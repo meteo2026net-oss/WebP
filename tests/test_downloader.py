@@ -153,6 +153,7 @@ class DownloaderTests(unittest.TestCase):
         res = self.manager(st).run(self.plan(st).to_download)
         self.assertEqual(res.downloaded, 1)
         self.assertEqual(len(st.retr_calls), 2)
+        self.assertEqual(self.sleeps, [1.0])  # backoff before rechecking a changing ECMWF product
         self.assertEqual(self.local("FPD10270000102703001").read_bytes(), data)
 
     def test_permanent_failure_marks_failed(self):
