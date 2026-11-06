@@ -42,8 +42,8 @@ class WindyGFSTests(unittest.TestCase):
         self.assertEqual(result.model_name, "NOAA GFS")
 
     def test_missing_key_is_rejected_before_network(self):
-        client = WindyGFSClient("")
         with patch.dict("os.environ", {"WINDY_POINT_FORECAST_API_KEY": ""}):
+            client = WindyGFSClient("")
             with self.assertRaises(WindyForecastError):
                 client.fetch(0, 0)
 
