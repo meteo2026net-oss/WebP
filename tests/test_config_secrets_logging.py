@@ -44,6 +44,30 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_config(p)
 
+    def test_malformed_numeric_values_raise_config_error(self):
+        for kwargs in (
+            {"port": None}, {"port": True}, {"timeout_seconds": "soon"},
+            {"max_retries": []}, {"max_parallel": 1.5}, {"min_free_gb": None},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ConfigError):
+                AppConfig(**kwargs).validate()
+
+    def test_malformed_filter_lists_raise_config_error(self):
+        for kwargs in (
+            {"selected_kinds": None}, {"selected_kinds": "FP"},
+            {"selected_kinds": ["FP", 3]}, {"selected_cycles": {"00"}},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ConfigError):
+                AppConfig(**kwargs).validate()
+
+    def test_load_config_wraps_malformed_values_as_config_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "s.json"
+            p.write_text(json.dumps({"port": None}), encoding="utf-8")
+            with self.assertRaises(ConfigError):
+                load_config(p)
+
+
 
 class FakeKeyring:
     def __init__(self):

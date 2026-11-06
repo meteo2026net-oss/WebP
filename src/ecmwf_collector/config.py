@@ -50,21 +50,41 @@ class AppConfig:
     max_parallel: int = 1            # اتصالات تنزيل متزامنة (متحفظ)
     min_free_gb: int = 5             # الحد الأدنى للمساحة الحرة المتروكة على القرص
 
+    @staticmethod
+    def _integer(value, field_name: str) -> int:
+        # bool is an int subclass in Python, but accepting True as port=1 is unsafe.
+        if isinstance(value, bool):
+            raise ConfigError(f"قيمة {field_name} يجب أن تكون رقماً صحيحاً")
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ConfigError(f"قيمة {field_name} غير صحيحة") from exc
+
     def validate(self) -> None:
-        if not self.host.strip():
+        if not isinstance(self.host, str) or not self.host.strip():
             raise ConfigError("المضيف مطلوب")
-        if not (1 <= int(self.port) <= 65535):
+        port = self._integer(self.port, "المنفذ")
+        timeout = self._integer(self.timeout_seconds, "المهلة")
+        retries = self._integer(self.max_retries, "عدد المحاولات")
+        parallel = self._integer(self.max_parallel, "التنزيلات المتزامنة")
+        free_gb = self._integer(self.min_free_gb, "المساحة الحرة الدنيا")
+        if not (1 <= port <= 65535):
             raise ConfigError("المنفذ يجب أن يكون بين 1 و65535")
-        if self.protocol not in PROTOCOLS:
+        if not isinstance(self.protocol, str) or self.protocol not in PROTOCOLS:
             raise ConfigError(f"بروتوكول غير معروف: {self.protocol}")
-        if int(self.timeout_seconds) <= 0:
+        if timeout <= 0:
             raise ConfigError("المهلة يجب أن تكون أكبر من صفر")
-        if not (1 <= int(self.max_retries) <= 10):
+        if not (1 <= retries <= 10):
             raise ConfigError("عدد المحاولات يجب أن يكون بين 1 و10")
-        if not (1 <= int(self.max_parallel) <= 3):
+        if not (1 <= parallel <= 3):
             raise ConfigError("التنزيلات المتزامنة يجب أن تكون بين 1 و3")
-        if int(self.min_free_gb) < 0:
+        if free_gb < 0:
             raise ConfigError("المساحة الحرة الدنيا لا يمكن أن تكون سالبة")
+        if (not isinstance(self.selected_kinds, list)
+                or not all(isinstance(v, str) for v in self.selected_kinds)
+                or not isinstance(self.selected_cycles, list)
+                or not all(isinstance(v, str) for v in self.selected_cycles)):
+            raise ConfigError("قوائم أنواع الملفات وأوقات الإصدار يجب أن تكون قوائم نصية")
         if not set(self.selected_kinds) <= set(KINDS) or not set(self.selected_cycles) <= set(CYCLES):
             raise ConfigError("أنواع الملفات أو أوقات الإصدار غير صحيحة")
 
