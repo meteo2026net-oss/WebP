@@ -1,0 +1,12 @@
+PySide6>=6.7
+keyring>=25.0
+numpy>=1.26
+Pillow>=10.0
+xarray>=2024.1
+cfgrib>=0.9.15
+eccodes>=2.36
+pandas>=2.2
+pyproj>=3.6
+scipy>=1.11
+psycopg[binary]>=3.2
+ecmwf-opendata

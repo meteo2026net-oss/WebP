@@ -1,0 +1,167 @@
+# GRIB-to-map workflow
+
+## Current supported path
+1. Download original ECMWF GRIB files with the desktop collector.
+2. Inspect the file and identify its fields:
+   `python -m ecmwf_collector.tools.inspect_grib path/to/file.grib2 --output output/inventory.json`
+3. Convert compatible scalar fields and split their forecast-time/vertical-level dimensions into individual map layers:
+   `python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data`
+4. Open the map viewer from the repository root:
+   `python serve_map.py`
+   Then browse to `http://127.0.0.1:8765/map_viewer/`.
+
+## Map format
+The converter writes transparent RGBA PNG overlays and JSON sidecars containing field name, units, valid time, data range, grid dimensions, and geographic bounds. Layer source identity is derived from a streaming SHA-256 digest of the input GRIB bytes, so replacing a forecast at the same local path creates a distinct layer identity. The viewer uses Leaflet image overlays over OpenStreetMap tiles.
+
+## Grid limitations
+The renderer supports regular 1-D latitude/longitude grids and 2-D geolocation grids. For 2-D geolocation, it transforms decoder-provided latitude/longitude cell centres to EPSG:3857 and interpolates onto a regular display raster. This makes regional rotated-pole, Lambert, polar-stereographic and other projected GRIB grids renderable when cfgrib exposes matching 2-D latitude/longitude coordinates. It does not guess projection parameters. Curvilinear interpolation currently uses linear triangulation and is limited to regional extents. Regional grids may cross ±180° when their shortest circular longitude span is at most 180 degrees; wider/global meshes are rejected until a dedicated seam-aware tiling path is implemented. Regular and curvilinear longitude coordinates outside the conventional angular range of -360 to 360 degrees are also rejected before circular-mean unwrapping, preventing malformed finite values from producing invalid geographic extents. Missing geolocation outside a projected grid's valid domain is masked and ignored rather than invalidating the entire field. Non-spatial dimensions such as forecast step and pressure level are sliced into separate products.
+
+## Scientific integrity
+PNG is a display product, not the scientific source. Preserve original GRIB files and use their decoded values for calculations. The existing RGB WebP wind texture is an 8-bit quantized encoding and is separate from the display PNG.
+
+
+## استخراج القيم عند الإحداثيات
+
+يحفظ محول الحقول العددية شبكة القيم الأصلية والإحداثيات في ملف `.npz` بجوار صورة الطبقة، ويضيف اسم الملف إلى `manifest.json`. تحفظ هذه الملفات القيم العددية قبل تلوينها، ولا يُستخدم لون الصورة لتقدير القيمة.
+
+عند النقر على الخريطة يرسل العارض الإحداثيات إلى نقطة النهاية المحلية:
+
+```text
+GET /api/point?image=<layer-image>&lat=<latitude>&lon=<longitude>
+```
+
+يتحقق الخادم من أن اسم الصورة موجود في manifest، ثم يقرأ ملف البيانات المرتبط بها. للشبكات المنتظمة ذات إحداثيات 1-D يمكن اختيار أقرب خلية أو الاستيفاء الثنائي. أما الشبكات ذات الإحداثيات الجغرافية 2-D فيُعاد أقرب مركز خلية صالح، مع تجاهل الخلايا التي لا تملك إحداثيات جغرافية صالحة؛ الاستيفاء الثنائي غير متاح لها بعد.
+
+ملفات NPZ تحفظ بيانات الشبكة بعد فك GRIB إلى float32. احتفظ بملف GRIB الأصلي لأي حسابات تحتاج دقة المصدر الكاملة.
+
+
+## Forecast timeline
+
+The map viewer groups compatible layers by variable, level, units, and non-time coordinates. If multiple valid times or forecast steps exist, a slider lets the user switch between frames and a play control cycles through them. This is a client-side frame switcher, not a meteorological animation/interpolation engine; each frame is an independently decoded GRIB field.
+
+
+## Antimeridian and global longitude coverage
+
+Regular one-dimensional longitude grids that cross the international date line are kept in a continuous unwrapped interval (for example 170°E through 190°E). The map bounds are not clipped at ±180°, preventing the raster from being squeezed or losing its eastern/western edge. Full-world cyclic grids likewise retain their complete 360° pixel-edge extent. Point sampling continues to use the original GRIB coordinates and unwraps longitude differences around the date line.
+
+
+## Point sampling methods
+
+The local point-query endpoint accepts an optional `method` parameter:
+- `nearest` (default): returns the nearest source grid cell, preserving the original discrete-grid behaviour.
+- `bilinear`: interpolates between the four surrounding cells on a regular 1-D latitude/longitude grid. It refuses extrapolation outside cell centres and returns no numeric value if any required corner is missing. Full-cycle global longitude grids are treated cyclically, including interpolation across the last-to-first column seam; a duplicated 360-degree endpoint is removed from the interpolation geometry. For nearest-cell sampling, the same cyclic longitude-distance rule is applied to full-cycle regular grids, including grids with a duplicated endpoint; regional longitude axes are deliberately not wrapped.
+
+Example:
+`GET /api/point?image=layer.png&lat=32.5&lon=36.5&method=bilinear`
+
+The map viewer exposes this choice next to the point-value panel. Bilinear output is an interpolation of the decoded field, not an additional observation or a higher-resolution forecast.
+
+
+## Curvilinear and projected grids
+
+When cfgrib exposes matching two-dimensional `latitude(y, x)` and `longitude(y, x)` coordinates, the converter preserves those arrays and sends the field through a geolocation-based reprojection to EPSG:3857. This supports regional Lambert, polar stereographic and rotated-pole products without inferring projection parameters from incomplete metadata. The renderer uses linear triangulation; cells outside the geolocation convex hull remain transparent. For these 2-D grids, point queries use the nearest geolocated cell. Source longitude coordinates outside the conventional -360 to 360 degree range are rejected for both regular and curvilinear point queries. Bilinear sampling remains limited to regular 1-D grids. Regional curvilinear grids may cross the antimeridian: their longitudes are unwrapped into a continuous interval before projection, and projected bounds preserve that interval beyond ±180°. This path is supported only when the shortest circular longitude span is at most 180 degrees. Global curvilinear meshes spanning more than 180 degrees are deliberately rejected until seam-aware tiled rendering is implemented. This rendering restriction is separate from point sampling: nearest-cell queries use spherical great-circle distance on valid 2-D geolocation arrays and can query global longitude meshes. A query is accepted only when the selected cell has valid local geolocation neighbours from which a conservative coverage radius can be estimated; isolated cells are rejected rather than returned for arbitrary distant clicks. Bilinear interpolation remains unsupported for all 2-D curvilinear grids.
+
+
+## Wind vectors and direction convention
+
+The U/V converter accepts matching regular 1-D latitude/longitude coordinates or matching 2-D decoder-provided geolocation arrays. It rejects source latitudes outside -90..90 degrees, source longitudes outside -360..360 degrees, non-finite regular coordinates, and mismatched curvilinear latitude/longitude validity masks before creating wind products. The two components must share the same spatial dimensions, coordinate layout, and identical latitude/longitude coordinate values; equal array shapes alone are not sufficient. They are aligned with an exact xarray join before encoding, and the decoded geolocation arrays are compared explicitly because 2-D auxiliary coordinates are not necessarily xarray indexes. A mismatch is rejected before speed, direction, or display layers are generated.
+
+Wind speed is computed as `sqrt(U² + V²)`. The reported meteorological direction is the direction **from which** the wind blows, in degrees clockwise from true north:
+`(degrees(atan2(-U, -V)) + 360) % 360`.
+For calm wind (zero speed), direction is undefined and stored as NaN rather than assigning a misleading bearing. Missing U or V produces a missing vector. The RGB WebP texture remains an 8-bit quantized transport/display encoding; preserve original GRIB for scientific calculations.
+
+
+## Wind component validation and reference frame
+
+The U/V wind encoder checks that both components declare matching units when units are present. It does not silently convert between units and does not invent a default unit when metadata is absent; the map manifest then labels the unit as unknown. The speed magnitude is invariant under an orthogonal rotation, but wind direction is not. If cfgrib marks `GRIB_uvRelativeToGrid` as true, metadata explicitly flags the direction as requiring grid-to-earth rotation. If the decoder explicitly marks it false, the metadata records earth-relative components. If the flag is absent or unrecognized, the reference frame remains unknown; the converter does not silently assume that missing metadata means earth-relative. The GRIB inventory also records `uvRelativeToGrid` and `resolutionAndComponentFlags` when available.
+
+
+## Meteorological unit conversions
+
+The `meteorological_units` helper provides explicit conversions for pressure (Pa, hPa/mbar, kPa), temperature (K, °C), wind speed (m s-1, km h-1, knots), and precipitation depth (mm, m). It accepts scalar or NumPy-array values and preserves missing values. Unknown units and conversions across physical dimensions are rejected. The GRIB wind encoder uses canonical unit aliases when checking U/V compatibility; it still does not silently convert source fields, so their declared source unit remains recorded.
+
+
+## Display-only unit conversion
+
+The general scalar converter can create a display raster in a requested unit while preserving decoded source values for scientific point queries. Select exactly one variable when requesting a display conversion:
+
+```bash
+python -m ecmwf_collector.tools.grib_to_map forecast.grib2 --variable t2m --display-unit degC
+python -m ecmwf_collector.tools.grib_to_map forecast.grib2 --variable msl --display-unit hPa
+```
+
+The NPZ `values` array remains in the source GRIB unit and is used by point queries. A separate `display_values` array stores the converted display field; PNG colour limits and the map legend use `display_units`. The point-value panel reports the source unit. Unknown units and incompatible dimensions fail rather than being guessed. This option intentionally requires `--variable` so one requested target unit cannot accidentally be applied to a mixed collection of pressure, temperature, precipitation and other fields. The helper covers explicitly documented dimensions/aliases. Accumulated precipitation depth (mm, m) and precipitation depth rates (mm h-1, mm day-1, mm s-1, including common CF exponent spellings such as `mm h**-1` and `mm s^-1`) are separate dimensions and cannot be converted directly into one another. Mass-flux units such as `kg m-2 s-1` are intentionally not equated with water depth rates without an explicit water-equivalent assumption. Common GRIB/CF spellings are recognized for hectopascals/millibars, degrees Celsius, and wind speed (including `m s**-1`, `m s^-1`, and `km h**-1`); Unicode minus and middle-dot separators are normalized. This is alias normalization only: it does not infer a physical dimension from a variable name or reinterpret mass flux as accumulated precipitation.
+
+
+## Explicit grid-relative wind rotation
+
+The wind converter accepts `--grid-to-earth-angle-deg` only when cfgrib explicitly marks the components as grid-relative. The angle convention is counter-clockwise from true east to the positive grid-x axis. The conversion is `U_e = U_g cos(a) - V_g sin(a)` and `V_n = U_g sin(a) + V_g cos(a)`. The angle must come from a trusted product specification or independently validated GRIB metadata; the converter does not infer it from grid type or projection names. Without the argument, grid-relative wind directions remain flagged as invalid for true-north bearings. The encoded RGB WebP texture retains the original source U/V channels. The wind-speed NPZ stores the derived `wind_direction_from_degrees` array alongside speed; this bearing is earth-relative only after a valid explicit rotation or when the source frame is already earth-relative. The metadata distinguishes the source component frame from the direction calculation frame.
+
+
+## Wind direction display layer
+
+The wind converter writes a separate `wind_direction` PNG/NPZ layer only when
+the U/V reference frame is confirmed earth-relative, or when an explicitly
+trusted `--grid-to-earth-angle-deg` rotation has been applied to grid-relative
+components. Unknown or unrotated grid-relative components do not publish a
+true-north bearing layer; the wind-speed layer remains available.
+
+Direction colours use a cyclic HSV hue wheel (0° and 360° meet) and the map
+renderer reprojects sine and cosine components separately before recovering
+the bearing with `atan2`. It does not interpolate raw degree values. Calm or
+missing directions remain transparent, as do interpolated cells whose
+circular resultant is too small to define a stable bearing. Curvilinear grids
+use the decoder-provided 2-D geolocation and the same circular-component
+interpolation. The viewer labels the legend as meteorological direction FROM
+true north, clockwise.
+
+
+## Curvilinear longitude seam safety
+
+Regional 2-D latitude/longitude grids are unwrapped around their circular-mean
+longitude before Web-Mercator reprojection. If the circular-mean resultant is near
+zero, the centre is mathematically ambiguous and rendering is rejected rather
+than selecting an arbitrary longitude branch. A single planar Delaunay
+triangulation is not valid for a global mesh that crosses the antimeridian:
+it can connect opposite sides of the world and create false interpolated
+weather fields. Scalar and wind-direction rendering therefore reject
+curvilinear meshes whose shortest circular longitude span exceeds 180
+degrees. This is an intentional safety limit, not global-grid support.
+Seam-aware tiled rendering is still required for global curvilinear products. Before triangulation, the renderer also checks the singular-value spread of the projected geolocation points. A mesh that has no meaningful second spatial dimension—including a mathematically collinear mesh with tiny projection round-off—is rejected with an explicit error instead of being passed to Delaunay interpolation. The check uses a relative tolerance because projected coordinates are measured in large metre values; it still permits narrow but numerically resolvable 2-D meshes.
+Regular 1-D global grids continue to use the separate regular-grid path.
+
+## Validation with an externally sourced GRIB2 file
+
+Synthetic xarray tests validate the conversion logic but do not replace testing against an independently produced GRIB message. For a reproducible real-file check, ECMWF publishes a static IFS GRIB2 sample dataset at [data.ecmwf.int/mtg2_sample](https://data.ecmwf.int/mtg2_sample/). ECMWF documents that the sample is available to users without ECMWF HPC/ECS login; its directory tree includes operational forecast surface fields, pressure-level fields, and ensemble examples.
+
+A practical first smoke test is the documented mean-sea-level pressure file in the operational forecast surface directory (the URL is fixed, but no independently trusted SHA-256 is currently published for this fixture):
+
+`od/oper/fc/sfc/151_od_oper_fc_sfc_msl_2024_0001_regular_ll.grib2`
+
+Download one file from the official dataset portal, then run:
+
+```bash
+python -m ecmwf_collector.tools.inspect_grib path/to/sample.grib2 --output output/sample-inventory.json
+python -m ecmwf_collector.tools.grib_to_map path/to/sample.grib2 --variable msl --output-dir output/sample-map
+python serve_map.py
+```
+
+Confirm that the inventory identifies the expected GRIB messages, that conversion creates PNG/NPZ/JSON products and a manifest, and that point queries return source-unit values. Record the sample filename and checksum with test results. Do not describe this manual smoke test as completed until it has actually been run. The public sample dataset is a test fixture source, not a live operational feed or a WMO API connection.
+
+
+
+## Automated real-GRIB2 smoke workflow
+
+A network-dependent integration check is available separately from the normal unit-test workflow. After the workflow file is merged into the default branch:
+
+1. Open the repository **Actions** tab.
+2. Select **ECMWF real GRIB2 smoke test** from the workflow list.
+3. Select **Run workflow**, leave the branch as the default branch, and keep the input variable `msl` for the documented mean-sea-level pressure fixture.
+4. Open the resulting run and wait for the `real-grib2-smoke` job to finish. A run is successful only when download, ecCodes inventory, cfgrib conversion, and all output checks pass.
+5. In the run's **Artifacts** section, download `ecmwf-real-grib2-smoke-<run-id>` and inspect `SHA256SUMS.txt`, `inventory.json`, `validation-summary.json`, and the generated `map/` directory.
+
+The workflow checks the GRIB container markers, records the downloaded file's SHA-256 for audit (it does not compare against a trusted expected digest), requires GRIB edition 2 and the requested short name, verifies PNG decoding and RGBA format, checks NPZ arrays and source-value/geolocation alignment, and uploads the inventory and outputs as a short-lived Actions artifact. The normal unit-test workflow intentionally does not download external weather data.
+
+This workflow is deliberately manual: the regular pull-request and push test suite remains independent of external data-host availability. A successful run is evidence for this exact sample and conversion path only; it does not establish support for every GRIB product, global curvilinear grids, or a live WMO/ECMWF feed. If the download or external host is unavailable, report the run as an infrastructure/data-source failure rather than as a passing real-file validation.
+
+Curvilinear map rendering rejects infinite coordinates, mismatched latitude/longitude missing-cell masks, finite latitudes outside -90..90 degrees, and finite longitudes outside -360..360 degrees. Paired NaN geolocation cells remain valid missing cells.
