@@ -68,3 +68,14 @@
 ## ما الذي يثبت اكتمال الإصدار؟
 
 يُعد الإصدار مقبولاً ميدانياً بعد نجاح الأقسام المناسبة أعلاه على جهاز Windows مستقل، مع نجاح اتصال ECMWF الحقيقي وتجربة PostgreSQL على قاعدة اختبار منفصلة عند تفعيل هذا الخيار. نجاح CI يثبت البناء والاختبارات الآلية وتشغيل EXE وخادم الخرائط على runner، لكنه لا يثبت صلاحية بيانات اعتماد المستخدم أو الوصول إلى خادم ECMWF أو إعداد PostgreSQL على جهازه.
+
+## أحدث حزمة تم التحقق منها — 6 نوفمبر 2026
+
+- Commit: `2f4d946a50675a2919534fc47ced6a0988debf70`.
+- Windows build: [Run 42178944277](https://github.com/meteo2026net-oss/WebP/actions/runs/42178944277) — نجح بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
+- Linux tests: [Run 42178951509](https://github.com/meteo2026net-oss/WebP/actions/runs/42178951509) — **319 اختبار وحدة ناجحاً**.
+- Windows PR validation: [Run 42178951502](https://github.com/meteo2026net-oss/WebP/actions/runs/42178951502) — نجاح كامل.
+- Artifact: `ECMWFWebP-Windows-x64`, ID `13485180476`, size `150,701,728` bytes, ZIP SHA-256 `7853b84f4a8dc460ab08ff62b42b06d2ec9f6f12c995085c1a684d53761a942e`.
+- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42178944277/artifacts/13485180476).
+
+هذه الحزمة أحدث من الحزم السابقة وتشمل إصلاح رسائل استرداد PostgreSQL واختباراتها. نجاح CI لا يستبدل الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
