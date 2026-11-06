@@ -343,6 +343,9 @@ class MainWindow(QMainWindow):
         self.eccharts_endpoint = QLineEdit()
         self.eccharts_endpoint.setPlaceholderText("https://…/wms")
         self.eccharts_endpoint.setLayoutDirection(Qt.LeftToRight)
+        saved_endpoint = self.secrets.get_password("eccharts_wms_endpoint")
+        if saved_endpoint:
+            self.eccharts_endpoint.setText(saved_endpoint)
         self.eccharts_token = QLineEdit()
         self.eccharts_token.setEchoMode(QLineEdit.Password)
         self.eccharts_token.setPlaceholderText("رمز WMS من حساب ECMWF")
@@ -386,6 +389,9 @@ class MainWindow(QMainWindow):
             return
         if not self.secrets.set_password("eccharts_wms_token", token):
             QMessageBox.critical(self, "تعذر حفظ الرمز", "رفض مخزن أسرار Windows حفظ رمز ecCharts.")
+            return
+        if not self.secrets.set_password("eccharts_wms_endpoint", endpoint):
+            QMessageBox.critical(self, "تعذر حفظ العنوان", "تعذر حفظ عنوان WMS محلياً في مخزن الأسرار.")
             return
         register_secret(token)
         self.eccharts_status.setText("جارٍ طلب قائمة الطبقات من ecCharts…")
