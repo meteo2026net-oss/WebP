@@ -636,8 +636,9 @@ class MainWindow(QMainWindow):
         self.noaa_cycle.addItems(["00", "06", "12", "18"])
         self.noaa_forecast_hour = QSpinBox()
         self.noaa_forecast_hour.setRange(0, 384)
-        self.noaa_forecast_hour.setSingleStep(3)
+        self.noaa_forecast_hour.setSingleStep(1)
         self.noaa_forecast_hour.setValue(24)
+        self.noaa_forecast_hour.valueChanged.connect(lambda hour: self.noaa_forecast_hour.setSingleStep(1 if hour <= 120 else 3))
         self.noaa_variables = QLineEdit("TMP,UGRD,VGRD")
         self.noaa_variables.setPlaceholderText("TMP,UGRD,VGRD")
         self.noaa_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
@@ -699,7 +700,7 @@ class MainWindow(QMainWindow):
         def done(result):
             grib_path, metadata_path = result
             self.noaa_status.setPlainText(
-                "اكتمل التنزيل والتحقق من بنية GRIB2.\n"
+                "اكتمل التنزيل واجتاز الملف فحص إطار GRIB2 الأولي.\n"
                 f"الملف: {grib_path}\n"
                 f"بيانات المصدر: {metadata_path}\n"
                 f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
@@ -804,7 +805,7 @@ class MainWindow(QMainWindow):
         def done(result):
             grib_path, metadata_path = result
             self.gefs_status.setPlainText(
-                "اكتمل التنزيل والتحقق من بنية GRIB2.\n"
+                "اكتمل التنزيل واجتاز الملف فحص إطار GRIB2 الأولي.\n"
                 f"العضو: {request.member}\n"
                 f"الملف: {grib_path}\n"
                 f"بيانات المصدر: {metadata_path}\n"
