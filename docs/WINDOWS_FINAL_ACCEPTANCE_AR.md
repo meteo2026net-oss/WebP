@@ -71,10 +71,10 @@
 
 ## أحدث حزمة تم التحقق منها — 6 نوفمبر 2026
 
-- Commit: `de76cbd237191d471946e7785c1c03947823d309`.
-- Windows build: [Run 42291850228](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228) — نجاح كامل، بما في ذلك بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
-- Python tests: [Run 42291850400](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850400) — **323 اختبار وحدة ناجحاً**.
-- Artifact: `ECMWFWebP-Windows-x64`, ID `13540102605`, size `150703282` bytes, ZIP SHA-256 `7241ff1ee9d6027ad8e880eb4f418b5b2ff6c460f3186d54726e13893d7de534`.
-- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228/artifacts/13540102605).
+- Commit: `9337c500c4061f8e6696e24b10a58acc91012be4`.
+- Windows build: [Run 42292635305](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305) — نجاح كامل، بما في ذلك بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
+- Python tests: [Run 42292635419](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635419) — **323 اختبار وحدة ناجحاً**.
+- Artifact: `ECMWFWebP-Windows-x64`, ID `13539074610`, size `150702869` bytes, ZIP SHA-256 `98919303a180d2c5e78406135ecb1a4a2bee6bbff41e3e6f7c4e5a1e4b32ee90`.
+- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305/artifacts/13539074610).
 
 هذه هي الحزمة الأحدث على commit المذكور. نجاح CI لا يستبدل الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
