@@ -71,11 +71,10 @@
 
 ## أحدث حزمة تم التحقق منها — 6 نوفمبر 2026
 
-- Commit: `2f4d946a50675a2919534fc47ced6a0988debf70`.
-- Windows build: [Run 42178944277](https://github.com/meteo2026net-oss/WebP/actions/runs/42178944277) — نجح بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
-- Linux tests: [Run 42178951509](https://github.com/meteo2026net-oss/WebP/actions/runs/42178951509) — **319 اختبار وحدة ناجحاً**.
-- Windows PR validation: [Run 42178951502](https://github.com/meteo2026net-oss/WebP/actions/runs/42178951502) — نجاح كامل.
-- Artifact: `ECMWFWebP-Windows-x64`, ID `13485180476`, size `150,701,728` bytes, ZIP SHA-256 `7853b84f4a8dc460ab08ff62b42b06d2ec9f6f12c995085c1a684d53761a942e`.
-- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42178944277/artifacts/13485180476).
+- Commit: `de76cbd237191d471946e7785c1c03947823d309`.
+- Windows build: [Run 42291850228](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228) — نجاح كامل، بما في ذلك بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
+- Python tests: [Run 42291850400](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850400) — **323 اختبار وحدة ناجحاً**.
+- Artifact: `ECMWFWebP-Windows-x64`, ID `13540102605`, size `150703282` bytes, ZIP SHA-256 `7241ff1ee9d6027ad8e880eb4f418b5b2ff6c460f3186d54726e13893d7de534`.
+- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42291850228/artifacts/13540102605).
 
-هذه الحزمة أحدث من الحزم السابقة وتشمل إصلاح رسائل استرداد PostgreSQL واختباراتها. نجاح CI لا يستبدل الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
+هذه هي الحزمة الأحدث على commit المذكور. نجاح CI لا يستبدل الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
