@@ -202,7 +202,6 @@ class DownloaderTests(unittest.TestCase):
 
     def test_worker_session_close_error_does_not_escape_cleanup(self):
         st = self.server({FP: grib2(100)})
-        worker = self.manager(st)._Worker if False else None
         from ecmwf_collector.downloader import _Worker
         manager = self.manager(st)
         worker = _Worker(manager)
