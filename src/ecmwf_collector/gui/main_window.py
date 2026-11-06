@@ -30,7 +30,9 @@ from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
-from ..sources.noaa_gefs import (\n    GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,\n)
+from ..sources.noaa_gefs import (
+    GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,
+)
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
 
 log = logging.getLogger(__name__)

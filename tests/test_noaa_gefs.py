@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ecmwf_collector.sources.noaa_gefs import (
-    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,\n    write_gefs_ensemble_manifest,
+    GefsRequest, NoaaGefsError, build_gefs_url, download_gefs, download_gefs_ensemble,
+    write_gefs_ensemble_manifest,
 )
 
 
