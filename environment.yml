@@ -15,3 +15,4 @@ dependencies:
   - pip
   - pip:
       - psycopg[binary]>=3.2
+      - ecmwf-opendata

@@ -60,6 +60,24 @@ python -m ecmwf_collector.tools.catalog_grib "E:\\ECMWF\\downloads" --output out
 
 تقرأ الأداة الملفات بكتل 4 MiB ولا تحذف الملفات الأصلية أو المكررة. يمكن مراجعة التفاصيل وخيارات التشغيل في [دليل فهرسة GRIB](docs/GRIB_CATALOG.md). لا ترفع ملف الفهرس المحلي أو ملفات WMO المقيدة إلى مستودع عام.
 
+
+### 2.2 مصدر ECMWF Open Data والمقارنة مع WMO
+
+أصبح المشروع يدعم مصدرين مستقلين: WMO Support عبر FTP/FTPS، وECMWF Open Data العام عبر مكتبة `ecmwf-opendata`. لا تستخدم بيانات اعتماد WMO للمصدر العام. ثبّت الاعتمادية ضمن بيئة المشروع، ثم نزّل حقولاً محددة فقط:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m ecmwf_collector.sources.ecmwf_open_data --time 0 --step 24 --param 2t msl --type fc --output downloads/ecmwf_open_data/ifs_00_step24.grib2
+```
+
+لمقارنة ملف من كل مصدر (يلزم تطابق المتغير والمستوى ووقت الصلاحية والشبكة والوحدات):
+
+```powershell
+python -m ecmwf_collector.tools.compare_grib_sources "WMO_FILE" "ECMWF_FILE" --output output/source_comparison.json
+```
+
+التقرير يميز سلامة الملف من المقارنة العددية، ويحسب الانحياز وMAE وRMSE والتغطية والارتباط للحقول القابلة للمقارنة. هذه المقاييس تقيس الاختلاف بين المصدرين ولا تثبت صحة التنبؤ؛ تقييم الدقة يحتاج بيانات رصد مستقلة. التفاصيل في [دليل المصدر والمقارنة](docs/ECMWF_OPEN_DATA_COMPARISON.md).
+
 ### 3. تحويل الحقول إلى طبقات خريطة
 ```powershell
 python -m ecmwf_collector.tools.grib_to_map path/to/file.grib2 --output-dir output/map_data
