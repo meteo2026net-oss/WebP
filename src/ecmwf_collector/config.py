@@ -55,6 +55,8 @@ class AppConfig:
         # bool is an int subclass in Python, but accepting True as port=1 is unsafe.
         if isinstance(value, bool):
             raise ConfigError(f"قيمة {field_name} يجب أن تكون رقماً صحيحاً")
+        if isinstance(value, float) and not value.is_integer():
+            raise ConfigError(f"قيمة {field_name} يجب أن تكون رقماً صحيحاً")
         try:
             return int(value)
         except (TypeError, ValueError, OverflowError) as exc:
