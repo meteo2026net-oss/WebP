@@ -10,3 +10,6 @@ pyproj>=3.6
 scipy>=1.11
 psycopg[binary]>=3.2
 ecmwf-opendata
+requests>=2.31
+Authlib>=1.7
+joserfc>=1.2

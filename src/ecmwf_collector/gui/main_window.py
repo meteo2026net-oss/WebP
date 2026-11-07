@@ -37,6 +37,7 @@ from ..sources.noaa_gefs import (
     GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,
 )
 from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
+from .review_console import ReviewConsole
 
 log = logging.getLogger(__name__)
 
@@ -292,6 +293,7 @@ class MainWindow(QMainWindow):
         ))
         compare_layout.addStretch()
         self.source_tabs.addTab(compare, "مقارنة المصادر")
+        self.source_tabs.addTab(ReviewConsole(self), "مراجعة المتنبئين")
         self.setCentralWidget(self.source_tabs)
 
     def _build_ecmwf_tab(self):

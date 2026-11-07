@@ -80,3 +80,39 @@ WSGI server; configure rate limits, request IDs, audit-log retention, health
 checks, monitoring, backup/restore, and incident response. The desktop review
 console and its OIDC sign-in flow are a separate integration step: do not embed
 an API client secret or long-lived bearer token in the Windows application.
+
+
+## Windows desktop review console: OIDC Authorization Code + PKCE
+
+The PySide6 application includes a `مراجعة المتنبئين` tab backed by
+`src/ecmwf_collector/gui/review_console.py`. It is a public native client:
+register a public OIDC client with Authorization Code + PKCE (S256), no client
+secret, and a loopback redirect URI of the form
+`http://127.0.0.1:<ephemeral-port>/oidc/callback`. The app binds the callback
+server only to 127.0.0.1 and validates OAuth state and OIDC nonce.
+
+The client requests only `openid profile`; it does not request
+`offline_access`, persist tokens, or retain a refresh token. The short-lived
+access token is kept in process memory and sent only as a Bearer header to the
+configured API over HTTPS. A 401 or local expiry requires a fresh browser login.
+Logout drops the in-memory token reference. The ID token is validated using the
+provider JWKS and RS256, including issuer, audience, expiry and nonce. The API
+must issue JWT access tokens with the configured role claim because the server
+validates its own access token independently.
+
+The GUI persists only non-secret configuration (API base URL, issuer, public
+client ID) using QSettings. It provides queue/detail/timeline, assignment,
+opening a review, comments, decisions with mandatory reasons, and a separate
+publication feed. Server-side authorization remains authoritative; GUI button
+visibility is not a security boundary.
+
+Configure the provider's native/public application and register the loopback
+redirect URI according to that provider's native-app policy. Some providers
+require explicit loopback-port handling; verify this before rollout. Enter the
+Review API HTTPS base URL, exact OIDC issuer, and public client ID in the tab.
+Do not put a client secret in the desktop app or its settings.
+
+The console is an integrated client implementation, not proof of an operational
+identity tenant or live API. End-to-end acceptance still requires a real
+provider, valid role claims, a migrated PostgreSQL database, and distinct test
+accounts for reviewer, review lead, and publisher.
