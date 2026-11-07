@@ -98,11 +98,13 @@ class GefsDecoderTests(unittest.TestCase):
         for member in ("c00", "p01"):
             path = root / f"gefs_{member}.grib2"
             path.write_bytes(b"GRIB" + b"x" * 12 + b"7777")
+            import hashlib
             payload = {
                 "source": "NOAA/NCEP NOMADS", "model": "GEFS", "member": member,
                 "run": "20261107T00:00:00Z", "forecast_hour": 24,
                 "valid_time": "2026-11-08T00:00:00Z", "variables": ["TMP"],
                 "levels": ["2_m_above_ground"], "resolution": "0p50", "file_name": path.name,
+                "size_bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
             path.with_name(path.stem + ".source.json").write_text(json.dumps(payload), encoding="utf-8")
             paths.append(path)

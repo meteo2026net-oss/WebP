@@ -5,6 +5,7 @@ that the grid coordinates inside the files match; those checks remain mandatory
 in the GRIB decoding layer.
 """
 from __future__ import annotations
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -113,6 +114,23 @@ def load_gefs_member_metadata(grib_paths: Iterable[str | Path], *, minimum_membe
         member = str(metadata.get("member") or "")
         if metadata.get("file_name") != path.name:
             raise GefsMemberMetadataError(f"sidecar filename does not match GRIB file: {path.name}")
+        try:
+            expected_size = int(metadata["size_bytes"])
+            expected_digest = str(metadata["sha256"]).lower()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GefsMemberMetadataError(
+                f"sidecar is missing valid size/checksum metadata for {path.name}"
+            ) from exc
+        if expected_size != path.stat().st_size:
+            raise GefsMemberMetadataError(f"GRIB file size does not match sidecar: {path.name}")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+            raise GefsMemberMetadataError(f"sidecar SHA-256 is invalid: {path.name}")
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != expected_digest:
+            raise GefsMemberMetadataError(f"GRIB file SHA-256 does not match sidecar: {path.name}")
         if member in metadata_by_member:
             raise GefsMemberMetadataError(f"duplicate GEFS member supplied: {member}")
         metadata_by_member[member] = metadata

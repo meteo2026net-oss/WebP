@@ -62,6 +62,21 @@ class GefsMetadataGateTests(unittest.TestCase):
         with self.assertRaises(GefsMemberMetadataError):
             validate_gefs_member_metadata({"c00": metadata("c00"), "p31": metadata("p31")})
 
+    def test_rejects_tampered_grib_file_checksum(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = []
+            for member in ("c00", "p01"):
+                grib = root / f"gefs_{member}.grib2"
+                grib.write_bytes(b"GRIB" + b"x" * 12 + b"7777")
+                payload = metadata(member)
+                payload["size_bytes"] = grib.stat().st_size
+                payload["sha256"] = "0" * 64
+                (root / f"gefs_{member}.source.json").write_text(json.dumps(payload), encoding="utf-8")
+                paths.append(grib)
+            with self.assertRaisesRegex(GefsMemberMetadataError, "SHA-256"):
+                load_gefs_member_metadata(paths)
+
     def test_loads_matching_sidecars_and_rejects_filename_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -69,7 +84,11 @@ class GefsMetadataGateTests(unittest.TestCase):
             for member in ("c00", "p01"):
                 grib = root / f"gefs_{member}.grib2"
                 grib.write_bytes(b"GRIB" + b"x" * 12 + b"7777")
-                (root / f"gefs_{member}.source.json").write_text(json.dumps(metadata(member)), encoding="utf-8")
+                import hashlib
+                payload = metadata(member)
+                payload["size_bytes"] = grib.stat().st_size
+                payload["sha256"] = hashlib.sha256(grib.read_bytes()).hexdigest()
+                (root / f"gefs_{member}.source.json").write_text(json.dumps(payload), encoding="utf-8")
                 paths.append(grib)
             self.assertEqual(set(load_gefs_member_metadata(paths)), {"c00", "p01"})
             sidecar = root / "gefs_p01.source.json"
