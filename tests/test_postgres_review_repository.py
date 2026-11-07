@@ -123,6 +123,7 @@ class PostgresReviewRepositoryTests(unittest.TestCase):
             "UPDATE weather.field SET quality_status = 'pending' WHERE field_id = %s",
             (self.field_id,),
         )
+        self.conn.commit()
         self._transition("assign", 1, actor_id="lead", role="review_lead", reviewer_id="forecaster")
         self._transition("open", 2)
         with self.assertRaises(ReviewWorkflowError):
