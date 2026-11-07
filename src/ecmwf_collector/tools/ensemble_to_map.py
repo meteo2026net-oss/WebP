@@ -38,6 +38,8 @@ def write_gefs_ensemble_map_products(
     ]
     probability_key = "probability_exceeding_threshold_percent"
     if probability_key in statistics:
+        if "threshold" not in statistics or not np.isfinite(float(statistics["threshold"])):
+            raise ValueError("GEFS exceedance probability requires a finite threshold value")
         fields.append((
             probability_key, "exceedance_probability",
             "GEFS probability of exceeding threshold", "%",
