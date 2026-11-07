@@ -189,3 +189,19 @@ def decode_gefs_ensemble_fields(
         "type_of_level": type_of_level,
         "level": level,
     }
+
+def calculate_gefs_ensemble_statistics(
+    grib_paths: Iterable[str | Path], *, short_name: str, type_of_level: str, level: float,
+    threshold: float | None = None, minimum_members: int = 2,
+) -> tuple[dict, dict]:
+    """Decode, validate and calculate statistics for one comparable GEFS field."""
+    from ecmwf_collector.ensemble_statistics import calculate_ensemble_statistics
+
+    member_fields, field_metadata = decode_gefs_ensemble_fields(
+        grib_paths, short_name=short_name, type_of_level=type_of_level, level=level,
+        minimum_members=minimum_members,
+    )
+    statistics = calculate_ensemble_statistics(
+        member_fields, threshold=threshold, minimum_members=minimum_members,
+    )
+    return statistics, field_metadata

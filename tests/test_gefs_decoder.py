@@ -8,7 +8,7 @@ import numpy as np
 
 from ecmwf_collector.gefs_decoder import (
     DecodedGefsField, GefsGribDecodeError, decode_gefs_ensemble_fields,
-    decode_gefs_grib_field,
+    decode_gefs_grib_field, calculate_gefs_ensemble_statistics,
 )
 
 class FakeValue:
@@ -83,6 +83,16 @@ class GefsDecoderTests(unittest.TestCase):
                 with self.assertRaisesRegex(GefsGribDecodeError, "longitude grid differs"):
                     decode_gefs_ensemble_fields(paths, short_name="t", type_of_level="heightAboveGround", level=2)
 
+    def test_integrated_statistics_run_only_after_decoder_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._make_members(Path(directory))
+            with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", side_effect=[[fake_field()], [fake_field()]]):
+                stats, metadata = calculate_gefs_ensemble_statistics(
+                    paths, short_name="t", type_of_level="heightAboveGround", level=2, threshold=271.0
+                )
+        np.testing.assert_allclose(stats["mean"], [[270.0, 271.0], [272.0, 273.0]])
+        np.testing.assert_allclose(stats["probability_exceeding_threshold_percent"], [[0.0, 0.0], [100.0, 100.0]])
+        self.assertEqual(metadata["units"], "K")
     def test_ensemble_rejects_unit_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = self._make_members(Path(directory))
