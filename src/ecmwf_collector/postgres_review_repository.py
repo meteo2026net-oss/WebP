@@ -1,4 +1,4 @@
-""""PostgreSQL persistence for forecaster review transitions.
+"""PostgreSQL persistence for forecaster review transitions.
 
 The caller MUST derive actor_id and role from a trusted server-side identity
 provider. Never pass client-supplied role claims directly to this repository.
