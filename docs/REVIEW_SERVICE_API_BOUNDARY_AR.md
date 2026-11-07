@@ -59,6 +59,7 @@ GRANT SELECT, UPDATE ON weather.review_case TO weather_review_service;
 GRANT SELECT, INSERT ON weather.review_event TO weather_review_service;
 GRANT USAGE, SELECT ON SEQUENCE weather.review_event_event_id_seq TO weather_review_service;
 GRANT SELECT ON weather.field TO weather_review_service;
+GRANT SELECT ON weather.publishable_field TO weather_review_service;
 GRANT USAGE ON SCHEMA weather TO weather_product_reader;
 GRANT SELECT ON weather.publishable_field TO weather_product_reader;
 ```

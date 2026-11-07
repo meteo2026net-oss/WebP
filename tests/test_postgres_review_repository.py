@@ -133,6 +133,15 @@ class PostgresReviewRepositoryTests(unittest.TestCase):
         self.assertEqual(unchanged.review_version, 3)
         self.assertEqual([event.event_type for event in unchanged.events], ["assigned", "opened"])
 
+    def test_field_cannot_have_two_current_review_cases(self):
+        from psycopg.errors import UniqueViolation
+        with self.assertRaises(UniqueViolation):
+            with psycopg.connect(DATABASE_URL) as conn:
+                conn.execute(
+                    "INSERT INTO weather.review_case(review_id, field_id) VALUES (%s, %s)",
+                    (str(uuid4()), self.field_id),
+                )
+
     def test_stale_version_is_rejected_without_extra_event(self):
         self._transition("assign", 1, actor_id="lead", role="review_lead", reviewer_id="forecaster")
         with self.assertRaises(ReviewConflictError):
