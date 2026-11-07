@@ -55,6 +55,20 @@ class ReviewApplicationServiceTests(unittest.TestCase):
         self.assertEqual(args.kwargs["role"], "reviewer")
         self.assertNotIn("actor_id", args.kwargs.get("payload", {}))
 
+    def test_publisher_can_read_only_publishable_fields(self):
+        self.identity.actor = AuthenticatedActor(subject="publisher-1", role="publisher")
+        self.repository.list_publishable_fields.return_value = []
+        self.service.list_publishable_fields()
+        self.repository.list_publishable_fields.assert_called_once_with(limit=500)
+        with self.assertRaises(ReviewPermissionError):
+            self.service.list_queue()
+        with self.assertRaises(ReviewPermissionError):
+            self.service.get_case("r-9")
+
+    def test_reviewer_cannot_read_publication_feed(self):
+        with self.assertRaises(ReviewPermissionError):
+            self.service.list_publishable_fields()
+
     def test_missing_trusted_actor_is_rejected(self):
         self.identity.actor = {"subject": "attacker", "role": "admin"}
         with self.assertRaises(ReviewPermissionError):

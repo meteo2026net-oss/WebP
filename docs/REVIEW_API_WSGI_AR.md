@@ -19,11 +19,13 @@ Install the server extras with `pip install -e ".[review-server]"`, then configu
 - `ECMWF_OIDC_JWKS_URL`: provider's HTTPS JWKS endpoint.
 - `ECMWF_OIDC_ROLE_CLAIM`: one claim containing a single role key (default `review_role`).
 - `ECMWF_OIDC_ROLE_MAPPING`: JSON mapping of IdP claim values to `reviewer`,
-  `review_lead`, or `admin`. Example:
+  `review_lead`, `publisher`, or `admin`. Example:
   `{"wx-forecaster":"reviewer","wx-chief":"review_lead","wx-platform-admin":"admin"}`.
 
-Do not copy the example role names into production unless they match groups
-provisioned and governed by the organization. The role mapping is deployment
+The `publisher` role is read-only: it may access only the QC-passed + approved
+publication feed, not review cases or workflow transitions. Reviewers cannot read
+the publication feed. Do not copy the example role names into production unless
+they match groups provisioned and governed by the organization. The role mapping is deployment
 configuration and must be managed as a secret/configuration asset, not sent by
 the client. Tokens are accepted only in `Authorization: Bearer`; cookie-based
 sessions and reverse-proxy identity headers are deliberately unsupported.

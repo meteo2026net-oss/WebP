@@ -59,14 +59,16 @@ class ReviewApplicationService:
     def get_case(self, review_id: UUID | str) -> ReviewCase:
         actor = self._actor()
         case = self._repository.get_case(review_id)
-        if actor.role not in {"review_lead", "admin"} and case.assigned_to != actor.subject:
-            raise ReviewPermissionError("case is not assigned to the authenticated reviewer")
+        if actor.role not in {"review_lead", "admin"} and (actor.role != "reviewer" or case.assigned_to != actor.subject):
+            raise ReviewPermissionError("actor is not authorized to access this review case")
         return case
 
     def list_queue(self, *, limit: int = 100) -> list[dict[str, Any]]:
         actor = self._actor()
         if actor.role in {"review_lead", "admin"}:
             return self._repository.list_queue(limit=limit)
+        if actor.role != "reviewer":
+            raise ReviewPermissionError("only reviewers and review leads may access the review queue")
         return self._repository.list_queue(assigned_to=actor.subject, limit=limit)
 
     def transition(
@@ -90,5 +92,7 @@ class ReviewApplicationService:
         )
 
     def list_publishable_fields(self, *, limit: int = 500) -> list[dict[str, Any]]:
-        self._actor()
+        actor = self._actor()
+        if actor.role not in {"publisher", "review_lead", "admin"}:
+            raise ReviewPermissionError("only publishers, review leads, or admins may read publishable fields")
         return self._repository.list_publishable_fields(limit=limit)

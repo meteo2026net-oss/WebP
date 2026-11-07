@@ -23,7 +23,7 @@ class ReviewConflictError(ReviewWorkflowError):
     """Raised when the caller's expected version is stale."""
 
 
-VALID_ROLES = frozenset({"reviewer", "review_lead", "admin"})
+VALID_ROLES = frozenset({"reviewer", "review_lead", "publisher", "admin"})
 TERMINAL_STATES = frozenset({"approved", "rejected"})
 
 
@@ -72,7 +72,7 @@ def _check_version(case: ReviewCase, expected_version: int) -> None:
 
 
 def _can_review(case: ReviewCase, actor: str, role: str) -> bool:
-    return role in {"review_lead", "admin"} or case.assigned_to == actor
+    return role in {"review_lead", "admin"} or (role == "reviewer" and case.assigned_to == actor)
 
 
 def assign_review(
