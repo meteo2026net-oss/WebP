@@ -47,7 +47,7 @@ class AppConfig:
     remember_password: bool = False  # الحفظ في keyring فقط
     selected_kinds: list = field(default_factory=lambda: list(KINDS))
     selected_cycles: list = field(default_factory=lambda: list(CYCLES))
-    max_parallel: int = 1            # اتصالات تنزيل متزامنة (متحفظ)
+    max_parallel: int = 3            # اتصالات تنزيل متزامنة (محدودة لتسريع النقل)
     min_free_gb: int = 5             # الحد الأدنى للمساحة الحرة المتروكة على القرص
 
     @staticmethod

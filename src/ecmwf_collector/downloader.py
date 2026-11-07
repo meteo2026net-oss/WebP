@@ -192,7 +192,7 @@ class RunResult:
 class DownloadManager:
     def __init__(self, settings: ConnectionSettings, state: StateStore, *,
                  factory=default_ftp_factory, sleep: Callable[[float], None] = time.sleep,
-                 max_parallel: int = 1, min_free_bytes: int = 0, blocksize: int = 256 * 1024,
+                 max_parallel: int = 3, min_free_bytes: int = 0, blocksize: int = 1024 * 1024,
                  on_progress: Callable[[Snapshot], None] | None = None, progress_interval: float = 0.25):
         self.settings, self.state, self.factory, self.sleep = settings, state, factory, sleep
         self.max_parallel = max(1, min(int(max_parallel), 3))

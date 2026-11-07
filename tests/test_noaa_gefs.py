@@ -105,6 +105,40 @@ class NoaaGefsTests(unittest.TestCase):
             self.assertEqual(len(list(Path(tmp).glob("*.grib2"))), 2)
             self.assertEqual(len(list(Path(tmp).glob("*.source.json"))), 2)
 
+    def test_ensemble_downloads_members_concurrently_with_bounded_workers(self):
+        import threading
+        import time
+        payload = b"GRIB" + b"x" * 128 + b"7777"
+        lock = threading.Lock()
+        active = {"now": 0, "peak": 0}
+
+        def opener(url, timeout):
+            with lock:
+                active["now"] += 1
+                active["peak"] = max(active["peak"], active["now"])
+            time.sleep(0.04)
+            with lock:
+                active["now"] -= 1
+            return FakeResponse(payload)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            completed, failed = download_gefs_ensemble(
+                self.request(), Path(tmp), members=("c00", "p01", "p02", "p03"),
+                max_workers=3, opener=opener,
+            )
+            self.assertEqual([row[0] for row in completed], ["c00", "p01", "p02", "p03"])
+            self.assertEqual(failed, [])
+            self.assertGreater(active["peak"], 1)
+            self.assertLessEqual(active["peak"], 3)
+
+    def test_ensemble_rejects_unsafe_worker_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for workers in (0, 9, True):
+                with self.subTest(workers=workers), self.assertRaises(NoaaGefsError):
+                    download_gefs_ensemble(
+                        self.request(), Path(tmp), members=("c00",), max_workers=workers,
+                    )
+
     def test_ensemble_manifest_records_partial_batch_without_claiming_statistics(self):
         with tempfile.TemporaryDirectory() as tmp:
             request = self.request()

@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         self.min_free = QSpinBox()
         self.min_free.setRange(0, 100000)
         self.min_free.setSuffix(" GB")
-        dform.addRow("تنزيلات متزامنة (يُنصح 1)", self.parallel)
+        dform.addRow("تنزيلات متزامنة (يُنصح 3)", self.parallel)
         dform.addRow("مساحة حرة تُترك على القرص", self.min_free)
         act = QHBoxLayout()
         self.btn_preview = QPushButton("معاينة الخطة")
@@ -752,6 +752,10 @@ class MainWindow(QMainWindow):
         self.gefs_variables.setPlaceholderText("TMP,UGRD,VGRD")
         self.gefs_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
         self.gefs_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.gefs_parallel = QSpinBox()
+        self.gefs_parallel.setRange(1, 8)
+        self.gefs_parallel.setValue(4)
+        self.gefs_parallel.setToolTip("عدد أعضاء GEFS التي تُنزّل بالتوازي؛ ابدأ بـ 4 وخفّضه عند بطء الخادم.")
         self.gefs_all_members = QCheckBox("تنزيل المجموعة كاملة (c00 و p01–p30) — قد يستغرق وقتاً ومساحة كبيرة")
         self.gefs_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
         choose = QPushButton("اختيار مجلد…")
@@ -765,6 +769,7 @@ class MainWindow(QMainWindow):
         form.addRow("ساعة التنبؤ", self.gefs_forecast_hour)
         form.addRow("المتغيرات", self.gefs_variables)
         form.addRow("المستويات", self.gefs_levels)
+        form.addRow("تنزيلات GEFS المتزامنة", self.gefs_parallel)
         form.addRow("مجلد الحفظ", output_row)
         layout.addLayout(form)
         layout.addWidget(self.gefs_all_members)
@@ -841,7 +846,8 @@ class MainWindow(QMainWindow):
         def work():
             if download_all:
                 completed, failed = download_gefs_ensemble(
-                    request, output, members=requested_members
+                    request, output, members=requested_members,
+                    max_workers=self.gefs_parallel.value()
                 )
             else:
                 grib, metadata = download_gefs(request, output)

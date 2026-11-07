@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -161,25 +162,39 @@ def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 12
 def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
                            members: tuple[str, ...] | None = None,
                            timeout: float = 120,
+                           max_workers: int = 4,
                            opener=urllib.request.urlopen
                            ) -> tuple[list[tuple[str, Path, Path]], list[tuple[str, str]]]:
-    """Download selected members sequentially and retain individual outcomes."""
+    """Download independent GEFS members concurrently with bounded connections."""
     selected = members or ("c00", *(f"p{number:02d}" for number in range(1, 31)))
     if len(set(selected)) != len(selected):
         raise NoaaGefsError("قائمة أعضاء GEFS تحتوي على تكرار")
+    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or not 1 <= max_workers <= 8:
+        raise NoaaGefsError("عدد تنزيلات GEFS المتزامنة يجب أن يكون بين 1 و8")
     for member in selected:
         replace(request, member=member).validate()
-    completed: list[tuple[str, Path, Path]] = []
-    failed: list[tuple[str, str]] = []
-    for member in selected:
+
+    def download_member(member):
         try:
             grib, metadata = download_gefs(
                 replace(request, member=member), output_dir,
                 timeout=timeout, opener=opener,
             )
-            completed.append((member, grib, metadata))
+            return (member, grib, metadata), None
         except Exception as exc:
-            failed.append((member, f"{type(exc).__name__}: {exc}"))
+            return None, (member, f"{type(exc).__name__}: {exc}")
+
+    completed: list[tuple[str, Path, Path]] = []
+    failed: list[tuple[str, str]] = []
+    # executor.map preserves requested member order in the manifest while the
+    # network transfers themselves run concurrently.
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(selected) or 1),
+                            thread_name_prefix="gefs-download") as pool:
+        for success, error in pool.map(download_member, selected):
+            if success is not None:
+                completed.append(success)
+            if error is not None:
+                failed.append(error)
     return completed, failed
 
 
