@@ -96,6 +96,14 @@ def decode_gefs_grib_field(
     grib_path: str | Path, *, short_name: str, type_of_level: str, level: float
 ) -> DecodedGefsField:
     """Decode one exact GRIB field; caller supplies ecCodes shortName and level keys."""
+    if not short_name.strip() or not type_of_level.strip():
+        raise GefsGribDecodeError("short_name and type_of_level must be non-empty")
+    try:
+        level = float(level)
+    except (TypeError, ValueError) as exc:
+        raise GefsGribDecodeError(f"invalid GRIB level: {level}") from exc
+    if not np.isfinite(level):
+        raise GefsGribDecodeError(f"GRIB level must be finite: {level}")
     path = Path(grib_path)
     datasets = _open_cfgrib_datasets(path)
     try:
@@ -215,6 +223,13 @@ def calculate_gefs_ensemble_statistics(
     """Decode, validate and calculate statistics for one comparable GEFS field."""
     from ecmwf_collector.ensemble_statistics import calculate_ensemble_statistics
 
+    if threshold is not None:
+        try:
+            threshold = float(threshold)
+        except (TypeError, ValueError) as exc:
+            raise GefsGribDecodeError(f"invalid probability threshold: {threshold}") from exc
+        if not np.isfinite(threshold):
+            raise GefsGribDecodeError("probability threshold must be finite")
     member_fields, field_metadata = decode_gefs_ensemble_fields(
         grib_paths, short_name=short_name, type_of_level=type_of_level, level=level,
         minimum_members=minimum_members,

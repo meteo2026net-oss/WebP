@@ -68,6 +68,12 @@ class GefsDecoderTests(unittest.TestCase):
             with self.assertRaisesRegex(GefsGribDecodeError, "whole number of hours"):
                 decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
 
+    def test_rejects_non_finite_requested_level(self):
+        dataset = fake_field()
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "must be finite"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=float("nan"))
+
     def test_rejects_missing_exact_field(self):
         dataset = fake_field()
         with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):

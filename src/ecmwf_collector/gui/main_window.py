@@ -878,6 +878,8 @@ class MainWindow(QMainWindow):
             threshold = float(threshold_text) if threshold_text else None
             if not short_name or not type_of_level:
                 raise ValueError("أدخل shortName و typeOfLevel.")
+            if not np.isfinite(level) or (threshold is not None and not np.isfinite(threshold)):
+                raise ValueError("يجب أن يكون المستوى والعتبة أرقاماً محدودة وليست NaN أو Infinity.")
         except ValueError as exc:
             QMessageBox.warning(self, "إعدادات تحليل GEFS غير صالحة", str(exc))
             return
@@ -891,6 +893,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "عدد الأعضاء غير كافٍ", "يلزم اختيار عضوين على الأقل.")
             return
 
+        output_root = Path(self.gefs_output.text().strip() or Path(paths[0]).parent).expanduser()
         self.btn_gefs_analyze.setEnabled(False)
         self.gefs_status.setPlainText("جارٍ فك حقول GRIB والتحقق من تطابق الأعضاء والشبكة والوحدات…")
 
@@ -902,7 +905,6 @@ class MainWindow(QMainWindow):
                 paths, short_name=short_name, type_of_level=type_of_level,
                 level=level, threshold=threshold,
             )
-            output_root = Path(self.gefs_output.text().strip() or paths[0]).expanduser()
             if output_root.suffix:
                 output_root = output_root.parent
             output_dir = output_root / "GEFS_Analysis"
