@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import posixpath
 import socket
 import subprocess
@@ -878,7 +879,7 @@ class MainWindow(QMainWindow):
             threshold = float(threshold_text) if threshold_text else None
             if not short_name or not type_of_level:
                 raise ValueError("أدخل shortName و typeOfLevel.")
-            if not np.isfinite(level) or (threshold is not None and not np.isfinite(threshold)):
+            if not math.isfinite(level) or (threshold is not None and not math.isfinite(threshold)):
                 raise ValueError("يجب أن يكون المستوى والعتبة أرقاماً محدودة وليست NaN أو Infinity.")
         except ValueError as exc:
             QMessageBox.warning(self, "إعدادات تحليل GEFS غير صالحة", str(exc))
