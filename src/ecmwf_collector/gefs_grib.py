@@ -64,7 +64,7 @@ def validate_gefs_member_metadata(metadata_by_member: dict[str, dict], *, minimu
         elif current != signature:
             labels = ("source", "model", "run", "valid_time", "forecast_hour", "resolution", "variables", "levels")
             mismatch = [label for label, left, right in zip(labels, signature, current) if left != right]
-            raise GefsMemberMetadataError(f"{member} is not comparable with the other members; mismatched: {", ".join(mismatch)}")
+            raise GefsMemberMetadataError(f"{member} is not comparable with the other members; mismatched: {chr(44).join(mismatch)}")
         validated[member] = metadata
     return validated
 
