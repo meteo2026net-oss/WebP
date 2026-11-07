@@ -29,6 +29,7 @@ class GefsEnsembleMapTests(unittest.TestCase):
             "spread": np.array([[1.0, 1.5], [2.0, 2.5]]),
             "member_count": np.full((2, 2), 2),
             "probability_exceeding_threshold_percent": np.array([[0.0, 50.0], [50.0, 100.0]]),
+            "threshold": 271.0,
         }
         return stats, field
 
@@ -42,7 +43,7 @@ class GefsEnsembleMapTests(unittest.TestCase):
             self.assertEqual(len(products), 3)
             self.assertEqual(len(manifest["layers"]), 3)
             probability = next(item for item in products if item["variable"] == "exceedance_probability")
-            self.assertEqual(probability["threshold"], None)
+            self.assertEqual(probability["threshold"], 271.0)
             self.assertEqual(probability["threshold_comparison"], "strictly greater than")
             self.assertEqual(
                 {item["variable"] for item in products},
