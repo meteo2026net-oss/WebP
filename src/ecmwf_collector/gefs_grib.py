@@ -40,6 +40,10 @@ def validate_gefs_member_metadata(metadata_by_member: dict[str, dict], *, minimu
             raise GefsMemberMetadataError(f"invalid GEFS member identifier: {member}")
         if not isinstance(metadata, dict):
             raise GefsMemberMetadataError(f"metadata for {member} must be an object")
+        if str(metadata.get("member") or "") != str(member):
+            raise GefsMemberMetadataError(
+                f"metadata member identifier does not match mapping key {member}"
+            )
         if metadata.get("model") != "GEFS":
             raise GefsMemberMetadataError(f"{member} is not labelled as GEFS")
         if metadata.get("source") != "NOAA/NCEP NOMADS":

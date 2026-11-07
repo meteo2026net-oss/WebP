@@ -19,6 +19,13 @@ class GefsMetadataGateTests(unittest.TestCase):
         result = validate_gefs_member_metadata({"c00": metadata("c00"), "p01": metadata("p01", variables=["UGRD", "TMP"])})
         self.assertEqual(set(result), {"c00", "p01"})
 
+    def test_rejects_metadata_member_key_mismatch(self):
+        with self.assertRaisesRegex(GefsMemberMetadataError, "identifier does not match"):
+            validate_gefs_member_metadata({
+                "c00": metadata("p01"),
+                "p01": metadata("c00"),
+            })
+
     def test_rejects_different_run_or_valid_time(self):
         with self.assertRaisesRegex(GefsMemberMetadataError, "run"):
             validate_gefs_member_metadata({"c00": metadata("c00"), "p01": metadata("p01", run="20261107T06:00:00Z")})
