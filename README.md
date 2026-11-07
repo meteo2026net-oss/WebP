@@ -84,3 +84,14 @@ The RGB WebP wind texture uses 8-bit quantization. Lossless WebP preserves encod
 PostgreSQL backup tool discovery: on Windows, the application automatically searches standard EnterpriseDB installation folders under `Program Files/PostgreSQL/<version>/bin`, then falls back to `PATH`. Explicit `ECMWF_PG_DUMP` and `ECMWF_PG_RESTORE` environment overrides remain supported.
 
 Each PostgreSQL custom-format dump is accompanied by a JSON sidecar containing the database name, UTC creation time, archive size, and SHA-256 digest. Use `validate_postgres_backup_manifest(path)` to verify the archive before transfer or recovery; rotation removes the matching sidecar together with its dump.
+
+## Forecaster review API status
+
+The repository includes an executable WSGI REST adapter, application service,
+and PostgreSQL review repository. See the [WSGI API guide](docs/REVIEW_API_WSGI_AR.md)
+and [service/security boundary](docs/REVIEW_SERVICE_API_BOUNDARY_AR.md).
+
+The adapter is tested as a WSGI component, but it is not a deployed service:
+a production identity provider, live review database, connection-pool
+configuration, deployment controls, and forecaster UI integration remain
+outstanding. Do not expose it publicly before those controls are implemented.
