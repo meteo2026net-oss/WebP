@@ -59,6 +59,7 @@ class GefsEnsembleMapTests(unittest.TestCase):
     def test_rejects_statistics_that_do_not_match_geolocation(self):
         stats, field = self._inputs()
         stats["mean"] = np.ones((3, 3))
+        stats["spread"] = np.ones((3, 3))
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, "does not match grid"):
                 write_gefs_ensemble_map_products(stats, field, tmp)
