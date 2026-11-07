@@ -93,7 +93,7 @@ class NoaaGefsTests(unittest.TestCase):
     def test_batch_download_records_success_and_member_failure(self):
         payload = b"GRIB" + b"x" * 128 + b"7777"
         def opener(url, timeout):
-            if "gep02." in url:
+            if "gep02." in url.full_url:
                 raise OSError("simulated member outage")
             return FakeResponse(payload)
         with tempfile.TemporaryDirectory() as tmp:

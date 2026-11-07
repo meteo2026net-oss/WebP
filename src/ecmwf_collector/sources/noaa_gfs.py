@@ -11,7 +11,7 @@ import re
 import urllib.parse
 import urllib.request
 
-from .http_resume import clear_resume_state, download_resumable
+from .http_resume import clear_resume_state, download_resumable_with_retry
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -113,7 +113,7 @@ def download_gfs(request: GfsRequest, output_dir: Path, *, timeout: float = 90,
     final_path=output_dir/f"{stem}.grib2"; metadata_path=output_dir/f"{stem}.source.json"
     part_path=output_dir/f"{stem}.grib2.part"
     try:
-        digest_hex=download_resumable(url,part_path,timeout=timeout,opener=opener)
+        digest_hex=download_resumable_with_retry(url,part_path,timeout=timeout,opener=opener)
         _verify_grib2(part_path); os.replace(part_path,final_path); clear_resume_state(part_path)
     except Exception as exc:
         if isinstance(exc,NoaaGfsError): clear_resume_state(part_path); raise

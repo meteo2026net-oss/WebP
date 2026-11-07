@@ -1,11 +1,14 @@
-"""Resumable HTTP downloads with validator-aware byte ranges."""
+"""Resumable HTTP downloads with validator-aware byte ranges and retry policy."""
 from __future__ import annotations
-import hashlib, json, os, re, urllib.request
+import hashlib, json, os, re, time, urllib.error, urllib.request
 from pathlib import Path
+
 class HttpResumeError(RuntimeError):
     """Unsafe or inconsistent HTTP range response."""
+
 def _headers(response):
     return getattr(response, "headers", {}) or {}
+
 def download_resumable(url: str, part_path: Path, *, timeout: float,
                        opener=urllib.request.urlopen, chunk_size: int = 1024 * 1024) -> str:
     part_path=Path(part_path); checkpoint=part_path.with_suffix(part_path.suffix+".resume.json")
@@ -55,6 +58,28 @@ def download_resumable(url: str, part_path: Path, *, timeout: float,
         length=_headers(response).get("Content-Length")
         if length and part_path.stat().st_size!=int(length): raise HttpResumeError("Content-Length mismatch")
     return digest.hexdigest()
+
+def download_resumable_with_retry(url: str, part_path: Path, *, timeout: float,
+        opener=urllib.request.urlopen, max_attempts: int=5, base_delay: float=1.0,
+        max_delay: float=30.0, sleeper=time.sleep, on_retry=None) -> str:
+    """Retry transient transport and HTTP 408/429/5xx failures with bounded backoff."""
+    if isinstance(max_attempts,bool) or not isinstance(max_attempts,int) or max_attempts<1:
+        raise ValueError("max_attempts must be a positive integer")
+    if base_delay<0 or max_delay<0: raise ValueError("retry delays cannot be negative")
+    for attempt in range(1,max_attempts+1):
+        try:
+            return download_resumable(url,part_path,timeout=timeout,opener=opener)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {408,429,500,502,503,504} or attempt==max_attempts: raise
+            error=exc
+        except (urllib.error.URLError,TimeoutError,ConnectionError,OSError) as exc:
+            if attempt==max_attempts: raise
+            error=exc
+        delay=min(max_delay,base_delay*(2**(attempt-1)))
+        if on_retry is not None: on_retry(attempt,max_attempts,delay,error)
+        sleeper(delay)
+    raise RuntimeError("unreachable retry state")
+
 def clear_resume_state(part_path: Path) -> None:
     part_path=Path(part_path); part_path.unlink(missing_ok=True)
     part_path.with_suffix(part_path.suffix+".resume.json").unlink(missing_ok=True)
