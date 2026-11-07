@@ -7,6 +7,7 @@ in the GRIB decoding layer.
 from __future__ import annotations
 import json
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
@@ -56,13 +57,42 @@ def validate_gefs_member_metadata(metadata_by_member: dict[str, dict], *, minimu
         required = (metadata.get("run"), metadata.get("valid_time"), metadata.get("forecast_hour"), metadata.get("resolution"))
         if any(value is None or value == "" for value in required):
             raise GefsMemberMetadataError(f"{member} is missing forecast identity metadata")
+        raw_forecast_hour = metadata["forecast_hour"]
+        if isinstance(raw_forecast_hour, bool):
+            raise GefsMemberMetadataError(f"{member} has invalid forecast_hour")
         try:
-            forecast_hour = int(metadata["forecast_hour"])
+            numeric_forecast_hour = float(raw_forecast_hour)
         except (TypeError, ValueError) as exc:
             raise GefsMemberMetadataError(f"{member} has invalid forecast_hour") from exc
-        current = (metadata["source"], metadata["model"], metadata["run"], metadata["valid_time"],
-                   forecast_hour, metadata["resolution"], tuple(sorted(map(str, variables))),
-                   tuple(sorted(map(str, levels))))
+        if (not numeric_forecast_hour.is_integer()) or numeric_forecast_hour < 0:
+            raise GefsMemberMetadataError(
+                f"{member} forecast_hour must be a non-negative whole number"
+            )
+        forecast_hour = int(numeric_forecast_hour)
+        try:
+            run_text = str(metadata["run"])
+            valid_text = str(metadata["valid_time"])
+            run_dt = datetime.fromisoformat(run_text.replace("Z", "+00:00"))
+            valid_dt = datetime.fromisoformat(valid_text.replace("Z", "+00:00"))
+            if run_dt.tzinfo is None or valid_dt.tzinfo is None:
+                raise ValueError("timestamps must include a UTC offset")
+            run_utc = run_dt.utcoffset()
+            valid_utc = valid_dt.utcoffset()
+            if run_utc is None or valid_utc is None:
+                raise ValueError("timestamps must include a UTC offset")
+            if valid_dt.astimezone(run_dt.tzinfo) != run_dt + timedelta(hours=forecast_hour):
+                raise GefsMemberMetadataError(
+                    f"{member} valid_time does not match run plus forecast_hour"
+                )
+        except GefsMemberMetadataError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise GefsMemberMetadataError(
+                f"{member} has invalid run/valid_time metadata: {exc}"
+            ) from exc
+        current = (metadata["source"], metadata["model"], run_dt.astimezone().isoformat(),
+                   valid_dt.astimezone().isoformat(), forecast_hour, metadata["resolution"],
+                   tuple(sorted(map(str, variables))), tuple(sorted(map(str, levels))))
         if signature is None:
             signature = current
         elif current != signature:

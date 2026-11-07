@@ -30,6 +30,28 @@ class GefsMetadataGateTests(unittest.TestCase):
         with self.assertRaisesRegex(GefsMemberMetadataError, "run"):
             validate_gefs_member_metadata({"c00": metadata("c00"), "p01": metadata("p01", run="20261107T06:00:00Z")})
 
+    def test_rejects_fractional_or_negative_forecast_hour(self):
+        for hour in (24.5, -1):
+            with self.subTest(hour=hour), self.assertRaises(GefsMemberMetadataError):
+                validate_gefs_member_metadata({
+                    "c00": metadata("c00", forecast_hour=hour),
+                    "p01": metadata("p01", forecast_hour=hour),
+                })
+
+    def test_rejects_valid_time_not_matching_run_and_forecast_hour(self):
+        with self.assertRaisesRegex(GefsMemberMetadataError, "valid_time does not match"):
+            validate_gefs_member_metadata({
+                "c00": metadata("c00", valid_time="2026-11-08T01:00:00Z"),
+                "p01": metadata("p01", valid_time="2026-11-08T01:00:00Z"),
+            })
+
+    def test_rejects_timestamps_without_timezone(self):
+        with self.assertRaisesRegex(GefsMemberMetadataError, "invalid run/valid_time"):
+            validate_gefs_member_metadata({
+                "c00": metadata("c00", run="2026-11-07T00:00:00"),
+                "p01": metadata("p01", run="2026-11-07T00:00:00"),
+            })
+
     def test_rejects_different_variable_or_level_definition(self):
         with self.assertRaisesRegex(GefsMemberMetadataError, "variables"):
             validate_gefs_member_metadata({"c00": metadata("c00"), "p01": metadata("p01", variables=["TMP"])})
