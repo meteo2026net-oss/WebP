@@ -88,8 +88,12 @@ def assign_review(
         raise ReviewWorkflowError("terminal review cases cannot be reassigned")
     if case.status not in {"pending", "in_review", "changes_requested"}:
         raise ReviewWorkflowError(f"cannot assign a case in state {case.status!r}")
+    if case.status == "changes_requested":
+        case.status = "pending"
+        case.decided_by = None
+        case.decided_at = None
+        case.decision_reason = None
     case.assigned_to = reviewer
-    case.status = "pending" if case.status == "changes_requested" else case.status
     case.review_version += 1
     case.events.append(ReviewEvent(actor, "assigned", annotation={"reviewer_id": reviewer}))
     return case
