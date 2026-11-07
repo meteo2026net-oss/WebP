@@ -105,9 +105,17 @@ def decode_gefs_grib_field(
         values = np.asarray(variable.values, dtype=np.float64)
         if latitude.size == 0 or longitude.size == 0 or values.size == 0:
             raise GefsGribDecodeError(f"decoded field is empty: {path.name}")
-        if values.shape[-2:] != (latitude.size, longitude.size):
+        if latitude.ndim == 1 and longitude.ndim == 1:
+            expected_grid_shape = (latitude.size, longitude.size)
+        elif latitude.shape == longitude.shape and latitude.ndim == 2:
+            expected_grid_shape = latitude.shape
+        else:
             raise GefsGribDecodeError(
-                f"field/grid shape mismatch in {path.name}: {values.shape} vs {latitude.shape}/{longitude.shape}"
+                f"unsupported latitude/longitude coordinate shapes in {path.name}: {latitude.shape}/{longitude.shape}"
+            )
+        if values.shape[-2:] != expected_grid_shape:
+            raise GefsGribDecodeError(
+                f"field/grid shape mismatch in {path.name}: {values.shape} vs {expected_grid_shape}"
             )
         units = str(variable.attrs.get("units") or "").strip()
         if not units:
