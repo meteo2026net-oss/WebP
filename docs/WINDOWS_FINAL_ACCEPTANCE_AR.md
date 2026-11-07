@@ -69,12 +69,13 @@
 
 يُعد الإصدار مقبولاً ميدانياً بعد نجاح الأقسام المناسبة أعلاه على جهاز Windows مستقل، مع نجاح اتصال ECMWF الحقيقي وتجربة PostgreSQL على قاعدة اختبار منفصلة عند تفعيل هذا الخيار. نجاح CI يثبت البناء والاختبارات الآلية وتشغيل EXE وخادم الخرائط على runner، لكنه لا يثبت صلاحية بيانات اعتماد المستخدم أو الوصول إلى خادم ECMWF أو إعداد PostgreSQL على جهازه.
 
-## أحدث حزمة تم التحقق منها — 6 نوفمبر 2026
+## أحدث حزمة تم التحقق منها — 7 نوفمبر 2026
 
-- Commit: `9337c500c4061f8e6696e24b10a58acc91012be4`.
-- Windows build: [Run 42292635305](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305) — نجاح كامل، بما في ذلك بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
-- Python tests: [Run 42292635419](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635419) — **323 اختبار وحدة ناجحاً**.
-- Artifact: `ECMWFWebP-Windows-x64`, ID `13539074610`, size `150702869` bytes, ZIP SHA-256 `98919303a180d2c5e78406135ecb1a4a2bee6bbff41e3e6f7c4e5a1e4b32ee90`.
-- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42292635305/artifacts/13539074610).
+- Commit: `67e677a79ce5da6063960e811b99af1b1b308c44`.
+- Windows build: [Run 42421044334](https://github.com/meteo2026net-oss/WebP/actions/runs/42421044334) — نجاح كامل، بما في ذلك بناء EXE، تشغيل الحزمة، preflight، التحقق من manifest والبصمات، ورفع artifact.
+- Python tests: [Run 42421044338](https://github.com/meteo2026net-oss/WebP/actions/runs/42421044338) — نجاح كامل.
+- Artifact: `ECMWFWebP-Windows-x64`, ID `13594150888`, size `150983026` bytes, ZIP SHA-256 `d41dab59e0a8d2c8f8ce86e91923bfb4aff638627c30f46c93a5b0bb19af059c`.
+- فحص مستقل للأرشيف: 3,024 ملفاً؛ تغطية manifest كاملة، ولا توجد ملفات ناقصة أو زائدة أو اختلافات SHA-256. رأس EXE هو PE x64.
+- [فتح الحزمة وتنزيلها](https://github.com/meteo2026net-oss/WebP/actions/runs/42421044334/artifacts/13594150888).
 
-هذه هي الحزمة الأحدث على commit المذكور. نجاح CI لا يستبدل الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
+هذه الحزمة الأحدث على commit المذكور. فحص الأرشيف ونجاح CI لا يستبدلان الاختبار الميداني على جهاز Windows ولا اتصال ECMWF الحقيقي أو تجربة PostgreSQL على قاعدة منفصلة.
