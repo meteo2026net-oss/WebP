@@ -71,9 +71,21 @@ def _as_utc_string(value) -> str:
 
 def _step_hours(value) -> int:
     if isinstance(value, np.timedelta64):
-        return int(value / np.timedelta64(1, "h"))
-    if hasattr(value, "total_seconds"):
-        return int(value.total_seconds() // 3600)
+        seconds = float(value / np.timedelta64(1, "s"))
+    elif hasattr(value, "total_seconds"):
+        seconds = float(value.total_seconds())
+    else:
+        try:
+            hours = float(value)
+        except (TypeError, ValueError) as exc:
+            raise GefsGribDecodeError(f"invalid GRIB forecast step: {value}") from exc
+        if not np.isfinite(hours) or not hours.is_integer():
+            raise GefsGribDecodeError(f"forecast step must be a whole number of hours: {value}")
+        return int(hours)
+    hours = seconds / 3600.0
+    if not np.isfinite(hours) or not hours.is_integer():
+        raise GefsGribDecodeError(f"forecast step must be a whole number of hours: {value}")
+    return int(hours)
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
@@ -105,6 +117,12 @@ def decode_gefs_grib_field(
         values = np.asarray(variable.values, dtype=np.float64)
         if latitude.size == 0 or longitude.size == 0 or values.size == 0:
             raise GefsGribDecodeError(f"decoded field is empty: {path.name}")
+        if values.ndim != 2:
+            raise GefsGribDecodeError(
+                f"expected a two-dimensional horizontal field in {path.name}; received shape {values.shape}"
+            )
+        if not np.all(np.isfinite(latitude)) or not np.all(np.isfinite(longitude)):
+            raise GefsGribDecodeError(f"latitude/longitude coordinates contain non-finite values: {path.name}")
         if latitude.ndim == 1 and longitude.ndim == 1:
             expected_grid_shape = (latitude.size, longitude.size)
         elif latitude.shape == longitude.shape and latitude.ndim == 2:

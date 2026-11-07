@@ -47,6 +47,27 @@ class GefsDecoderTests(unittest.TestCase):
         self.assertEqual(result.valid_time, "2026-11-08T00:00:00Z")
         self.assertTrue(dataset.closed)
 
+    def test_rejects_extra_non_horizontal_dimensions(self):
+        dataset = fake_field()
+        dataset.data_vars["field"].values = np.zeros((1, 2, 2))
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "two-dimensional horizontal field"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
+
+    def test_rejects_non_finite_grid_coordinates(self):
+        dataset = fake_field()
+        dataset.coords["latitude"].values[0, 0] = np.nan
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "non-finite"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
+
+    def test_rejects_fractional_forecast_hour(self):
+        dataset = fake_field()
+        dataset.coords["step"].values = np.asarray(np.timedelta64(90, "m"))
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "whole number of hours"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
+
     def test_rejects_missing_exact_field(self):
         dataset = fake_field()
         with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
