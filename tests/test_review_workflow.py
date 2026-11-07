@@ -21,7 +21,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                        expected_version=3)
         decide_review(self.case, actor_id="forecaster", role="reviewer",
                       decision="approved", reason="Quality and synoptic checks passed",
-                      expected_version=4)
+                      expected_version=4, quality_status="passed")
         self.assertEqual(self.case.status, "approved")
         self.assertEqual(self.case.review_version, 5)
         self.assertEqual([e.event_type for e in self.case.events],
@@ -50,7 +50,12 @@ class ReviewWorkflowTests(unittest.TestCase):
         open_review(self.case, actor_id="r", role="reviewer", expected_version=2)
         with self.assertRaises(ReviewWorkflowError):
             decide_review(self.case, actor_id="r", role="reviewer",
-                          decision="approved", reason=" ", expected_version=3)
+                          decision="approved", reason=" ", expected_version=3,
+                          quality_status="passed")
+        with self.assertRaises(ReviewWorkflowError):
+            decide_review(self.case, actor_id="r", role="reviewer",
+                          decision="approved", reason="Looks acceptable",
+                          expected_version=3, quality_status="pending")
 
     def test_changes_requested_can_be_reopened_with_new_assignment(self):
         assign_review(self.case, actor_id="lead", role="review_lead",

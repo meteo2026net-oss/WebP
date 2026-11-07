@@ -130,7 +130,7 @@ def comment_review(
 
 def decide_review(
     case: ReviewCase, *, actor_id: str, role: str, decision: str,
-    reason: str, expected_version: int,
+    reason: str, expected_version: int, quality_status: str | None = None,
 ) -> ReviewCase:
     actor, role = _authorize(actor_id, role)
     _check_version(case, expected_version)
@@ -146,6 +146,10 @@ def decide_review(
     }
     if decision not in transitions:
         raise ReviewWorkflowError(f"unsupported decision: {decision!r}")
+    if decision == "approved" and quality_status != "passed":
+        raise ReviewWorkflowError(
+            "approval requires server-verified automated quality_status='passed'"
+        )
     case.status = transitions[decision]
     case.review_version += 1
     case.decided_by = actor
