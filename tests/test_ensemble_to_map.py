@@ -41,6 +41,9 @@ class GefsEnsembleMapTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(len(products), 3)
             self.assertEqual(len(manifest["layers"]), 3)
+            probability = next(item for item in products if item["variable"] == "exceedance_probability")
+            self.assertEqual(probability["threshold"], None)
+            self.assertEqual(probability["threshold_comparison"], "strictly greater than")
             self.assertEqual(
                 {item["variable"] for item in products},
                 {"ensemble_mean", "ensemble_spread", "exceedance_probability"},
