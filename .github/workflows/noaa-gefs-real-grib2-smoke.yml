@@ -24,13 +24,13 @@ on:
         required: true
         default: "TMP"
         type: choice
-        options: ["TMP", "UGRD", "VGRD", "PRMSL", "APCP"]
+        options: ["TMP", "UGRD", "VGRD"]
       level:
         description: "NOMADS level"
         required: true
         default: "2_m_above_ground"
         type: choice
-        options: ["2_m_above_ground", "10_m_above_ground", "surface", "mean_sea_level"]
+        options: ["2_m_above_ground", "10_m_above_ground"]
 
 permissions:
   contents: read
@@ -95,11 +95,8 @@ jobs:
 
           mapping = {
               ("TMP", "2_m_above_ground"): ("2t", "heightAboveGround", 2),
-              ("TMP", "10_m_above_ground"): ("2t", "heightAboveGround", 2),
               ("UGRD", "10_m_above_ground"): ("10u", "heightAboveGround", 10),
               ("VGRD", "10_m_above_ground"): ("10v", "heightAboveGround", 10),
-              ("PRMSL", "mean_sea_level"): ("msl", "meanSea", 0),
-              ("APCP", "surface"): ("tp", "surface", 0),
           }
           try:
               short_name, type_of_level, level_value = mapping[(variable, level_name)]
