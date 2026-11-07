@@ -107,6 +107,7 @@ class ReviewWsgiApiTests(unittest.TestCase):
             "REQUEST_METHOD": "POST",
             "PATH_INFO": "/api/v1/reviews/r1/open",
             "CONTENT_LENGTH": "1048577",
+            "CONTENT_TYPE": "application/json",
             "wsgi.input": io.BytesIO(body),
         }
         captured = {}
