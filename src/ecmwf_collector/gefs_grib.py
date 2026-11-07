@@ -7,7 +7,7 @@ in the GRIB decoding layer.
 from __future__ import annotations
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -90,8 +90,8 @@ def validate_gefs_member_metadata(metadata_by_member: dict[str, dict], *, minimu
             raise GefsMemberMetadataError(
                 f"{member} has invalid run/valid_time metadata: {exc}"
             ) from exc
-        current = (metadata["source"], metadata["model"], run_dt.astimezone().isoformat(),
-                   valid_dt.astimezone().isoformat(), forecast_hour, metadata["resolution"],
+        current = (metadata["source"], metadata["model"], run_dt.astimezone(timezone.utc).isoformat(),
+                   valid_dt.astimezone(timezone.utc).isoformat(), forecast_hour, metadata["resolution"],
                    tuple(sorted(map(str, variables))), tuple(sorted(map(str, levels))))
         if signature is None:
             signature = current
