@@ -44,7 +44,7 @@ role. The grant script is intentionally limited to these capabilities:
 - schema `weather`: USAGE;
 - `review_case`: SELECT and UPDATE;
 - `review_event`: SELECT and INSERT;
-- `field`: SELECT (review queue and approval quality check);
+- `field`: column-level SELECT on `field_id`, `quality_status`, `valid_time`, and `forecast_hour` only;
 - `publishable_field`: SELECT only.
 
 Do not grant the API login ownership, schema CREATE, superuser, role/database
