@@ -45,6 +45,7 @@ class GefsEnsembleMapTests(unittest.TestCase):
             probability = next(item for item in products if item["variable"] == "exceedance_probability")
             self.assertEqual(probability["threshold"], 271.0)
             self.assertEqual(probability["threshold_comparison"], "strictly greater than")
+            self.assertEqual(probability["threshold_units"], "K")
             self.assertEqual(
                 {item["variable"] for item in products},
                 {"ensemble_mean", "ensemble_spread", "exceedance_probability"},

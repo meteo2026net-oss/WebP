@@ -112,7 +112,7 @@
       "وحدة العرض: " + (entry.display_units || entry.units || "غير معروفة"),
       "وقت الصلاحية: " + (entry.valid_time || "غير محدد"),
       entry.threshold != null
-        ? "احتمال تجاوز قيمة أكبر من " + entry.threshold + " " + (entry.source_units || entry.units || "")
+        ? "احتمال تجاوز قيمة أكبر من " + entry.threshold + " " + (entry.threshold_units || entry.source_units || entry.units || "")
         : null,
       Array.isArray(entry.members) ? "أعضاء المجموعة: " + entry.members.join(", ") : null,
       "المدى: " + Number(entry.value_min).toFixed(2) + " إلى " + Number(entry.value_max).toFixed(2),

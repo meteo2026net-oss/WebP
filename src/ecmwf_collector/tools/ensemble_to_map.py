@@ -80,6 +80,7 @@ def write_gefs_ensemble_map_products(
             "members": list(field["members"]),
             "threshold": statistics.get("threshold") if key == probability_key else None,
             "threshold_comparison": "strictly greater than" if key == probability_key else None,
+            "threshold_units": str(field["units"]) if key == probability_key else None,
             "image": image_path.name,
             "data_file": data_path.name,
             **rendered,
