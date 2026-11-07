@@ -68,6 +68,19 @@ class GefsDecoderTests(unittest.TestCase):
             with self.assertRaisesRegex(GefsGribDecodeError, "whole number of hours"):
                 decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
 
+    def test_rejects_negative_forecast_hour(self):
+        dataset = fake_field()
+        dataset.coords["step"].values = np.asarray(np.timedelta64(-1, "h"))
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "non-negative"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
+
+    def test_rejects_inconsistent_valid_time_and_forecast_step(self):
+        dataset = fake_field(valid="2026-11-08T01:00:00")
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            with self.assertRaisesRegex(GefsGribDecodeError, "valid_time does not equal"):
+                decode_gefs_grib_field("member.grib2", short_name="t", type_of_level="heightAboveGround", level=2)
+
     def test_rejects_non_finite_requested_level(self):
         dataset = fake_field()
         with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):

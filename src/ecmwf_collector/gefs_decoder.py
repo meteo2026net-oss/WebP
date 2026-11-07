@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -71,25 +71,19 @@ def _as_utc_string(value) -> str:
 
 def _step_hours(value) -> int:
     if isinstance(value, np.timedelta64):
-        seconds = float(value / np.timedelta64(1, "s"))
+        hours = float(value / np.timedelta64(1, "h"))
     elif hasattr(value, "total_seconds"):
-        seconds = float(value.total_seconds())
+        hours = float(value.total_seconds()) / 3600.0
     else:
         try:
             hours = float(value)
         except (TypeError, ValueError) as exc:
             raise GefsGribDecodeError(f"invalid GRIB forecast step: {value}") from exc
-        if not np.isfinite(hours) or not hours.is_integer():
-            raise GefsGribDecodeError(f"forecast step must be a whole number of hours: {value}")
-        return int(hours)
-    hours = seconds / 3600.0
     if not np.isfinite(hours) or not hours.is_integer():
         raise GefsGribDecodeError(f"forecast step must be a whole number of hours: {value}")
+    if hours < 0:
+        raise GefsGribDecodeError(f"forecast step must be non-negative: {value}")
     return int(hours)
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise GefsGribDecodeError(f"invalid GRIB forecast step: {value}") from exc
 
 
 def decode_gefs_grib_field(
@@ -149,6 +143,13 @@ def decode_gefs_grib_field(
         initialization = _as_utc_string(_coord_value(dataset, "time"))
         valid = _as_utc_string(_coord_value(dataset, "valid_time"))
         forecast_hour = _step_hours(_coord_value(dataset, "step"))
+        initialization_dt = datetime.fromisoformat(initialization.replace("Z", "+00:00"))
+        expected_valid = (initialization_dt + timedelta(hours=forecast_hour)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if valid != expected_valid:
+            raise GefsGribDecodeError(
+                "GRIB valid_time does not equal initialization_time plus forecast step: "
+                f"expected {expected_valid}, received {valid}"
+            )
         return DecodedGefsField(values, latitude, longitude, units, initialization, valid, forecast_hour)
     except KeyError as exc:
         raise GefsGribDecodeError(f"decoded GRIB field lacks required coordinate/metadata: {exc}") from exc
