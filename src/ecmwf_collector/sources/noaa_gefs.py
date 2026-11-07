@@ -1,13 +1,14 @@
 """NOAA/NCEP GEFS 0.5-degree ensemble GRIB2 subset downloader via NOMADS."""
 from __future__ import annotations
 
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
 import urllib.parse
 import urllib.request
+
+from .http_resume import clear_resume_state, download_resumable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -93,71 +94,38 @@ def _verify_grib2(path: Path) -> None:
 
 def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 120,
                   opener=urllib.request.urlopen) -> tuple[Path, Path]:
-    """Download one GEFS member and create a provenance/checksum sidecar."""
-    url = build_gefs_url(request)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    day = request.run_date.strftime("%Y%m%d")
-    cycle = f"{request.cycle:02d}"
-    stem = f"gefs_{day}_{cycle}z_{request.member}_f{request.forecast_hour:03d}_0p50"
-    final_path = output_dir / f"{stem}.grib2"
-    metadata_path = output_dir / f"{stem}.source.json"
-    part_path = output_dir / f"{stem}.grib2.part"
-    digest = hashlib.sha256()
+    """Download one GEFS member, resuming interrupted HTTP transfers safely."""
+    url=build_gefs_url(request); output_dir=Path(output_dir); output_dir.mkdir(parents=True,exist_ok=True)
+    day=request.run_date.strftime("%Y%m%d"); cycle=f"{request.cycle:02d}"
+    stem=f"gefs_{day}_{cycle}z_{request.member}_f{request.forecast_hour:03d}_0p50"
+    final_path=output_dir/f"{stem}.grib2"; metadata_path=output_dir/f"{stem}.source.json"
+    part_path=output_dir/f"{stem}.grib2.part"
     try:
-        response = opener(url, timeout=timeout)
-        with response, part_path.open("wb") as target:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                target.write(chunk)
-                digest.update(chunk)
-        _verify_grib2(part_path)
-        os.replace(part_path, final_path)
+        digest_hex=download_resumable(url,part_path,timeout=timeout,opener=opener)
+        _verify_grib2(part_path); os.replace(part_path,final_path); clear_resume_state(part_path)
     except Exception as exc:
-        try:
-            part_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        if isinstance(exc, NoaaGefsError):
-            raise
-        raise NoaaGefsError(
-            f"تعذر تنزيل GEFS من NOMADS: {type(exc).__name__}: {exc}"
-        ) from exc
-
-    metadata = {
-        "source": "NOAA/NCEP NOMADS",
-        "model": "GEFS",
-        "product": "0.50 degree ensemble atmosphere pgrb2a GRIB2 subset",
-        "member": request.member,
-        "run": f"{day}T{cycle}:00:00Z",
-        "forecast_hour": request.forecast_hour,
-        "valid_time": request.valid_time.isoformat().replace("+00:00", "Z"),
-        "variables": list(request.variables),
-        "levels": list(request.levels),
-        "resolution": "0p50",
-        "downloaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "file_name": final_path.name,
-        "size_bytes": final_path.stat().st_size,
-        "sha256": digest.hexdigest(),
-        "source_url": url,
-        "integrity": "GRIB2 framing checked; SHA-256 recorded",
-    }
-    temp_meta = metadata_path.with_suffix(metadata_path.suffix + ".part")
+        if isinstance(exc,NoaaGefsError): clear_resume_state(part_path); raise
+        raise NoaaGefsError(f"تعذر تنزيل GEFS من NOMADS: {type(exc).__name__}: {exc}") from exc
+    metadata={
+        "source":"NOAA/NCEP NOMADS","model":"GEFS",
+        "product":"0.50 degree ensemble atmosphere pgrb2a GRIB2 subset",
+        "member":request.member,"run":f"{day}T{cycle}:00:00Z",
+        "forecast_hour":request.forecast_hour,
+        "valid_time":request.valid_time.isoformat().replace("+00:00","Z"),
+        "variables":list(request.variables),"levels":list(request.levels),"resolution":"0p50",
+        "downloaded_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "file_name":final_path.name,"size_bytes":final_path.stat().st_size,
+        "sha256":digest_hex,"source_url":url,
+        "integrity":"GRIB2 framing checked; SHA-256 recorded"}
+    temp_meta=metadata_path.with_suffix(metadata_path.suffix+".part")
     try:
-        temp_meta.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(temp_meta, metadata_path)
+        temp_meta.write_text(json.dumps(metadata,ensure_ascii=False,indent=2),encoding="utf-8")
+        os.replace(temp_meta,metadata_path)
     except OSError:
         temp_meta.unlink(missing_ok=True)
-        try:
-            if final_path.exists() and not metadata_path.exists():
-                final_path.unlink()
-        except OSError:
-            pass
+        if final_path.exists() and not metadata_path.exists(): final_path.unlink()
         raise
-    return final_path, metadata_path
-
+    return final_path,metadata_path
 
 def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
                            members: tuple[str, ...] | None = None,
