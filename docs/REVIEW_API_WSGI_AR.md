@@ -29,7 +29,8 @@ until a real provider is injected.
 
 ## Status
 
-This is an executable WSGI application component, not a deployed service.
+The REST routes are implemented and covered by WSGI contract tests. This is an
+executable WSGI application component, not a deployed service.
 A production deployment still needs a verified identity provider, TLS-terminating
 server/reverse proxy, connection pool, database grants, secrets management,
 request logging/monitoring, and operational deployment configuration.

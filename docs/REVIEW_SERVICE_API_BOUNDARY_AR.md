@@ -19,9 +19,12 @@ The identity provider must be implemented by the deployment's real session,
 OIDC, or JWT-verification layer. `AuthenticatedActor` is an internal trusted
 object, not a request schema. Do not deserialize it directly from JSON.
 
-## REST adapter contract (not yet deployed)
+## WSGI REST adapter (implemented; not deployed)
 
-A future HTTP adapter can map these routes to the application service:
+`src/ecmwf_collector/review_api.py` implements the following routes through
+`ReviewWsgiApplication`. The component is executable as a WSGI callable, but
+there is no production server or verified identity-provider implementation
+configured in this repository:
 
 | Method | Route | Purpose |
 |---|---|---|
@@ -34,11 +37,17 @@ A future HTTP adapter can map these routes to the application service:
 | POST | `/api/v1/reviews/{review_id}/reopen` | Lead/admin reopen |
 | GET | `/api/v1/publishable/fields` | QC-passed and human-approved fields |
 
-Every mutation must carry an `expected_version`; the adapter maps stale-version
+Every mutation carries an `expected_version`; the adapter maps stale-version
 conflicts to HTTP 409, permission failures to 403, missing records to 404, and
-domain validation failures to 422. Approval requests must not contain a
-client-controlled quality status. The service/repository fetch it from
-PostgreSQL.
+domain validation failures to 422. Authentication failures map to 401. The
+adapter rejects client-supplied `actor_id`, `role`, and `quality_status`.
+Approval quality is read by the repository from PostgreSQL.
+
+The `identity_provider_factory` must validate a real session or signed token
+and return a request-scoped provider. It must not trust unsigned identity
+headers, query parameters, or JSON. Cookie-based sessions additionally require
+CSRF protection. Do not mount this WSGI callable on a public listener until
+these controls, TLS, rate limiting, monitoring, and secret management exist.
 
 ## Database privilege outline
 
