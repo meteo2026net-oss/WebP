@@ -792,6 +792,9 @@ class MainWindow(QMainWindow):
         self.btn_gefs_analyze = QPushButton("تحليل أعضاء GEFS المحفوظة وحساب الإحصاءات")
         self.btn_gefs_analyze.clicked.connect(self._on_gefs_analyze)
         layout.addWidget(self.btn_gefs_analyze)
+        self.btn_gefs_open_map = QPushButton("فتح خرائط GEFS في عارض الخرائط")
+        self.btn_gefs_open_map.clicked.connect(self._on_open_map)
+        layout.addWidget(self.btn_gefs_open_map)
 
         self.gefs_status = QPlainTextEdit()
         self.gefs_status.setReadOnly(True)
@@ -950,7 +953,7 @@ class MainWindow(QMainWindow):
             }
             json_path = output_dir / f"{stem}.json"
             json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            map_dir = output_dir / "maps"
+            map_dir = project_root() / "output" / "map_data"
             _, map_manifest = write_gefs_ensemble_map_products(
                 statistics, field, map_dir,
                 source_file=", ".join(Path(item).name for item in paths),
