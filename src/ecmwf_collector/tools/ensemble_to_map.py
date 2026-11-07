@@ -76,6 +76,8 @@ def write_gefs_ensemble_map_products(
             "step": int(field["forecast_hour"]),
             "initialization_time": field["initialization_time"],
             "members": list(field["members"]),
+            "threshold": statistics.get("threshold") if key == probability_key else None,
+            "threshold_comparison": "strictly greater than" if key == probability_key else None,
             "image": image_path.name,
             "data_file": data_path.name,
             **rendered,
