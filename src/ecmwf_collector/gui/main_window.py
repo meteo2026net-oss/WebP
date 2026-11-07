@@ -30,6 +30,7 @@ from ..secrets_store import SecretStore
 from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
+from ..gefs_decoder import calculate_gefs_ensemble_statistics
 from ..sources.noaa_gefs import (
     GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,
 )
@@ -774,6 +775,22 @@ class MainWindow(QMainWindow):
             )
         )
         layout.addWidget(self.btn_gefs_download)
+
+        analysis_form = QFormLayout()
+        self.gefs_decode_short_name = QLineEdit("t")
+        self.gefs_decode_type_of_level = QLineEdit("heightAboveGround")
+        self.gefs_decode_level = QLineEdit("2")
+        self.gefs_decode_threshold = QLineEdit()
+        self.gefs_decode_threshold.setPlaceholderText("اختياري — اتركه فارغاً لتعطيل الاحتمال")
+        analysis_form.addRow("GRIB shortName", self.gefs_decode_short_name)
+        analysis_form.addRow("GRIB typeOfLevel", self.gefs_decode_type_of_level)
+        analysis_form.addRow("GRIB level", self.gefs_decode_level)
+        analysis_form.addRow("عتبة الاحتمال (بنفس وحدة الحقل)", self.gefs_decode_threshold)
+        layout.addLayout(analysis_form)
+        self.btn_gefs_analyze = QPushButton("تحليل أعضاء GEFS المحفوظة وحساب الإحصاءات")
+        self.btn_gefs_analyze.clicked.connect(self._on_gefs_analyze)
+        layout.addWidget(self.btn_gefs_analyze)
+
         self.gefs_status = QPlainTextEdit()
         self.gefs_status.setReadOnly(True)
         self.gefs_status.setMinimumHeight(220)
@@ -849,6 +866,107 @@ class MainWindow(QMainWindow):
         def failed(message):
             self.gefs_status.setPlainText("تعذر تنزيل NOAA GEFS: " + redact(message))
             self.btn_gefs_download.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _on_gefs_analyze(self):
+        try:
+            short_name = self.gefs_decode_short_name.text().strip()
+            type_of_level = self.gefs_decode_type_of_level.text().strip()
+            level = float(self.gefs_decode_level.text().strip())
+            threshold_text = self.gefs_decode_threshold.text().strip()
+            threshold = float(threshold_text) if threshold_text else None
+            if not short_name or not type_of_level:
+                raise ValueError("أدخل shortName و typeOfLevel.")
+        except ValueError as exc:
+            QMessageBox.warning(self, "إعدادات تحليل GEFS غير صالحة", str(exc))
+            return
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "اختر ملفي GEFS GRIB2 أو أكثر", self.gefs_output.text(),
+            "GRIB files (*.grib2 *.grb2 *.grib *.grb);;All files (*)",
+        )
+        if len(paths) < 2:
+            if paths:
+                QMessageBox.information(self, "عدد الأعضاء غير كافٍ", "يلزم اختيار عضوين على الأقل.")
+            return
+
+        self.btn_gefs_analyze.setEnabled(False)
+        self.gefs_status.setPlainText("جارٍ فك حقول GRIB والتحقق من تطابق الأعضاء والشبكة والوحدات…")
+
+        def work():
+            import json
+            import numpy as np
+
+            statistics, field = calculate_gefs_ensemble_statistics(
+                paths, short_name=short_name, type_of_level=type_of_level,
+                level=level, threshold=threshold,
+            )
+            output_root = Path(self.gefs_output.text().strip() or paths[0]).expanduser()
+            if output_root.suffix:
+                output_root = output_root.parent
+            output_dir = output_root / "GEFS_Analysis"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            valid_stamp = field["valid_time"].replace("-", "").replace(":", "").replace("T", "_").replace("Z", "")
+            stem = f"GEFS_{valid_stamp}_{short_name}_{stamp}"
+            arrays = {
+                "mean": statistics["mean"],
+                "spread": statistics["spread"],
+                "member_count": statistics["member_count"],
+                "latitude": field["latitude"],
+                "longitude": field["longitude"],
+            }
+            if "probability_exceeding_threshold_percent" in statistics:
+                arrays["probability_exceeding_threshold_percent"] = statistics[
+                    "probability_exceeding_threshold_percent"
+                ]
+            npz_path = output_dir / f"{stem}.npz"
+            np.savez_compressed(npz_path, **arrays)
+            report = {
+                "product": "GEFS ensemble statistics",
+                "source": "NOAA/NCEP NOMADS",
+                "members": field["members"],
+                "short_name": short_name,
+                "type_of_level": type_of_level,
+                "level": level,
+                "units": field["units"],
+                "initialization_time": field["initialization_time"],
+                "valid_time": field["valid_time"],
+                "forecast_hour": field["forecast_hour"],
+                "threshold": threshold,
+                "statistics": [
+                    "mean", "population_standard_deviation", "valid_member_count",
+                    *(["probability_exceeding_threshold_percent"] if threshold is not None else []),
+                ],
+                "grid_shape": list(statistics["mean"].shape),
+                "data_file": npz_path.name,
+                "validation": "GRIB field metadata, timestamps, units and latitude/longitude arrays checked across members",
+                "scientific_note": "No unit conversion or bias correction is applied; threshold uses the decoded field units.",
+            }
+            json_path = output_dir / f"{stem}.json"
+            json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            return report, npz_path, json_path
+
+        def done(result):
+            report, npz_path, json_path = result
+            self.gefs_status.setPlainText(
+                "اكتمل تحليل GEFS بعد اجتياز بوابة التحقق.\n"
+                f"الأعضاء: {', '.join(report['members'])}\n"
+                f"الحقل: {report['short_name']} / {report['type_of_level']} / {report['level']}\n"
+                f"الوحدات: {report['units']}\n"
+                f"الصلاحية UTC: {report['valid_time']}\n"
+                f"شكل الشبكة: {report['grid_shape']}\n"
+                f"ملف البيانات: {npz_path}\n"
+                f"ملف الوصف: {json_path}\n"
+                "ملاحظة: لا يوجد تحويل وحدات أو تصحيح انحياز."
+            )
+            self.btn_gefs_analyze.setEnabled(True)
+            self._log("اكتمل تحليل حقول GEFS والتحقق من توافق الأعضاء.")
+
+        def failed(message):
+            self.gefs_status.setPlainText("تعذر تحليل GEFS: " + redact(message))
+            self.btn_gefs_analyze.setEnabled(True)
 
         self._run(work, done, on_failed=failed)
 
