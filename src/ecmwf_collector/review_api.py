@@ -67,6 +67,9 @@ class ReviewWsgiApplication:
 
     @staticmethod
     def _read_json(environ: dict[str, Any]) -> dict[str, Any]:
+        content_type = str(environ.get("CONTENT_TYPE", "")).split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            raise ValueError("request Content-Type must be application/json")
         raw_length = environ.get("CONTENT_LENGTH") or "0"
         try:
             length = int(raw_length)

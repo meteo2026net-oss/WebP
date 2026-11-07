@@ -69,6 +69,38 @@ class ReviewWsgiApiTests(unittest.TestCase):
         self.assertEqual(payload["status"], "in_review")
         self.assertEqual(response["headers"]["Cache-Control"], "no-store")
 
+    def test_mutation_requires_json_content_type(self):
+        body = json.dumps({"expected_version": 1}).encode("utf-8")
+        environ = {
+            "REQUEST_METHOD": "POST",
+            "PATH_INFO": "/api/v1/reviews/r1/open",
+            "CONTENT_LENGTH": str(len(body)),
+            "CONTENT_TYPE": "text/plain",
+            "wsgi.input": io.BytesIO(body),
+        }
+        captured = {}
+        response = b"".join(self.app(environ, lambda status, headers: captured.update(status=status)))
+        self.assertTrue(captured["status"].startswith("400"))
+        self.assertIn(b"Content-Type must be application/json", response)
+        self.repository.transition.assert_not_called()
+
+    def test_authentication_failure_is_401_and_does_not_reach_repository(self):
+        app = ReviewWsgiApplication(
+            self.repository,
+            lambda environ: (_ for _ in ()).throw(PermissionError("missing credentials")),
+        )
+        environ = {
+            "REQUEST_METHOD": "GET",
+            "PATH_INFO": "/api/v1/reviews",
+            "QUERY_STRING": "",
+            "wsgi.input": io.BytesIO(b""),
+        }
+        captured = {}
+        response = b"".join(app(environ, lambda status, headers: captured.update(status=status)))
+        self.assertTrue(captured["status"].startswith("401"))
+        self.assertEqual(json.loads(response)["error"], "unauthorized")
+        self.repository.list_queue.assert_not_called()
+
     def test_body_size_is_limited(self):
         body = b"{}"
         environ = {
