@@ -837,6 +837,7 @@ class MainWindow(QMainWindow):
         self.gefs_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل عضو GEFS…")
 
         download_all = self.gefs_all_members.isChecked()
+        max_workers = self.gefs_parallel.value()  # Read Qt widgets on the GUI thread only.
 
         requested_members = (
             ("c00", *(f"p{number:02d}" for number in range(1, 31)))
@@ -847,7 +848,7 @@ class MainWindow(QMainWindow):
             if download_all:
                 completed, failed = download_gefs_ensemble(
                     request, output, members=requested_members,
-                    max_workers=self.gefs_parallel.value()
+                    max_workers=max_workers
                 )
             else:
                 grib, metadata = download_gefs(request, output)
