@@ -34,12 +34,13 @@ sessions and reverse-proxy identity headers are deliberately unsupported.
 
 `src/ecmwf_collector/postgres_review_runtime.py` assembles the WSGI application,
 repository, and psycopg connection pool. It rejects database DSNs without
-`sslmode=verify-full` or `verify-ca`, requires a database host, and bounds pool
+`sslmode=verify-full`, requires a database host, and bounds pool
 sizes. Supply the DSN through the deployment secret manager; never commit it.
 
 The database administrator must apply `sql/weather_platform_schema.sql` after
-installing the required PostGIS extension, then provision a dedicated service
-login with only the privileges needed by the review API:
+installing the required PostGIS extension, create a dedicated LOGIN role, then
+apply `sql/review_api_grants.sql` with psql variable `review_api_role` set to that
+role. The grant script is intentionally limited to these capabilities:
 - schema `weather`: USAGE;
 - `review_case`: SELECT and UPDATE;
 - `review_event`: SELECT and INSERT;

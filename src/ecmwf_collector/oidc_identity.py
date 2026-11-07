@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -117,7 +118,23 @@ class OIDCIdentityProvider:
 
 
 def oidc_identity_provider_factory(settings: OIDCSettings):
-    """Return the request-scoped factory expected by ReviewWsgiApplication."""
+    """Return a request-scoped provider factory with a shared rotating JWKS cache."""
+    client_lock = threading.Lock()
+    shared_client: list[Any] = []
+
     def factory(environ: dict[str, Any]) -> OIDCIdentityProvider:
-        return OIDCIdentityProvider(environ, settings)
+        if not shared_client:
+            with client_lock:
+                if not shared_client:
+                    try:
+                        import jwt
+                    except ImportError as exc:
+                        raise RuntimeError(
+                            "OIDC review authentication requires the optional PyJWT[crypto] dependency"
+                        ) from exc
+                    shared_client.append(jwt.PyJWKClient(
+                        settings.jwks_url, cache_jwk_set=True, timeout=5
+                    ))
+        return OIDCIdentityProvider(environ, settings, jwks_client=shared_client[0])
+
     return factory

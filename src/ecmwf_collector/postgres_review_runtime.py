@@ -40,8 +40,8 @@ def create_review_runtime(
     from psycopg.conninfo import conninfo_to_dict
     options = conninfo_to_dict(dsn)
     sslmode = options.get("sslmode", "prefer")
-    if sslmode not in {"verify-full", "verify-ca"}:
-        raise ValueError("review API PostgreSQL connections require sslmode=verify-full or verify-ca")
+    if sslmode not in {"verify-full"}:
+        raise ValueError("review API PostgreSQL connections require sslmode=verify-full")
     if not options.get("host"):
         raise ValueError("review API PostgreSQL DSN must specify a database host")
 
