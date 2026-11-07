@@ -32,6 +32,7 @@ from ..state import StateStore
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
 from ..gefs_decoder import calculate_gefs_ensemble_statistics
+from ..tools.ensemble_to_map import write_gefs_ensemble_map_products
 from ..sources.noaa_gefs import (
     GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,
 )
@@ -949,10 +950,15 @@ class MainWindow(QMainWindow):
             }
             json_path = output_dir / f"{stem}.json"
             json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            return report, npz_path, json_path
+            map_dir = output_dir / "maps"
+            _, map_manifest = write_gefs_ensemble_map_products(
+                statistics, field, map_dir,
+                source_file=", ".join(Path(item).name for item in paths),
+            )
+            return report, npz_path, json_path, map_manifest
 
         def done(result):
-            report, npz_path, json_path = result
+            report, npz_path, json_path, map_manifest = result
             self.gefs_status.setPlainText(
                 "اكتمل تحليل GEFS بعد اجتياز بوابة التحقق.\n"
                 f"الأعضاء: {', '.join(report['members'])}\n"
@@ -962,6 +968,7 @@ class MainWindow(QMainWindow):
                 f"شكل الشبكة: {report['grid_shape']}\n"
                 f"ملف البيانات: {npz_path}\n"
                 f"ملف الوصف: {json_path}\n"
+                f"ملف طبقات الخرائط: {map_manifest}\n"
                 "ملاحظة: لا يوجد تحويل وحدات أو تصحيح انحياز."
             )
             self.btn_gefs_analyze.setEnabled(True)
