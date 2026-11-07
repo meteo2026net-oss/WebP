@@ -204,6 +204,9 @@ CREATE TABLE IF NOT EXISTS weather.review_case (
            OR status <> 'approved')
 );
 CREATE INDEX IF NOT EXISTS review_queue_idx ON weather.review_case(status, submitted_at);
+-- A field has one current review case; a reprocessed field gets a new field_id.
+CREATE UNIQUE INDEX IF NOT EXISTS review_case_one_current_per_field_idx
+    ON weather.review_case(field_id);
 CREATE INDEX IF NOT EXISTS review_assignee_idx ON weather.review_case(assigned_to, status);
 
 CREATE TABLE IF NOT EXISTS weather.review_event (
