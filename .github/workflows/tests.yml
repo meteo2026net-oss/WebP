@@ -37,7 +37,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get install -y postgresql-client
-          python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2'
+          python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2' requests 'Authlib>=1.7' 'joserfc>=1.2'
       - name: Initialize PostGIS and weather schema
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
