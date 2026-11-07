@@ -23,7 +23,7 @@ class ModelComparisonTests(unittest.TestCase):
     def test_metrics_and_temperature_conversion(self):
         result = calculate_pair_metrics(
             field("A", [[273.15, 274.15, np.nan]]),
-            field("B", [[274.15, 276.15, 280.0]], units="degC"),
+            field("B", [[1.0, 3.0, 280.0]], units="degC"),
         )
         self.assertEqual(result["sample_count"], 2)
         self.assertAlmostEqual(result["bias"], 1.5)
