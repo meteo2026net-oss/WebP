@@ -47,7 +47,12 @@ class ReviewApplicationService:
         actor = self._identity_provider.current_actor()
         if not isinstance(actor, AuthenticatedActor):
             raise ReviewPermissionError("authentication provider returned no trusted actor")
-        if not actor.subject.strip() or actor.role not in VALID_ROLES:
+        if (
+            not isinstance(actor.subject, str)
+            or not actor.subject.strip()
+            or not isinstance(actor.role, str)
+            or actor.role not in VALID_ROLES
+        ):
             raise ReviewPermissionError("authenticated actor has invalid identity or role")
         return actor
 
