@@ -57,9 +57,9 @@ def _as_utc_string(value) -> str:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    text = str(value).replace("+00:00", "Z")
+    text = str(value)
     if text.endswith("Z"):
-        return text
+        text = text[:-1] + "+00:00"
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
