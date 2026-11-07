@@ -1,0 +1,161 @@
+name: NOAA GEFS real GRIB2 ensemble smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "GEFS initialization date in UTC (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-07"
+        type: string
+      cycle:
+        description: "Initialization cycle in UTC"
+        required: true
+        default: "00"
+        type: choice
+        options: ["00", "06", "12", "18"]
+      forecast_hour:
+        description: "Forecast lead hour"
+        required: true
+        default: "24"
+        type: string
+      variable:
+        description: "NOMADS variable"
+        required: true
+        default: "TMP"
+        type: choice
+        options: ["TMP", "UGRD", "VGRD", "PRMSL", "APCP"]
+      level:
+        description: "NOMADS level"
+        required: true
+        default: "2_m_above_ground"
+        type: choice
+        options: ["2_m_above_ground", "10_m_above_ground", "surface", "mean_sea_level"]
+
+permissions:
+  contents: read
+
+jobs:
+  real-gefs-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install real GRIB2 decoding dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy xarray cfgrib eccodes
+
+      - name: Download two actual NOAA GEFS members, decode and calculate statistics
+        env:
+          PYTHONPATH: src
+          RUN_DATE: ${{ inputs.run_date }}
+          CYCLE: ${{ inputs.cycle }}
+          FORECAST_HOUR: ${{ inputs.forecast_hour }}
+          VARIABLE: ${{ inputs.variable }}
+          LEVEL: ${{ inputs.level }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import date
+          from pathlib import Path
+          import numpy as np
+          from ecmwf_collector.sources.noaa_gefs import GefsRequest, download_gefs
+          from ecmwf_collector.gefs_decoder import calculate_gefs_ensemble_statistics
+
+          root = Path("output/noaa-gefs-real")
+          root.mkdir(parents=True, exist_ok=True)
+          run_date = date.fromisoformat(os.environ["RUN_DATE"])
+          cycle = int(os.environ["CYCLE"])
+          forecast_hour = int(os.environ["FORECAST_HOUR"])
+          variable = os.environ["VARIABLE"]
+          level_name = os.environ["LEVEL"]
+          request = GefsRequest(
+              run_date=run_date, cycle=cycle, forecast_hour=forecast_hour,
+              member="c00", variables=(variable,), levels=(level_name,),
+          )
+          request.validate()
+
+          downloaded = []
+          for member in ("c00", "p01"):
+              member_request = GefsRequest(
+                  run_date=run_date, cycle=cycle, forecast_hour=forecast_hour,
+                  member=member, variables=(variable,), levels=(level_name,),
+              )
+              grib_path, sidecar_path = download_gefs(member_request, root)
+              downloaded.append(str(grib_path))
+              print(f"Downloaded {member}: {grib_path.stat().st_size:,} bytes; sidecar={sidecar_path.name}")
+
+          mapping = {
+              ("TMP", "2_m_above_ground"): ("2t", "heightAboveGround", 2),
+              ("TMP", "10_m_above_ground"): ("2t", "heightAboveGround", 2),
+              ("UGRD", "10_m_above_ground"): ("10u", "heightAboveGround", 10),
+              ("VGRD", "10_m_above_ground"): ("10v", "heightAboveGround", 10),
+              ("PRMSL", "mean_sea_level"): ("msl", "meanSea", 0),
+              ("APCP", "surface"): ("tp", "surface", 0),
+          }
+          try:
+              short_name, type_of_level, level_value = mapping[(variable, level_name)]
+          except KeyError:
+              raise SystemExit(
+                  f"No verified ecCodes mapping configured for {variable}/{level_name}; "
+                  "extend the workflow mapping only after inspecting a real inventory."
+              )
+
+          statistics, field = calculate_gefs_ensemble_statistics(
+              downloaded, short_name=short_name, type_of_level=type_of_level,
+              level=level_value, threshold=None,
+          )
+          mean = statistics["mean"]
+          spread = statistics["spread"]
+          count = statistics["member_count"]
+          if mean.ndim != 2 or mean.shape != spread.shape or mean.shape != count.shape:
+              raise SystemExit("Unexpected ensemble result array shapes")
+          if not np.any(np.isfinite(mean)):
+              raise SystemExit("Decoded real GEFS mean field contains no finite grid values")
+          if not np.all(count <= 2):
+              raise SystemExit("Member count exceeds the two downloaded members")
+
+          np.savez_compressed(
+              root / "gefs-real-ensemble-statistics.npz",
+              mean=mean, spread=spread, member_count=count,
+              latitude=field["latitude"], longitude=field["longitude"],
+          )
+          report = {
+              "source": "NOAA/NCEP NOMADS",
+              "run_date": run_date.isoformat(),
+              "cycle": cycle,
+              "forecast_hour": forecast_hour,
+              "valid_time": field["valid_time"],
+              "members": field["members"],
+              "variable": variable,
+              "short_name": short_name,
+              "type_of_level": type_of_level,
+              "level": level_value,
+              "units": field["units"],
+              "grid_shape": list(mean.shape),
+              "finite_mean_cells": int(np.isfinite(mean).sum()),
+              "finite_spread_cells": int(np.isfinite(spread).sum()),
+              "workflow": "manual real-data smoke test; not a scientific verification study",
+          }
+          (root / "validation-summary.json").write_text(
+              json.dumps(report, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(report, indent=2))
+          PY
+
+      - name: Upload real NOAA GRIB2 files and decoded results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noaa-gefs-real-grib2-${{ github.run_id }}
+          path: output/noaa-gefs-real/
+          if-no-files-found: warn
+          retention-days: 14
