@@ -9,6 +9,22 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: weather_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d weather_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weather_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -19,7 +35,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2'
+        run: |
+          sudo apt-get install -y postgresql-client
+          python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2'
+      - name: Initialize PostGIS and weather schema
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/weather_platform_schema.sql
       - name: Compile Python sources
         run: python -m compileall -q src main.py serve_map.py tests
       - name: Check map viewer JavaScript syntax
