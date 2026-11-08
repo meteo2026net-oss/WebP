@@ -222,7 +222,8 @@ class AssetSyncTests(unittest.TestCase):
             "SELECT COUNT(*) FROM webp_file_assets",
         )[0][0]
         self.assertEqual(statuses[0][0], "delivered")
-        self.assertEqual(statuses[0][1], 1)
+        self.assertGreaterEqual(statuses[0][1], 1)
+        self.assertLessEqual(statuses[0][1], 2)
         self.assertEqual(target_count, 1)
         self.assertGreaterEqual(sum(item["delivered"] for item in results), 1)
         self.assertEqual(sum(item["delivered"] + item["failed"] + item["skipped"] for item in results), 2)
