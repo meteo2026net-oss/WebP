@@ -1,6 +1,5 @@
 {
   "name": "ECMWF WebP review integration",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "version": "latest",
@@ -8,11 +7,27 @@
       "dockerDashComposeVersion": "v2"
     }
   },
-  "forwardPorts": [8000, 8081, 5432],
+  "forwardPorts": [
+    8000,
+    8081,
+    5432
+  ],
   "portsAttributes": {
-    "8000": { "label": "Review API (HTTPS forwarded)", "onAutoForward": "notify", "visibility": "private" },
-    "8081": { "label": "Keycloak (HTTPS forwarded)", "onAutoForward": "notify", "visibility": "private" },
-    "5432": { "label": "PostgreSQL (private)", "onAutoForward": "ignore", "visibility": "private" }
+    "5432": {
+      "label": "PostgreSQL (private)",
+      "onAutoForward": "ignore",
+      "visibility": "private"
+    },
+    "8000": {
+      "label": "Review API (HTTPS forwarded)",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    },
+    "8081": {
+      "label": "Keycloak (HTTPS forwarded)",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
   },
   "remoteEnv": {
     "PYTHONPATH": "${containerWorkspaceFolder}/src:${containerWorkspaceFolder}"
@@ -20,7 +35,13 @@
   "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install 'PyJWT[crypto]>=2.10' 'psycopg[binary]>=3.2' 'psycopg_pool>=3.2' 'gunicorn>=23.0' 'Authlib>=1.7' 'joserfc>=1.2'",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
     }
+  },
+  "build": {
+    "dockerfile": "Dockerfile"
   }
 }
