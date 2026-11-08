@@ -78,5 +78,27 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertTrue(is_publishable(quality_status="passed", case=self.case))
 
 
+    def test_publisher_cannot_perform_review_transitions(self):
+        with self.assertRaises(ReviewPermissionError):
+            assign_review(self.case, actor_id="publisher", role="publisher",
+                          reviewer_id="reviewer", expected_version=1)
+        with self.assertRaises(ReviewPermissionError):
+            open_review(self.case, actor_id="publisher", role="publisher",
+                        expected_version=1)
+        with self.assertRaises(ReviewPermissionError):
+            comment_review(self.case, actor_id="publisher", role="publisher",
+                           note="Not permitted", expected_version=1)
+        with self.assertRaises(ReviewPermissionError):
+            decide_review(self.case, actor_id="publisher", role="publisher",
+                          decision="rejected", reason="Not permitted",
+                          expected_version=1)
+        with self.assertRaises(ReviewPermissionError):
+            reopen_review(self.case, actor_id="publisher", role="publisher",
+                          reason="Not permitted", expected_version=1)
+        self.assertEqual(self.case.status, "pending")
+        self.assertEqual(self.case.review_version, 1)
+        self.assertEqual(self.case.events, [])
+
+
 if __name__ == "__main__":
     unittest.main()
