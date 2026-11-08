@@ -397,6 +397,7 @@ class DatabaseManagerWidget(QWidget):
             return
         from dataclasses import replace
         self.profile_store.save(replace(profile, enabled=not profile.enabled))
+        self.approved_catalog_sinks.clear()
         self.refresh()
 
     def _delete_profile(self):
@@ -414,9 +415,94 @@ class DatabaseManagerWidget(QWidget):
                 self.routing_store.remove_profile_references(profile.profile_id)
             if not self.profile_store.delete_with_secret(profile.profile_id, self.secrets):
                 raise RuntimeError("تعذّر حذف بيانات الاعتماد بالكامل؛ راجع مخزن أسرار النظام.")
+            self.approved_catalog_sinks.clear()
             self.refresh()
         except Exception as exc:
             QMessageBox.warning(self, "تعذّر حذف الاتصال", str(exc))
+
+    def catalog_sink_for(self, provider: str, model: str, product: str):
+        if not self.routing_store:
+            return None
+        key = self.routing_store.model_key(provider, model, product)
+        return self.approved_catalog_sinks.get(key)
+
+    def _approve_catalog_writes(self):
+        try:
+            key = self.routing_store.model_key(
+                self.provider.text(), self.model.text(), self.product.text()
+            )
+            destination_id = self.route_profile.currentData()
+            routed_id = self.routing_store.snapshot()["routes"].get(key)
+            if not destination_id or routed_id != destination_id:
+                raise ValueError("احفظ توجيه النموذج أولاً وتأكد من تطابق قاعدة الوجهة.")
+            replica_id = self.replica_profile.currentData()
+            if replica_id == destination_id:
+                raise ValueError("قاعدة المزامنة يجب أن تختلف عن قاعدة الوجهة.")
+            replica_ids = (replica_id,) if replica_id else ()
+            all_ids = (destination_id, *replica_ids)
+            names = []
+            for profile_id in all_ids:
+                profile = self.profile_store.get(profile_id)
+                if profile is None or not profile.enabled:
+                    raise ValueError("إحدى قواعد البيانات المختارة غير متاحة.")
+                names.append(profile.name)
+            answer = QMessageBox.question(
+                self, "موافقة صريحة على الكتابة",
+                "ستُنشأ/تُهيّأ جداول كتالوج الأصول وOutbox وتُسجّل بيانات وصفية بعد التحقق. "
+                + "الوجهات: " + "، ".join(names)
+                + ". لن تُنسخ ملفات GRIB نفسها ولن تُحذف الملفات المحلية. هل توافق؟",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            approval = CatalogWriteApproval(
+                destination_profile_id=destination_id,
+                schema_approved_profile_ids=all_ids,
+                replica_profile_ids=replica_ids,
+                asset_write_confirmed=True,
+            )
+            self.approved_catalog_sinks[key] = ApprovedCatalogSink(
+                self.profile_store, self.routing_store, self.secrets, approval
+            )
+            QMessageBox.information(
+                self, "تم اعتماد الكتالوج",
+                "الاعتماد صالح لهذه الجلسة. مرّر catalog_sink_for(provider, model, product) إلى موصل التنزيل."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "تعذّر اعتماد الكتالوج", str(exc))
+
+    def _sync_catalog_outbox(self):
+        try:
+            key = self.routing_store.model_key(
+                self.provider.text(), self.model.text(), self.product.text()
+            )
+            sink = self.approved_catalog_sinks.get(key)
+            if sink is None:
+                raise ValueError("اعتمد كتابة الكتالوج أولاً.")
+            targets = sink.approval.replica_profile_ids
+            if not targets:
+                QMessageBox.information(self, "Outbox", "لم يتم اختيار قاعدة مزامنة ثانوية.")
+                return
+            answer = QMessageBox.question(
+                self, "تأكيد المزامنة",
+                "سيتم نسخ سجلات كتالوج الأصول المعلقة إلى قاعدة المزامنة المحددة. "
+                + "لن تُنقل ملفات GRIB نفسها. هل توافق على هذه الدفعة؟",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            synchronizer = AssetOutboxSynchronizer(
+                sink.approval.destination_profile_id, self.profile_store, self.secrets
+            )
+            result = synchronizer.sync_pending(
+                OutboxSyncApproval(tuple(targets), confirmed=True), limit=100
+            )
+            QMessageBox.information(
+                self, "نتيجة المزامنة",
+                f"تم: {result['delivered']} | فشل: {result['failed']} | مؤجل: {result['skipped']}"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "تعذّرت المزامنة", str(exc))
 
     def _save_route(self):
         if not self.routing_store:
@@ -429,6 +515,7 @@ class DatabaseManagerWidget(QWidget):
                 self.provider.text(), self.model.text(), self.product.text()
             )
             self.routing_store.set_route(key, profile_id)
+            self.approved_catalog_sinks.pop(key, None)
             self._refresh_routes()
         except Exception as exc:
             QMessageBox.warning(self, "تعذّر حفظ التوجيه", str(exc))
@@ -456,4 +543,5 @@ class DatabaseManagerWidget(QWidget):
         row = self.routes_table.currentRow()
         item = self.routes_table.item(row, 0) if row >= 0 else None
         if item and self.routing_store.clear_route(item.text()):
+            self.approved_catalog_sinks.pop(item.text(), None)
             self._refresh_routes()
