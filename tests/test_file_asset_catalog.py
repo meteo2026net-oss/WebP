@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from ecmwf_collector.connection_profiles import DatabaseProfile
-from ecmwf_collector.file_asset_catalog import FileAsset, FileAssetCatalog, FileAssetError
+from ecmwf_collector.file_asset_catalog import (FileAsset, FileAssetCatalog, FileAssetError, asset_from_sidecar)
 
 
 class FileAssetCatalogTests(unittest.TestCase):
@@ -83,6 +83,59 @@ class FileAssetCatalogTests(unittest.TestCase):
         with self.assertRaises(FileAssetError):
             catalog.initialize_schema()
         self.assertFalse(self.db_path.exists())
+
+    def test_noaa_sidecar_is_verified_and_normalized_without_guessing(self):
+        root = Path(self.temp.name)
+        data = b"GRIB" + b"sample-payload" + b"7777"
+        grib = root / "gfs.grib2"
+        grib.write_bytes(data)
+        metadata = {
+            "source": "NOAA/NCEP NOMADS",
+            "model": "GFS",
+            "product": "0.25 degree GRIB2 filtered subset",
+            "run": "2026-11-08T00:00:00Z",
+            "valid_time": "2026-11-08T06:00:00Z",
+            "file_name": grib.name,
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "source_url": "https://nomads.example/gfs.grib2",
+            "resolution": "0p25",
+        }
+        sidecar = root / "gfs.grib2.source.json"
+        sidecar.write_text(json.dumps(metadata), encoding="utf-8")
+        asset = asset_from_sidecar(sidecar)
+        self.assertEqual(asset.provider_id, "noaa_nomads")
+        self.assertEqual(asset.model_id, "noaa_gfs")
+        self.assertEqual(asset.product_id, "gfs_0p25")
+        self.assertEqual(asset.sha256, metadata["sha256"])
+        self.assertEqual(asset.run_time_utc, metadata["run"])
+
+    def test_sidecar_hash_mismatch_is_rejected(self):
+        root = Path(self.temp.name)
+        grib = root / "sample.grib2"
+        grib.write_bytes(b"actual-data")
+        sidecar = root / "sample.grib2.source.json"
+        sidecar.write_text(json.dumps({
+            "source": "NOAA/NCEP NOMADS", "model": "GFS",
+            "file_name": grib.name, "size_bytes": grib.stat().st_size,
+            "sha256": hashlib.sha256(b"different-data").hexdigest(),
+            "resolution": "0p25",
+        }), encoding="utf-8")
+        with self.assertRaises(FileAssetError):
+            asset_from_sidecar(sidecar)
+
+    def test_unknown_sidecar_model_is_rejected(self):
+        root = Path(self.temp.name)
+        grib = root / "unknown.grib2"
+        grib.write_bytes(b"GRIB-data")
+        sidecar = root / "unknown.grib2.source.json"
+        sidecar.write_text(json.dumps({
+            "source": "NOAA/NCEP NOMADS", "model": "UNRECOGNIZED",
+            "file_name": grib.name, "size_bytes": grib.stat().st_size,
+            "sha256": hashlib.sha256(b"GRIB-data").hexdigest(),
+        }), encoding="utf-8")
+        with self.assertRaises(FileAssetError):
+            asset_from_sidecar(sidecar)
 
     def test_source_registration_failure_rolls_back_asset(self):
         self.catalog.initialize_schema()
