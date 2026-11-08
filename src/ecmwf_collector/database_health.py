@@ -133,11 +133,6 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
             connection = open_mysql_connection(profile, secrets, timeout=timeout)
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_schema=%s AND table_name='files'",
-                    (profile.database,),
-                )
-                cursor.execute(
                     "SELECT COALESCE(SUM(data_length + index_length), 0) "
                     "FROM information_schema.tables WHERE table_schema=%s",
                     (profile.database,),
