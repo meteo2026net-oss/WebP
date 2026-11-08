@@ -45,6 +45,26 @@ class OIDCIdentityTests(unittest.TestCase):
                     jwks_client=client,
                 ).current_actor()
 
+    def test_allows_loopback_http_for_jwks_only(self):
+        settings = OIDCSettings(
+            issuer="https://identity.example.test/realms/weather-review",
+            audience="api",
+            jwks_url="http://127.0.0.1:8081/realms/weather-review/certs",
+            role_claim="role",
+            role_mapping={"reviewer": "reviewer"},
+        )
+        self.assertEqual(settings.jwks_url, "http://127.0.0.1:8081/realms/weather-review/certs")
+
+    def test_rejects_non_loopback_http_jwks(self):
+        with self.assertRaises(ValueError):
+            OIDCSettings(
+                issuer="https://identity.example.test",
+                audience="api",
+                jwks_url="http://identity.example.test/jwks",
+                role_claim="role",
+                role_mapping={"reviewer": "reviewer"},
+            )
+
     def test_requires_https_oidc_endpoints(self):
         with self.assertRaises(ValueError):
             OIDCSettings(
