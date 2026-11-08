@@ -147,6 +147,49 @@ class DatabaseProfileTests(unittest.TestCase):
         self.assertTrue(captured["ssl_disabled"])
         self.assertEqual(captured["database"], "weather")
 
+    def test_mysql_verify_full_passes_ca_and_hostname_verification(self):
+        import ssl
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        class FakeCursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                pass
+            def fetchone(self):
+                return (1,)
+
+        class FakeConnection:
+            def cursor(self):
+                return FakeCursor()
+            def close(self):
+                pass
+
+        class FakeSecrets:
+            def get_password(self, key):
+                return "vault-secret"
+
+        ca_path = Path(self.temp.name) / "root-ca.pem"
+        ca_path.write_text("test certificate placeholder", encoding="utf-8")
+        captured = {}
+        driver = ModuleType("pymysql")
+        driver.connect = lambda **kwargs: (captured.update(kwargs) or FakeConnection())
+        profile = DatabaseProfile.create(
+            "MySQL TLS", "mysql", host="db.example", port=3306,
+            database="weather", username="app", ssl_mode="verify-full",
+            ssl_ca=str(ca_path),
+        )
+        with patch.dict(sys.modules, {"pymysql": driver}):
+            ok, message = test_database_connection(profile, FakeSecrets())
+        self.assertTrue(ok, message)
+        self.assertEqual(captured["ssl"]["ca"], str(ca_path))
+        self.assertEqual(captured["ssl"]["verify_mode"], ssl.CERT_REQUIRED)
+        self.assertTrue(captured["ssl"]["check_hostname"])
+
     def test_mysql_certificate_verification_requires_ca_file(self):
         with self.assertRaises(DatabaseProfileError):
             DatabaseProfile.create(
