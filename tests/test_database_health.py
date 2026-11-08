@@ -19,7 +19,8 @@ class DatabaseHealthTests(unittest.TestCase):
         )
 
     def test_reads_tracking_counts_and_sizes_without_writing(self):
-        with sqlite3.connect(self.path) as db:
+        db = sqlite3.connect(self.path)
+        try:
             db.execute("""CREATE TABLE files (
                 remote_path TEXT PRIMARY KEY, status TEXT NOT NULL,
                 remote_size INTEGER, local_size INTEGER, updated_at TEXT
@@ -32,6 +33,9 @@ class DatabaseHealthTests(unittest.TestCase):
                     ("/c.csv", "pending", 300, 0, "2026-11-03T00:00:00+00:00"),
                 ],
             )
+            db.commit()
+        finally:
+            db.close()
         before = self.path.read_bytes()
         result = inspect_database(self._profile(), secrets=None)
         self.assertTrue(result.connected)
