@@ -119,5 +119,50 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
             return DatabaseHealth(**base, connected=False, tracking_table_available=False,
                                   message=f"تعذّر فحص PostgreSQL ({type(exc).__name__}).")
 
+    if profile.backend in {"mysql", "mariadb"}:
+        connection = None
+        try:
+            from .database_drivers import open_mysql_connection
+            connection = open_mysql_connection(profile, secrets, timeout=timeout)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema=%s AND table_name='files'",
+                    (profile.database,),
+                )
+                table_exists = bool(cursor.fetchone()[0])
+                if not table_exists:
+                    return DatabaseHealth(
+                        **base, connected=True, tracking_table_available=False,
+                        message="الاتصال سليم، لكن جدول تتبع الملفات غير موجود.",
+                    )
+                cursor.execute(
+                    """SELECT COUNT(*),
+                              SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END),
+                              SUM(CASE WHEN status IN ('failed','invalid') THEN 1 ELSE 0 END),
+                              COALESCE(SUM(remote_size), 0),
+                              COALESCE(SUM(local_size), 0),
+                              MAX(updated_at)
+                       FROM files"""
+                )
+                row = cursor.fetchone()
+            return DatabaseHealth(
+                **base, connected=True, tracking_table_available=True,
+                tracked_files=int(row[0] or 0), completed_files=int(row[1] or 0),
+                failed_files=int(row[2] or 0), remote_bytes=int(row[3] or 0),
+                local_bytes=int(row[4] or 0),
+                latest_update=row[5].isoformat() if hasattr(row[5], "isoformat") else row[5],
+                message="تم فحص سجل التتبع بوضع القراءة فقط.",
+            )
+        except ImportError:
+            return DatabaseHealth(**base, connected=False, tracking_table_available=False,
+                                  message="موصل MySQL/MariaDB PyMySQL غير مثبت.")
+        except Exception as exc:
+            return DatabaseHealth(**base, connected=False, tracking_table_available=False,
+                                  message=f"تعذّر فحص {profile.backend} ({type(exc).__name__}).")
+        finally:
+            if connection is not None:
+                connection.close()
+
     return DatabaseHealth(**base, connected=False, tracking_table_available=False,
                           message=f"فحص {profile.backend} غير متاح حتى إضافة موصله.")
