@@ -39,6 +39,12 @@ class _ProfileDialog(QDialog):
         self.ssl = QComboBox()
         for value in ("prefer", "require", "verify-ca", "verify-full", "disable"):
             self.ssl.addItem(value, value)
+        self.ssl_ca = QLineEdit(profile.ssl_ca if profile else "")
+        self.ssl_ca_browse = QPushButton("اختيار شهادة CA…")
+        self.ssl_ca_browse.clicked.connect(self._browse_ssl_ca)
+        ssl_ca_row = QHBoxLayout()
+        ssl_ca_row.addWidget(self.ssl_ca, 1)
+        ssl_ca_row.addWidget(self.ssl_ca_browse)
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
         self.password.setPlaceholderText("اتركه فارغاً للإبقاء على كلمة المرور الحالية")
@@ -62,6 +68,7 @@ class _ProfileDialog(QDialog):
         form.addRow("المنفذ", self.port)
         form.addRow("اسم المستخدم", self.username)
         form.addRow("SSL", self.ssl)
+        form.addRow("شهادة CA (لـ verify-ca/full)", ssl_ca_row)
         form.addRow("كلمة المرور", self.password)
         form.addRow("الحالة", self.enabled)
         self.backend.currentIndexChanged.connect(self._update_fields)
@@ -76,12 +83,20 @@ class _ProfileDialog(QDialog):
         if path:
             self.sqlite_path.setText(path)
 
+    def _browse_ssl_ca(self):
+        path, _ = QFileDialog.getOpenFileName(self, "اختر شهادة CA", "", "Certificates (*.pem *.crt *.cer);;All files (*)")
+        if path:
+            self.ssl_ca.setText(path)
+
     def _update_fields(self):
         sqlite = self.backend.currentData() == "sqlite"
         for widget in (self.sqlite_path, self.browse):
             widget.setEnabled(sqlite)
         for widget in (self.database, self.host, self.port, self.username, self.ssl, self.password):
             widget.setEnabled(not sqlite)
+        mysql_backend = self.backend.currentData() in {"mysql", "mariadb"}
+        self.ssl_ca.setEnabled(mysql_backend)
+        self.ssl_ca_browse.setEnabled(mysql_backend)
 
     def build_profile(self) -> tuple[DatabaseProfile, str | None]:
         backend = self.backend.currentData()
@@ -92,6 +107,7 @@ class _ProfileDialog(QDialog):
             port=self.port.value() if backend != "sqlite" else None,
             username=self.username.text().strip() if backend != "sqlite" else "",
             ssl_mode=self.ssl.currentData(),
+            ssl_ca=self.ssl_ca.text().strip() if backend in {"mysql", "mariadb"} else "",
             sqlite_path=self.sqlite_path.text().strip() if backend == "sqlite" else "",
             enabled=self.enabled.currentData(),
         ) if self.profile is None else DatabaseProfile(
@@ -103,6 +119,7 @@ class _ProfileDialog(QDialog):
             port=self.port.value() if backend != "sqlite" else None,
             username=self.username.text().strip() if backend != "sqlite" else "",
             ssl_mode=self.ssl.currentData(),
+            ssl_ca=self.ssl_ca.text().strip() if backend in {"mysql", "mariadb"} else "",
             sqlite_path=self.sqlite_path.text().strip() if backend == "sqlite" else "",
             enabled=self.enabled.currentData(),
             credential_key=self.profile.credential_key,
