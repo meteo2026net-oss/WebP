@@ -71,12 +71,21 @@ class _ProfileDialog(QDialog):
         form.addRow("شهادة CA (لـ verify-ca/full)", ssl_ca_row)
         form.addRow("كلمة المرور", self.password)
         form.addRow("الحالة", self.enabled)
-        self.backend.currentIndexChanged.connect(self._update_fields)
+        self._last_backend = profile.backend if profile else "sqlite"
+        self.backend.currentIndexChanged.connect(self._backend_changed)
         self._update_fields()
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
+
+    def _backend_changed(self):
+        defaults = {"sqlite": 5432, "postgresql": 5432, "mysql": 3306, "mariadb": 3306}
+        previous_default = defaults.get(self._last_backend, 5432)
+        if self.port.value() == previous_default:
+            self.port.setValue(defaults.get(self.backend.currentData(), 5432))
+        self._last_backend = self.backend.currentData()
+        self._update_fields()
 
     def _browse_sqlite(self):
         path, _ = QFileDialog.getOpenFileName(self, "اختر قاعدة SQLite", "", "SQLite (*.db *.sqlite *.sqlite3);;All files (*)")
