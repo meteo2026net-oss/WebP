@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from ..connection_profiles import DatabaseProfile, DatabaseProfileStore, test_database_connection
 from ..database_health import inspect_database
 from ..database_routing import DatabaseRoutingError, DatabaseRoutingStore
+from ..asset_sync import ApprovedCatalogSink, AssetOutboxSynchronizer, CatalogWriteApproval, OutboxSyncApproval
 
 
 class _ProfileDialog(QDialog):
@@ -156,6 +157,7 @@ class DatabaseManagerWidget(QWidget):
         self.secrets = secrets
         self.profile_store = DatabaseProfileStore(Path(config_root) / "database-profiles.json")
         self.routing_store = None
+        self.approved_catalog_sinks = {}
         self.setLayoutDirection(Qt.RightToLeft)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("إدارة اتصالات قواعد البيانات — لا تُحفظ كلمات المرور في ملفات JSON"))
@@ -197,18 +199,24 @@ class DatabaseManagerWidget(QWidget):
         self.model.setPlaceholderText("IFS HRES / GFS / ICON")
         self.product = QLineEdit("GRIB")
         self.route_profile = QComboBox()
+        self.replica_profile = QComboBox()
         self.default_profile = QComboBox()
         route_form.addRow("المزوّد", self.provider)
         route_form.addRow("النموذج", self.model)
         route_form.addRow("المنتج", self.product)
         route_form.addRow("قاعدة بيانات النموذج", self.route_profile)
+        route_form.addRow("قاعدة مزامنة ثانوية", self.replica_profile)
         route_form.addRow("قاعدة البيانات الافتراضية", self.default_profile)
         layout.addLayout(route_form)
         route_actions = QHBoxLayout()
         self.save_route_button = QPushButton("حفظ توجيه النموذج")
         self.clear_route_button = QPushButton("مسح التوجيه المحدد")
+        self.approve_catalog_button = QPushButton("اعتماد كتابة الكتالوج…")
+        self.sync_catalog_button = QPushButton("مزامنة Outbox…")
         route_actions.addWidget(self.save_route_button)
         route_actions.addWidget(self.clear_route_button)
+        route_actions.addWidget(self.approve_catalog_button)
+        route_actions.addWidget(self.sync_catalog_button)
         layout.addLayout(route_actions)
         self.routes_table = QTableWidget(0, 2)
         self.routes_table.setHorizontalHeaderLabels(["مفتاح النموذج / المنتج", "معرّف الاتصال"])
@@ -230,6 +238,8 @@ class DatabaseManagerWidget(QWidget):
         self.delete_button.clicked.connect(self._delete_profile)
         self.save_route_button.clicked.connect(self._save_route)
         self.clear_route_button.clicked.connect(self._clear_route)
+        self.approve_catalog_button.clicked.connect(self._approve_catalog_writes)
+        self.sync_catalog_button.clicked.connect(self._sync_catalog_outbox)
         self.default_profile.currentIndexChanged.connect(self._set_default)
         self.refresh()
 
@@ -249,7 +259,7 @@ class DatabaseManagerWidget(QWidget):
             self.routing_store.snapshot()["default_profile_id"]
             if self.routing_store else None
         )
-        for combo in (self.route_profile, self.default_profile):
+        for combo in (self.route_profile, self.replica_profile, self.default_profile):
             previous = combo.currentData()
             if combo is self.default_profile and previous is None:
                 previous = saved_default
