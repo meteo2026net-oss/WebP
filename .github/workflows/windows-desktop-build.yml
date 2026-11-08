@@ -17,7 +17,7 @@ on:
       - "START.bat"
       - ".github/workflows/windows-desktop-build.yml"
   push:
-    branches: [main, "feat/windows-one-click-desktop-package"]
+    branches: [main]
     paths:
       - "src/**"
       - "main.py"
