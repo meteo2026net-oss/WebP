@@ -80,7 +80,8 @@ class DatabaseProfile:
         else:
             if not self.host.strip() or not self.database.strip() or not self.username.strip():
                 raise DatabaseProfileError("المضيف واسم قاعدة البيانات واسم المستخدم مطلوبة.")
-            if self.port is None or isinstance(self.port, bool) or not 1 <= self.port <= 65535:
+            if (self.port is None or isinstance(self.port, bool) or not isinstance(self.port, int)
+                    or not 1 <= self.port <= 65535):
                 raise DatabaseProfileError("منفذ قاعدة البيانات يجب أن يكون بين 1 و65535.")
             if self.sqlite_path:
                 raise DatabaseProfileError("مسار SQLite لا ينطبق على قواعد البيانات الخادمية.")
@@ -168,8 +169,8 @@ class DatabaseProfileStore:
             return False
         if not self.delete(profile_id):
             return False
-        if profile.backend != "sqlite":
-            secrets.delete_password(profile.credential_key)
+        if profile.backend != "sqlite" and not secrets.delete_password(profile.credential_key):
+            return False
         return True
 
 
@@ -185,7 +186,7 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
         if not path.is_file():
             return False, "ملف SQLite غير موجود؛ لم يتم إنشاء ملف جديد."
         try:
-            with sqlite3.connect(str(path), timeout=timeout) as connection:
+            with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=timeout) as connection:
                 connection.execute("SELECT 1").fetchone()
             return True, "اتصال SQLite سليم."
         except Exception as exc:
