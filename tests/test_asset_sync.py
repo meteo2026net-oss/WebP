@@ -165,6 +165,57 @@ class AssetSyncTests(unittest.TestCase):
             self.query(self.target.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0], 1
         )
 
+    def test_sync_recovers_when_target_commit_succeeds_but_connection_drops_before_ack(self):
+        self.source_catalog.initialize_schema()
+        FileAssetCatalog(self.target).initialize_schema()
+        self.source_catalog.register_asset(
+            self.sample_asset(), replica_profile_ids=[self.target.profile_id]
+        )
+        sync = AssetOutboxSynchronizer(
+            self.source.profile_id, self.profile_store, None,
+            approved_target_profile_ids=(self.target.profile_id,),
+        )
+        approval = OutboxSyncApproval((self.target.profile_id,), confirmed=True)
+        original_register = FileAssetCatalog.register_asset
+        injected = {"drop_once": True}
+
+        def commit_then_drop_ack(catalog, asset, *, replica_profile_ids=()):
+            result = original_register(
+                catalog, asset, replica_profile_ids=replica_profile_ids
+            )
+            if catalog.profile.profile_id == self.target.profile_id and injected["drop_once"]:
+                injected["drop_once"] = False
+                raise ConnectionError("injected destination connection loss after commit")
+            return result
+
+        # Deterministically model a lost network acknowledgement at the exact
+        # destination-commit/source-ack boundary. The target transaction commits;
+        # the source sees a connection failure and must safely retry the event.
+        from unittest.mock import patch
+        with patch.object(FileAssetCatalog, "register_asset", new=commit_then_drop_ack):
+            first = sync.sync_pending(approval)
+
+        self.assertEqual(first["failed"], 1)
+        self.assertEqual(
+            self.query(self.target.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0],
+            1,
+        )
+        self.assertEqual(
+            self.query(self.source.sqlite_path, "SELECT status FROM webp_asset_outbox")[0][0],
+            "failed",
+        )
+
+        second = sync.sync_pending(approval)
+        self.assertEqual(second["delivered"], 1)
+        self.assertEqual(
+            self.query(self.target.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0],
+            1,
+        )
+        self.assertEqual(
+            self.query(self.source.sqlite_path, "SELECT status, attempts FROM webp_asset_outbox")[0],
+            ("delivered", 2),
+        )
+
     def test_delivered_outbox_event_cannot_regress_after_late_failure(self):
         self.source_catalog.initialize_schema()
         self.source_catalog.register_asset(
