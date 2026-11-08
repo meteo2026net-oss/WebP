@@ -16,6 +16,7 @@ venv/
 env/
 
 # Secrets and local configuration
+.devcontainer/certs/
 .env
 .env.*
 !.env.example
