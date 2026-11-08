@@ -193,8 +193,14 @@ class DatabaseManagerWidget(QWidget):
             )
             for column, value in enumerate(values):
                 self.profiles_table.setItem(row, column, QTableWidgetItem(value))
+        saved_default = (
+            self.routing_store.snapshot()["default_profile_id"]
+            if self.routing_store else None
+        )
         for combo in (self.route_profile, self.default_profile):
             previous = combo.currentData()
+            if combo is self.default_profile and previous is None:
+                previous = saved_default
             combo.blockSignals(True)
             combo.clear()
             combo.addItem("— غير محدد —", None)
@@ -236,9 +242,16 @@ class DatabaseManagerWidget(QWidget):
             return
         try:
             updated, password = dialog.build_profile()
+            needs_new_password = updated.backend != "sqlite" and (
+                current.backend == "sqlite" or updated.backend != current.backend
+            )
+            if needs_new_password and not password:
+                raise ValueError("أدخل كلمة مرور جديدة عند تغيير نوع قاعدة البيانات.")
             if password and not self.profile_store.set_password(updated, self.secrets, password):
                 raise RuntimeError("تعذّر تحديث كلمة المرور في مخزن أسرار النظام.")
             self.profile_store.save(updated)
+            if current.backend != "sqlite" and updated.backend == "sqlite":
+                self.secrets.delete_password(current.credential_key)
             self.refresh()
         except Exception as exc:
             QMessageBox.warning(self, "تعذّر تعديل الاتصال", str(exc))
