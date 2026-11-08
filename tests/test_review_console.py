@@ -26,6 +26,7 @@ class ReviewConsoleAuthTests(unittest.TestCase):
         client = ReviewApiClient("http://127.0.0.1:8080", "temporary-token")
         response = Mock()
         response.ok = True
+        response.is_redirect = False
         response.json.return_value = {"items": []}
         with patch("ecmwf_collector.gui.review_console.requests.request",
                    return_value=response) as request:
@@ -42,6 +43,7 @@ class ReviewConsoleAuthTests(unittest.TestCase):
         response = Mock()
         response.status_code = 401
         response.ok = False
+        response.is_redirect = False
         with patch("ecmwf_collector.gui.review_console.requests.request",
                    return_value=response):
             with self.assertRaisesRegex(ReviewAuthError, "سجّل الدخول مجدداً"):
@@ -133,6 +135,17 @@ class ReviewConsoleAuthTests(unittest.TestCase):
             login._discovery_url(),
             "https://id.example.test/realms/weather-review/.well-known/openid-configuration",
         )
+
+
+    def test_api_redirect_is_rejected_without_following_it(self):
+        client = ReviewApiClient("http://127.0.0.1:8000", "temporary-token")
+        response = Mock()
+        response.is_redirect = True
+        with patch("ecmwf_collector.gui.review_console.requests.request",
+                   return_value=response) as request:
+            with self.assertRaisesRegex(ReviewAuthError, "redirect"):
+                client.request("GET", "/api/v1/reviews")
+        self.assertFalse(request.call_args.kwargs.get("allow_redirects", True))
 
 
 if __name__ == "__main__":
