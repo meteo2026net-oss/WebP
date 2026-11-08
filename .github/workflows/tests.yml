@@ -3,7 +3,7 @@ name: Python tests
 on:
   workflow_dispatch:
   push:
-    branches: [main, "feat/windows-one-click-desktop-package"]
+    branches: [main]
   pull_request:
     branches: [main]
 
