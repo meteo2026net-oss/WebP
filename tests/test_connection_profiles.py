@@ -154,12 +154,19 @@ class DatabaseProfileTests(unittest.TestCase):
                 database="weather", username="app", ssl_mode="verify-full",
             ).validate()
 
-    def test_secret_is_deleted_only_after_profile_metadata(self):
+    def test_secret_and_profile_are_removed_together(self):
         class FakeSecrets:
             def __init__(self):
                 self.deleted = []
+                self.values = {}
+            def get_password(self, key):
+                return self.values.get(key)
+            def set_password(self, key, value):
+                self.values[key] = value
+                return True
             def delete_password(self, key):
                 self.deleted.append(key)
+                self.values.pop(key, None)
                 return True
         profile = DatabaseProfile.create(
             "Remote", "postgresql", host="db", port=5432,
@@ -167,10 +174,40 @@ class DatabaseProfileTests(unittest.TestCase):
         )
         self.store.save(profile)
         secrets = FakeSecrets()
+        secrets.values[profile.credential_key] = "vault-secret"
         self.assertTrue(self.store.delete_with_secret(profile.profile_id, secrets))
         self.assertIsNone(self.store.get(profile.profile_id))
         self.assertEqual(secrets.deleted, [profile.credential_key])
 
+
+    def test_failed_profile_delete_restores_vault_secret(self):
+        class FailingStore(DatabaseProfileStore):
+            def delete(self, profile_id):
+                raise OSError("simulated metadata write failure")
+
+        class FakeSecrets:
+            def __init__(self):
+                self.value = "vault-secret"
+            def get_password(self, key):
+                return self.value
+            def delete_password(self, key):
+                self.value = None
+                return True
+            def set_password(self, key, value):
+                self.value = value
+                return True
+
+        store = FailingStore(self.path)
+        profile = DatabaseProfile.create(
+            "Remote", "postgresql", host="db", port=5432,
+            database="weather", username="app",
+        )
+        store.save(profile)
+        secrets = FakeSecrets()
+        with self.assertRaises(OSError):
+            store.delete_with_secret(profile.profile_id, secrets)
+        self.assertEqual(secrets.value, "vault-secret")
+        self.assertEqual(store.get(profile.profile_id), profile)
 
     def test_failed_secret_deletion_preserves_profile_metadata(self):
         class FailingSecrets:
