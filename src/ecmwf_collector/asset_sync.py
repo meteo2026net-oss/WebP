@@ -48,6 +48,7 @@ class ApprovedCatalogSink:
         self.routing_store = routing_store
         self.secrets = secrets
         self.approval = approval
+        self._initialized_profiles: set[str] = set()
         if not approval.asset_write_confirmed:
             raise CatalogApprovalError("لم تصدر موافقة صريحة على تسجيل أصول الملفات.")
         if approval.destination_profile_id not in approval.schema_approved_profile_ids:
@@ -64,14 +65,15 @@ class ApprovedCatalogSink:
         route_key = self.routing_store.model_key(
             asset.provider_id, asset.model_id, asset.product_id
         )
+        explicit_routes = self.routing_store.snapshot()["routes"]
+        if route_key not in explicit_routes:
+            raise CatalogApprovalError(
+                f"لا يوجد مسار صريح للنموذج/المنتج {route_key}؛ لم تتم الكتابة."
+            )
         try:
             routed_profile_id = self.routing_store.resolve(route_key)
         except DatabaseRoutingError:
             raise
-        if routed_profile_id is None:
-            raise CatalogApprovalError(
-                f"لا يوجد مسار صريح للنموذج/المنتج {route_key}؛ لم تتم الكتابة."
-            )
         if routed_profile_id != self.approval.destination_profile_id:
             raise CatalogApprovalError(
                 "قاعدة الوجهة المعتمدة لا تطابق مسار النموذج الحالي؛ لم تتم الكتابة."
@@ -92,7 +94,9 @@ class ApprovedCatalogSink:
         # DDL is executed only because the explicit approval object includes
         # every profile that may receive schema creation.
         for profile_id in profile_ids:
-            FileAssetCatalog(profiles[profile_id], self.secrets).initialize_schema()
+            if profile_id not in self._initialized_profiles:
+                FileAssetCatalog(profiles[profile_id], self.secrets).initialize_schema()
+                self._initialized_profiles.add(profile_id)
 
         primary = FileAssetCatalog(profiles[routed_profile_id], self.secrets)
         return primary.register_asset(
