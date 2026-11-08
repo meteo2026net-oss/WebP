@@ -1,6 +1,9 @@
 name: NOAA GEFS real GRIB2 ensemble smoke test
 
 on:
+  push:
+    branches:
+      - feat/windows-one-click-desktop-package
   workflow_dispatch:
     inputs:
       run_date:
@@ -49,15 +52,15 @@ jobs:
       - name: Download two actual NOAA GEFS members, decode and calculate statistics
         env:
           PYTHONPATH: src
-          RUN_DATE: ${{ inputs.run_date }}
-          CYCLE: ${{ inputs.cycle }}
-          FORECAST_HOUR: ${{ inputs.forecast_hour }}
-          VARIABLE: ${{ inputs.variable }}
+          RUN_DATE: ${{ inputs.run_date || '' }}
+          CYCLE: ${{ inputs.cycle || '00' }}
+          FORECAST_HOUR: ${{ inputs.forecast_hour || '24' }}
+          VARIABLE: ${{ inputs.variable || 'TMP' }}
         run: |
           python - <<'PY'
           import json
           import os
-          from datetime import date
+          from datetime import date, timedelta
           from pathlib import Path
           import numpy as np
           from ecmwf_collector.sources.noaa_gefs import GefsRequest, download_gefs
@@ -65,7 +68,8 @@ jobs:
 
           root = Path("output/noaa-gefs-real")
           root.mkdir(parents=True, exist_ok=True)
-          run_date = date.fromisoformat(os.environ["RUN_DATE"])
+          run_date_text = os.environ.get("RUN_DATE", "").strip()
+          run_date = date.fromisoformat(run_date_text) if run_date_text else (date.today() - timedelta(days=1))
           cycle = int(os.environ["CYCLE"])
           forecast_hour = int(os.environ["FORECAST_HOUR"])
           variable = os.environ["VARIABLE"]
