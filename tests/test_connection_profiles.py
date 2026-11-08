@@ -115,6 +115,18 @@ class DatabaseProfileTests(unittest.TestCase):
         self.assertEqual(secrets.deleted, [profile.credential_key])
 
 
+    def test_failed_secret_deletion_preserves_profile_metadata(self):
+        class FailingSecrets:
+            def delete_password(self, key):
+                return False
+        profile = DatabaseProfile.create(
+            "Remote", "postgresql", host="db", port=5432,
+            database="weather", username="app",
+        )
+        self.store.save(profile)
+        self.assertFalse(self.store.delete_with_secret(profile.profile_id, FailingSecrets()))
+        self.assertEqual(self.store.get(profile.profile_id), profile)
+
     def test_profile_password_uses_os_secret_store_adapter(self):
         class FakeSecrets:
             def __init__(self):
