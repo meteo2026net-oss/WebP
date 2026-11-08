@@ -167,11 +167,12 @@ class DatabaseProfileStore:
         profile = self.get(profile_id)
         if profile is None:
             return False
-        if not self.delete(profile_id):
-            return False
+        # Remove the OS-vault secret first. If that fails, keep the profile
+        # metadata intact so the user can retry instead of leaving an orphaned
+        # credential behind an already-deleted profile.
         if profile.backend != "sqlite" and not secrets.delete_password(profile.credential_key):
             return False
-        return True
+        return self.delete(profile_id)
 
     def _write(self, profiles: list[DatabaseProfile]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
