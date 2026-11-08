@@ -48,5 +48,91 @@ class ReviewConsoleAuthTests(unittest.TestCase):
                 client.request("GET", "/api/v1/reviews")
 
 
+    def _metadata(self, issuer="https://id.example.test/realms/weather-review"):
+        return {
+            "issuer": issuer,
+            "authorization_endpoint": issuer + "/protocol/openid-connect/auth",
+            "token_endpoint": issuer + "/protocol/openid-connect/token",
+            "jwks_uri": issuer + "/protocol/openid-connect/certs",
+        }
+
+    def test_trusted_tunnel_keeps_official_browser_authorization_endpoint(self):
+        login = OidcPkceLogin(
+            "https://id.example.test/realms/weather-review",
+            "desktop-client",
+            local_tunnel_url="http://127.0.0.1:8081",
+        )
+        endpoints = login._endpoint_urls(self._metadata())
+        self.assertEqual(
+            endpoints["authorization_endpoint"],
+            "https://id.example.test/realms/weather-review/protocol/openid-connect/auth",
+        )
+        self.assertEqual(
+            endpoints["token_endpoint"],
+            "http://127.0.0.1:8081/realms/weather-review/protocol/openid-connect/token",
+        )
+        self.assertEqual(
+            endpoints["jwks_uri"],
+            "http://127.0.0.1:8081/realms/weather-review/protocol/openid-connect/certs",
+        )
+        self.assertEqual(
+            login._discovery_url(),
+            "http://127.0.0.1:8081/realms/weather-review/.well-known/openid-configuration",
+        )
+
+    def test_issuer_allows_only_trailing_slash_normalization(self):
+        login = OidcPkceLogin(
+            "https://id.example.test/realms/weather-review/",
+            "desktop-client",
+            local_tunnel_url="http://127.0.0.1:8081",
+        )
+        endpoints = login._endpoint_urls(self._metadata())
+        self.assertTrue(endpoints["authorization_endpoint"].startswith("https://"))
+        metadata = self._metadata(issuer="https://id.example.test/realms/other")
+        with self.assertRaisesRegex(ReviewAuthError, "issuer"):
+            login._endpoint_urls(metadata)
+
+    def test_tunnel_rejects_non_loopback_and_non_http_targets(self):
+        for tunnel in (
+            "http://localhost:8081",
+            "http://192.0.2.10:8081",
+            "https://127.0.0.1:8081",
+            "http://127.0.0.1:8081/other",
+            "http://user@127.0.0.1:8081",
+        ):
+            with self.subTest(tunnel=tunnel):
+                login = OidcPkceLogin(
+                    "https://id.example.test/realms/weather-review",
+                    "desktop-client",
+                    local_tunnel_url=tunnel,
+                )
+                with self.assertRaises(ReviewAuthError):
+                    login._discovery_url()
+
+    def test_metadata_cannot_redirect_token_or_jwks_to_untrusted_host(self):
+        login = OidcPkceLogin(
+            "https://id.example.test/realms/weather-review",
+            "desktop-client",
+            local_tunnel_url="http://127.0.0.1:8081",
+        )
+        metadata = self._metadata()
+        metadata["token_endpoint"] = "https://attacker.example/token"
+        with self.assertRaisesRegex(ReviewAuthError, "token_endpoint"):
+            login._endpoint_urls(metadata)
+        metadata = self._metadata()
+        metadata["jwks_uri"] = "http://127.0.0.1:8081/attacker-keys"
+        with self.assertRaisesRegex(ReviewAuthError, "jwks_uri"):
+            login._endpoint_urls(metadata)
+
+    def test_discovery_url_is_loopback_only_when_tunnel_is_configured(self):
+        login = OidcPkceLogin(
+            "https://id.example.test/realms/weather-review", "desktop-client"
+        )
+        self.assertEqual(
+            login._discovery_url(),
+            "https://id.example.test/realms/weather-review/.well-known/openid-configuration",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
