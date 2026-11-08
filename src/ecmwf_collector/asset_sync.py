@@ -21,6 +21,7 @@ class CatalogWriteApproval:
     The approval is intentionally not persisted: after an application restart,
     a new explicit confirmation is required before another database write.
     """
+    route_key: str
     destination_profile_id: str
     schema_approved_profile_ids: tuple[str, ...]
     replica_profile_ids: tuple[str, ...] = ()
@@ -48,7 +49,6 @@ class ApprovedCatalogSink:
         self.routing_store = routing_store
         self.secrets = secrets
         self.approval = approval
-        self._initialized_profiles: set[str] = set()
         if not approval.asset_write_confirmed:
             raise CatalogApprovalError("لم تصدر موافقة صريحة على تسجيل أصول الملفات.")
         if approval.destination_profile_id not in approval.schema_approved_profile_ids:
@@ -59,6 +59,17 @@ class ApprovedCatalogSink:
             raise CatalogApprovalError("قاعدة الوجهة الأساسية لا يمكن تكرارها كوجهة ثانوية.")
         if not set(approval.replica_profile_ids).issubset(set(approval.schema_approved_profile_ids)):
             raise CatalogApprovalError("يلزم اعتماد تهيئة مخطط كل قاعدة ثانوية قبل إضافتها إلى Outbox.")
+        if not approval.route_key.strip():
+            raise CatalogApprovalError("مفتاح التوجيه مطلوب في موافقة الكتابة.")
+        explicit_profile_id = routing_store.snapshot()["routes"].get(approval.route_key)
+        if explicit_profile_id != approval.destination_profile_id:
+            raise CatalogApprovalError("موافقة الكتابة لا تطابق مسار النموذج الصريح.")
+        profile_ids = (approval.destination_profile_id, *approval.replica_profile_ids)
+        for profile_id in profile_ids:
+            profile = profile_store.get(profile_id)
+            if profile is None or not profile.enabled:
+                raise CatalogApprovalError("إحدى قواعد البيانات المعتمدة غير موجودة أو معطّلة.")
+            FileAssetCatalog(profile, secrets).initialize_schema()
 
     def register_sidecar(self, sidecar_path: Path) -> dict:
         asset = asset_from_sidecar(Path(sidecar_path))
@@ -66,6 +77,8 @@ class ApprovedCatalogSink:
             asset.provider_id, asset.model_id, asset.product_id
         )
         explicit_routes = self.routing_store.snapshot()["routes"]
+        if route_key != self.approval.route_key:
+            raise CatalogApprovalError("مفتاح sidecar لا يطابق مفتاح الموافقة.")
         if route_key not in explicit_routes:
             raise CatalogApprovalError(
                 f"لا يوجد مسار صريح للنموذج/المنتج {route_key}؛ لم تتم الكتابة."
@@ -90,13 +103,6 @@ class ApprovedCatalogSink:
             if profile_id not in self.approval.schema_approved_profile_ids:
                 raise CatalogApprovalError("لا توجد موافقة على تهيئة مخطط إحدى قواعد البيانات.")
             profiles[profile_id] = profile
-
-        # DDL is executed only because the explicit approval object includes
-        # every profile that may receive schema creation.
-        for profile_id in profile_ids:
-            if profile_id not in self._initialized_profiles:
-                FileAssetCatalog(profiles[profile_id], self.secrets).initialize_schema()
-                self._initialized_profiles.add(profile_id)
 
         primary = FileAssetCatalog(profiles[routed_profile_id], self.secrets)
         return primary.register_asset(
