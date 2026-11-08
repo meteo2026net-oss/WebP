@@ -1,0 +1,74 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from ecmwf_collector.connection_profiles import (
+    DatabaseProfile, DatabaseProfileError, DatabaseProfileStore,
+)
+
+
+class DatabaseProfileTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "config" / "database-profiles.json"
+        self.store = DatabaseProfileStore(self.path)
+
+    def test_save_and_reload_postgres_metadata(self):
+        profile = DatabaseProfile.create(
+            "المركز", "postgresql", host="127.0.0.1", port=5432,
+            database="weather", username="weather_app", ssl_mode="require",
+        )
+        self.store.save(profile)
+        self.assertEqual(self.store.get(profile.profile_id), profile)
+
+    def test_registry_never_serializes_password_or_dsn(self):
+        profile = DatabaseProfile.create(
+            "Cloud", "postgresql", host="db.example", port=5432,
+            database="weather", username="app",
+        )
+        self.store.save(profile)
+        raw = self.path.read_text(encoding="utf-8")
+        self.assertNotIn("password", raw.lower())
+        self.assertNotIn("secret-value", raw)
+        self.assertNotIn("postgresql://", raw)
+        self.assertEqual(json.loads(raw)[0]["credential_key"], profile.credential_key)
+
+    def test_sqlite_profile_requires_path_and_rejects_server_fields(self):
+        with self.assertRaises(DatabaseProfileError):
+            DatabaseProfile.create("Local", "sqlite").validate()
+        with self.assertRaises(DatabaseProfileError):
+            DatabaseProfile.create("Local", "sqlite", sqlite_path="state.db",
+                                   host="localhost").validate()
+
+    def test_server_profile_validates_port_and_required_fields(self):
+        with self.assertRaises(DatabaseProfileError):
+            DatabaseProfile.create("Remote", "postgresql", host="db",
+                                   database="weather", username="app", port=0).validate()
+        with self.assertRaises(DatabaseProfileError):
+            DatabaseProfile.create("Remote", "postgresql", host="db", port=5432).validate()
+
+    def test_update_disable_and_delete_profile(self):
+        profile = DatabaseProfile.create(
+            "Local", "sqlite", sqlite_path="state.db",
+        )
+        self.store.save(profile)
+        disabled = DatabaseProfile(**{**profile.to_metadata(), "enabled": False})
+        self.store.save(disabled)
+        self.assertFalse(self.store.get(profile.profile_id).enabled)
+        self.assertTrue(self.store.delete(profile.profile_id))
+        self.assertIsNone(self.store.get(profile.profile_id))
+        self.assertFalse(self.store.delete(profile.profile_id))
+
+    def test_duplicate_profile_ids_are_rejected(self):
+        profile = DatabaseProfile.create("Local", "sqlite", sqlite_path="state.db")
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(json.dumps([profile.to_metadata(), profile.to_metadata()]),
+                             encoding="utf-8")
+        with self.assertRaises(DatabaseProfileError):
+            self.store.list_profiles()
+
+
+if __name__ == "__main__":
+    unittest.main()
