@@ -11,7 +11,7 @@ import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.parse import urlparse, urlsplit, parse_qs, urlencode
 
 import requests
 from authlib.integrations.requests_client import OAuth2Session
@@ -36,12 +36,20 @@ class ReviewAuthError(RuntimeError):
 
 
 class OidcPkceLogin:
-    """Interactive OIDC Authorization Code + PKCE; no client secret/refresh token."""
+    """Interactive OIDC Authorization Code + PKCE with an optional trusted loopback tunnel.
 
-    def __init__(self, issuer: str, client_id: str, scopes: str = "openid profile"):
+    The issuer and browser authorization endpoint always remain canonical HTTPS URLs.
+    A configured tunnel is used only for discovery, token exchange, and JWKS retrieval.
+    """
+
+    def __init__(
+        self, issuer: str, client_id: str, scopes: str = "openid profile",
+        local_tunnel_url: str | None = None,
+    ):
         self.issuer = issuer.rstrip("/")
         self.client_id = client_id.strip()
         self.scopes = scopes
+        self.local_tunnel_url = (local_tunnel_url or "").strip() or None
 
     @staticmethod
     def _callback_server():
@@ -75,21 +83,87 @@ class OidcPkceLogin:
         redirect_uri = f"http://127.0.0.1:{server.server_port}/oidc/callback"
         return server, received, ready, redirect_uri
 
-    def login(self, timeout_seconds: int = 180) -> tuple[str, int]:
-        if not self.issuer.startswith("https://") or not self.client_id:
-            raise ReviewAuthError("أدخل عنوان OIDC آمن (HTTPS) ومعرّف التطبيق العام")
-        discovery_url = self.issuer + "/.well-known/openid-configuration"
+    def _issuer_parts(self):
+        parsed = urlsplit(self.issuer)
+        if (
+            parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment
+        ):
+            raise ReviewAuthError("Issuer must be a canonical HTTPS URL without credentials or query")
         try:
-            discovery = requests.get(discovery_url, timeout=10)
-            discovery.raise_for_status()
-            metadata = discovery.json()
+            port = parsed.port
+        except ValueError as exc:
+            raise ReviewAuthError("Issuer contains an invalid port") from exc
+        if port not in (None, 443):
+            raise ReviewAuthError("Issuer must use the official HTTPS origin")
+        return parsed
+
+    def _tunnel_origin(self):
+        if not self.local_tunnel_url:
+            return None
+        parsed = urlsplit(self.local_tunnel_url)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ReviewAuthError("عنوان النفق المحلي يحتوي على منفذ غير صالح") from exc
+        if (
+            parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
+            or port is None or parsed.username or parsed.password
+            or parsed.path not in ("", "/") or parsed.query or parsed.fragment
+        ):
+            raise ReviewAuthError(
+                "النفق المحلي يجب أن يكون http://127.0.0.1:PORT فقط"
+            )
+        return f"http://127.0.0.1:{port}"
+
+    def _endpoint_urls(self, metadata):
+        issuer = self._issuer_parts()
+        issuer_path = issuer.path.rstrip("/")
+        official_origin = f"https://{issuer.netloc}"
+        expected = {
+            "authorization_endpoint": official_origin + issuer_path + "/protocol/openid-connect/auth",
+            "token_endpoint": official_origin + issuer_path + "/protocol/openid-connect/token",
+            "jwks_uri": official_origin + issuer_path + "/protocol/openid-connect/certs",
+        }
+        if not isinstance(metadata, dict):
+            raise ReviewAuthError("استجابة Discovery ليست كائن JSON صالحاً")
+        if metadata.get("issuer", "").rstrip("/") != self.issuer:
+            raise ReviewAuthError("عنوان issuer لا يطابق عنوان مزود الهوية الرسمي")
+        for key, official_url in expected.items():
+            value = metadata.get(key)
+            if not isinstance(value, str) or value != official_url:
+                raise ReviewAuthError(f"عنوان OIDC غير موثوق أو غير متوقع: {key}")
+        tunnel_origin = self._tunnel_origin()
+        if tunnel_origin is None:
+            return expected
+        return {
+            "authorization_endpoint": expected["authorization_endpoint"],
+            "token_endpoint": tunnel_origin + issuer_path + "/protocol/openid-connect/token",
+            "jwks_uri": tunnel_origin + issuer_path + "/protocol/openid-connect/certs",
+        }
+
+    def _discovery_url(self):
+        issuer = self._issuer_parts()
+        tunnel_origin = self._tunnel_origin()
+        origin = tunnel_origin or f"https://{issuer.netloc}"
+        return origin + issuer.path.rstrip("/") + "/.well-known/openid-configuration"
+
+    def login(self, timeout_seconds: int = 180) -> tuple[str, int]:
+        if not self.client_id:
+            raise ReviewAuthError("أدخل معرّف التطبيق العام")
+        try:
+            discovery_response = requests.get(
+                self._discovery_url(), timeout=10, allow_redirects=False
+            )
+            if discovery_response.is_redirect:
+                raise ReviewAuthError("رفض تحويل Discovery إلى عنوان آخر")
+            discovery_response.raise_for_status()
+            metadata = discovery_response.json()
+            endpoints = self._endpoint_urls(metadata)
+        except ReviewAuthError:
+            raise
         except Exception as exc:
             raise ReviewAuthError(f"تعذر تحميل إعدادات OIDC: {exc}") from exc
-        for key in ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"):
-            if not isinstance(metadata.get(key), str) or not metadata[key].startswith("https://"):
-                raise ReviewAuthError(f"إعداد OIDC غير صالح: {key}")
-        if metadata["issuer"].rstrip("/") != self.issuer:
-            raise ReviewAuthError("عنوان issuer لا يطابق عنوان مزود الهوية")
 
         server, received, ready, redirect_uri = self._callback_server()
         verifier = secrets.token_urlsafe(64)
@@ -102,7 +176,7 @@ class OidcPkceLogin:
             code_challenge_method="S256",
         )
         auth_url, state = session.create_authorization_url(
-            metadata["authorization_endpoint"], nonce=nonce, code_verifier=verifier
+            endpoints["authorization_endpoint"], nonce=nonce, code_verifier=verifier
         )
         try:
             if not QDesktopServices.openUrl(QUrl(auth_url)):
@@ -116,21 +190,37 @@ class OidcPkceLogin:
                 raise ReviewAuthError("فشل التحقق من state؛ أُلغيت عملية تسجيل الدخول")
             if received.get("error"):
                 raise ReviewAuthError("رفض مزود الهوية تسجيل الدخول أو ألغاه")
-            callback_url = redirect_uri + "?" + urlencode(
-                {key: values[0] for key, values in received.items() if values}
-            )
-            token = session.fetch_token(
-                metadata["token_endpoint"],
-                authorization_response=callback_url,
-                code_verifier=verifier,
+            code = received.get("code", [None])[0]
+            if not code:
+                raise ReviewAuthError("لم يُرجع المتصفح authorization code")
+
+            token_response = requests.post(
+                endpoints["token_endpoint"],
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": self.client_id,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "code_verifier": verifier,
+                },
+                headers={"Accept": "application/json"},
                 timeout=15,
+                allow_redirects=False,
             )
-            if not token.get("access_token"):
+            if token_response.is_redirect:
+                raise ReviewAuthError("رفض تحويل Token endpoint إلى عنوان آخر")
+            token_response.raise_for_status()
+            token = token_response.json()
+            if not isinstance(token, dict) or not token.get("access_token"):
                 raise ReviewAuthError("لم يُرجع مزود الهوية رمز وصول")
             if not token.get("id_token"):
                 raise ReviewAuthError("استجابة OIDC لا تحتوي على id_token")
-            # Validate the ID token signature and OIDC claims explicitly.
-            jwks_response = requests.get(metadata["jwks_uri"], timeout=10)
+
+            jwks_response = requests.get(
+                endpoints["jwks_uri"], timeout=10, allow_redirects=False
+            )
+            if jwks_response.is_redirect:
+                raise ReviewAuthError("رفض تحويل JWKS إلى عنوان آخر")
             jwks_response.raise_for_status()
             key_set = KeySet.import_key_set(jwks_response.json())
             id_token = jwt.decode(
@@ -141,7 +231,7 @@ class OidcPkceLogin:
             claims = CodeIDToken(
                 id_token.claims,
                 id_token.header,
-                {"iss": {"value": metadata["issuer"]}},
+                {"iss": {"value": self.issuer}},
                 {"nonce": nonce, "client_id": self.client_id,
                  "access_token": token["access_token"]},
             )
@@ -149,7 +239,6 @@ class OidcPkceLogin:
             if not claims.get("sub"):
                 raise ReviewAuthError("تعذر التحقق من هوية المستخدم")
             expires_in = max(1, int(token.get("expires_in", 300)))
-            # Explicitly discard tokens that the desktop client must never retain.
             token.pop("refresh_token", None)
             token.pop("id_token", None)
             return str(token["access_token"]), expires_in
@@ -241,11 +330,14 @@ class ReviewConsole(QWidget):
         self.api_url = QLineEdit(self.settings.value("review/api_url", ""))
         self.issuer = QLineEdit(self.settings.value("review/issuer", ""))
         self.client_id = QLineEdit(self.settings.value("review/client_id", ""))
-        for field in (self.api_url, self.issuer, self.client_id):
+        self.oidc_tunnel = QLineEdit(self.settings.value("review/oidc_tunnel_url", ""))
+        self.oidc_tunnel.setPlaceholderText("http://127.0.0.1:8081 — اختياري")
+        for field in (self.api_url, self.issuer, self.client_id, self.oidc_tunnel):
             field.setLayoutDirection(Qt.LeftToRight)
         form.addRow("عنوان Review API", self.api_url)
         form.addRow("OIDC Issuer", self.issuer)
         form.addRow("Public Client ID", self.client_id)
+        form.addRow("نفق Keycloak المحلي", self.oidc_tunnel)
         buttons = QHBoxLayout()
         self.login_button = QPushButton("تسجيل الدخول عبر المتصفح")
         self.logout_button = QPushButton("إنهاء الجلسة")
@@ -355,6 +447,7 @@ class ReviewConsole(QWidget):
         api_url = self.api_url.text().strip()
         issuer = self.issuer.text().strip()
         client_id = self.client_id.text().strip()
+        tunnel_url = self.oidc_tunnel.text().strip()
         if not issuer or not client_id:
             QMessageBox.warning(self, "إعدادات OIDC", "أدخل Issuer وPublic Client ID.")
             return
@@ -366,8 +459,9 @@ class ReviewConsole(QWidget):
         self.settings.setValue("review/api_url", api_url)
         self.settings.setValue("review/issuer", issuer)
         self.settings.setValue("review/client_id", client_id)
+        self.settings.setValue("review/oidc_tunnel_url", tunnel_url)
         self._pending_api_url = api_url
-        self._run(lambda: OidcPkceLogin(issuer, client_id).login(), self._login_done)
+        self._run(lambda: OidcPkceLogin(issuer, client_id, local_tunnel_url=tunnel_url).login(), self._login_done)
 
     def _login_done(self, result):
         access_token, expires_in = result
