@@ -105,7 +105,7 @@ def _verify_grib2(path: Path) -> None:
 
 
 def download_gfs(request: GfsRequest, output_dir: Path, *, timeout: float = 90,
-                 opener=urllib.request.urlopen) -> tuple[Path, Path]:
+                 opener=urllib.request.urlopen, catalog_sink=None) -> tuple[Path, Path]:
     """Download one GFS subset, resuming interrupted HTTP transfers safely."""
     url=build_gfs_url(request); output_dir=Path(output_dir); output_dir.mkdir(parents=True,exist_ok=True)
     day=request.run_date.strftime("%Y%m%d"); cycle=f"{request.cycle:02d}"
@@ -134,5 +134,7 @@ def download_gfs(request: GfsRequest, output_dir: Path, *, timeout: float = 90,
         temp_meta.unlink(missing_ok=True)
         if final_path.exists() and not metadata_path.exists(): final_path.unlink()
         raise
+    if catalog_sink is not None:
+        catalog_sink.register_sidecar(metadata_path)
     return final_path,metadata_path
 
