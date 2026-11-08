@@ -246,7 +246,8 @@ class FileAssetCatalog:
                         CONSTRAINT fk_webp_file_asset_sources_asset FOREIGN KEY (asset_id)
                             REFERENCES webp_file_assets(asset_id) ON DELETE CASCADE
                     )
-                         cursor.execute("""
+                """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS webp_asset_outbox (
                         event_id CHAR(36) PRIMARY KEY,
                         asset_key CHAR(64) NOT NULL,
@@ -259,7 +260,6 @@ class FileAssetCatalog:
                         UNIQUE KEY uq_asset_outbox_target (asset_key, target_profile_id)
                     )
                 """)
-       """)
             else:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS webp_file_assets (
