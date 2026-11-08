@@ -310,9 +310,20 @@ class DatabaseManagerWidget(QWidget):
                 raise ValueError("أدخل كلمة مرور جديدة عند تغيير نوع قاعدة البيانات.")
             if password and not self.profile_store.set_password(updated, self.secrets, password):
                 raise RuntimeError("تعذّر تحديث كلمة المرور في مخزن أسرار النظام.")
-            self.profile_store.save(updated)
+            removed_old_secret = False
+            old_secret = None
             if current.backend != "sqlite" and updated.backend == "sqlite":
-                self.secrets.delete_password(current.credential_key)
+                old_secret = self.secrets.get_password(current.credential_key)
+                if old_secret is not None:
+                    if not self.secrets.delete_password(current.credential_key):
+                        raise RuntimeError("تعذّر حذف كلمة المرور القديمة من مخزن أسرار النظام؛ لم يتغير نوع الاتصال.")
+                    removed_old_secret = True
+            try:
+                self.profile_store.save(updated)
+            except Exception:
+                if removed_old_secret and not self.secrets.set_password(current.credential_key, old_secret):
+                    raise RuntimeError("فشل حفظ الاتصال وتعذّرت استعادة كلمة المرور القديمة؛ أعد إدخالها قبل الاستخدام.")
+                raise
             self.refresh()
         except Exception as exc:
             QMessageBox.warning(self, "تعذّر تعديل الاتصال", str(exc))
