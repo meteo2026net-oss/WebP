@@ -75,5 +75,50 @@ class ReviewApplicationServiceTests(unittest.TestCase):
             self.service.list_queue()
 
 
+    def test_four_role_read_boundaries_are_enforced_by_service(self):
+        cases = {
+            "reviewer": ("reviewer-1", True, True, False),
+            "review_lead": ("lead-1", True, True, True),
+            "publisher": ("publisher-1", False, False, True),
+            "admin": ("admin-1", True, True, True),
+        }
+        for role, (subject, can_queue, can_case, can_publish) in cases.items():
+            with self.subTest(role=role):
+                repository = Mock()
+                repository.list_queue.return_value = []
+                repository.get_case.return_value = ReviewCase(
+                    "r-1", 42, assigned_to="reviewer-1"
+                )
+                repository.list_publishable_fields.return_value = []
+                identity = StaticIdentityProvider(AuthenticatedActor(subject, role))
+                service = ReviewApplicationService(repository, identity)
+
+                if can_queue:
+                    service.list_queue()
+                    if role == "reviewer":
+                        repository.list_queue.assert_called_once_with(
+                            assigned_to=subject, limit=100
+                        )
+                    else:
+                        repository.list_queue.assert_called_once_with(limit=100)
+                else:
+                    with self.assertRaises(ReviewPermissionError):
+                        service.list_queue()
+                    repository.list_queue.assert_not_called()
+
+                if can_case:
+                    service.get_case("r-1")
+                else:
+                    with self.assertRaises(ReviewPermissionError):
+                        service.get_case("r-1")
+                if can_publish:
+                    service.list_publishable_fields()
+                    repository.list_publishable_fields.assert_called_once_with(limit=500)
+                else:
+                    with self.assertRaises(ReviewPermissionError):
+                        service.list_publishable_fields()
+                    repository.list_publishable_fields.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
