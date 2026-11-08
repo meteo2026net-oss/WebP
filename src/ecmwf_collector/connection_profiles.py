@@ -168,16 +168,30 @@ class DatabaseProfileStore:
         return secrets.get_password(profile.credential_key)
 
     def delete_with_secret(self, profile_id: str, secrets) -> bool:
-        """Remove metadata first, then remove its OS-vault secret if one exists."""
+        """Delete a profile and compensate if its OS-vault secret cannot be removed."""
         profile = self.get(profile_id)
         if profile is None:
             return False
-        # Remove the OS-vault secret first. If that fails, keep the profile
-        # metadata intact so the user can retry instead of leaving an orphaned
-        # credential behind an already-deleted profile.
-        if profile.backend != "sqlite" and not secrets.delete_password(profile.credential_key):
+        if profile.backend == "sqlite":
+            return self.delete(profile_id)
+
+        old_password = secrets.get_password(profile.credential_key)
+        if old_password is not None and not secrets.delete_password(profile.credential_key):
             return False
-        return self.delete(profile_id)
+        try:
+            deleted = self.delete(profile_id)
+        except Exception:
+            if old_password is not None and not secrets.set_password(profile.credential_key, old_password):
+                raise DatabaseProfileError(
+                    "تعذّر حذف تعريف الاتصال وتعذّرت استعادة كلمة المرور؛ أعد حفظ بيانات الاعتماد."
+                )
+            raise
+        if not deleted and old_password is not None:
+            if not secrets.set_password(profile.credential_key, old_password):
+                raise DatabaseProfileError(
+                    "تعذّر حذف تعريف الاتصال وتعذّرت استعادة كلمة المرور؛ أعد حفظ بيانات الاعتماد."
+                )
+        return deleted
 
     def _write(self, profiles: list[DatabaseProfile]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
