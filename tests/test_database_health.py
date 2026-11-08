@@ -45,6 +45,7 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertEqual(result.failed_files, 1)
         self.assertEqual(result.remote_bytes, 600)
         self.assertEqual(result.local_bytes, 120)
+        self.assertEqual(result.database_bytes, self.path.stat().st_size)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_missing_sqlite_file_is_not_created(self):
@@ -73,7 +74,7 @@ class DatabaseHealthTests(unittest.TestCase):
 
         class FakeCursor:
             def __init__(self):
-                self.rows = [(1,), (3, 1, 1, 600, 120, "2026-11-03 00:00:00")]
+                self.rows = [(2048,), (1,), (3, 1, 1, 600, 120, "2026-11-03 00:00:00")]
                 self.statements = []
             def __enter__(self):
                 return self
@@ -113,6 +114,7 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertEqual(result.failed_files, 1)
         self.assertEqual(result.remote_bytes, 600)
         self.assertEqual(result.local_bytes, 120)
+        self.assertEqual(result.database_bytes, 2048)
         self.assertTrue(connection.closed)
         self.assertTrue(all(sql.startswith("SELECT") for sql in connection.fake_cursor.statements))
 
