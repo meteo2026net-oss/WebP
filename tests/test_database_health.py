@@ -49,8 +49,8 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertFalse(self.path.exists())
 
     def test_database_without_tracking_table_is_reported_clearly(self):
-        with sqlite3.connect(self.path):
-            pass
+        connection = sqlite3.connect(self.path)
+        connection.close()
         result = inspect_database(self._profile(), secrets=None)
         self.assertTrue(result.connected)
         self.assertFalse(result.tracking_table_available)
