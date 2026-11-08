@@ -105,6 +105,27 @@ class NoaaGefsTests(unittest.TestCase):
             self.assertEqual(len(list(Path(tmp).glob("*.grib2"))), 2)
             self.assertEqual(len(list(Path(tmp).glob("*.source.json"))), 2)
 
+    def test_ensemble_catalogue_registration_runs_after_downloads(self):
+        payload = b"GRIB" + b"x" * 128 + b"7777"
+        class Sink:
+            def __init__(self):
+                self.paths = []
+            def register_sidecar(self, path):
+                self.paths.append(Path(path))
+                if not Path(path).is_file():
+                    raise AssertionError("sidecar must exist before registration")
+        sink = Sink()
+        with tempfile.TemporaryDirectory() as tmp:
+            completed, failed = download_gefs_ensemble(
+                self.request(), Path(tmp), members=("c00", "p01"),
+                opener=lambda url, timeout: FakeResponse(payload),
+                catalog_sink=sink,
+            )
+            self.assertEqual(len(completed), 2)
+            self.assertEqual(failed, [])
+            self.assertEqual(len(sink.paths), 2)
+            self.assertTrue(all(path.is_file() for path in sink.paths))
+
     def test_ensemble_downloads_members_concurrently_with_bounded_workers(self):
         import threading
         import time
