@@ -1,6 +1,6 @@
 # بيئة اختبار مراجعة المتنبئين عبر GitHub Codespaces
 
-هذه بيئة تطوير واختبار مؤقتة ومعزولة، وليست بيئة إنتاج. لا تستخدم بيانات أرصاد حقيقية أو حسابات المؤسسة.
+بيئة اختبار مؤقتة ومعزولة، وليست إنتاجية. لا تستخدم بيانات أرصاد حقيقية أو حسابات المؤسسة.
 
 ## 1. فتح Codespace
 
@@ -8,83 +8,58 @@
 2. انتظر اكتمال إعداد الحاوية وتثبيت اعتماديات Python.
 3. افتح Terminal داخل Codespaces.
 
-لا تحتاج إلى تثبيت Docker Desktop على Windows؛ ميزة Docker-in-Docker تعمل داخل بيئة Codespaces السحابية.
+لا تحتاج إلى تثبيت Docker Desktop على Windows؛ يتم تشغيل الخدمات داخل Codespace.
 
-## 2. تشغيل الخدمات
-
-نفّذ:
+## 2. تشغيل الخدمات وقاعدة البيانات
 
 ```bash
 bash scripts/start-review-stack.sh
 bash scripts/bootstrap-review-db.sh
 ```
 
-ينشئ المشغّل شهادة CA وشهادة PostgreSQL محليتين لمدة 30 يوماً، وكلمات مرور عشوائية في ملف `.env` ذي صلاحيات مقيدة. الملفات والشهادات غير مخصصة للرفع إلى GitHub.
+ينشئ المشغّل شهادات اختبار محلية لمدة 30 يوماً وكلمات مرور عشوائية في ملف `.env` الخاص بالـ Codespace. لا ترفع هذا الملف أو الشهادات إلى GitHub.
 
-خدمات الاختبار:
-- PostgreSQL 16 + PostGIS على المنفذ 5432، مع TLS.
-- Keycloak على المنفذ 8081.
-- Review API سيعمل لاحقاً على المنفذ 8000.
+## 3. إنشاء حسابات الاختبار آلياً
 
-اترك المنفذين 8081 و5432 خاصين. لا تجعل منفذ قاعدة البيانات عاماً.
+```bash
+bash scripts/create-review-test-users.sh
+```
 
-## 3. إعداد حسابات Keycloak
-
-بعد أن تصبح خدمة Keycloak جاهزة، افتح منفذ 8081 من تبويب Ports عبر رابط HTTPS الخاص بـ Codespaces. سجّل الدخول ببيانات المدير الموجودة في ملف `.env` المحلي داخل Codespace.
-
-استورد ملف realm `.devcontainer/keycloak/weather-review-realm.json` تلقائياً عند أول تشغيل. ينشئ realm باسم `weather-review` وعميل Native/Public باسم `ecmwf-webp-desktop` مع Authorization Code وPKCE، وعنوان رجوع loopback، وخرائط audience و`review_role`.
-
-أنشئ أربعة مستخدمين تجريبيين من لوحة Keycloak، واضبط لكل مستخدم سمة (User Attribute) باسم `review_role` وقيمة واحدة من:
-- `reviewer`
-- `review_lead`
-- `publisher`
-- `admin`
-
-فعّل لكل مستخدم كلمة مرور اختبار غير مؤقتة. لا تستخدم كلمة مرورك الشخصية.
+ينشئ أربعة حسابات: `test-reviewer` و`test-review_lead` و`test-publisher` و`test-admin`، ويضبط سمة الدور المطلوبة. كلمات المرور العشوائية تحفظ محلياً في `.env` ولا تُطبع في الطرفية.
 
 ## 4. تشغيل Review API
 
-من Terminal داخل Codespaces حمّل متغيرات البيئة:
-
 ```bash
-set -a
-source .env
-set +a
-export ECMWF_REVIEW_DATABASE_DSN="host=127.0.0.1 port=5432 dbname=weather_review user=review_api password=$API_DB_PASSWORD sslmode=verify-full sslrootcert=$PWD/.devcontainer/certs/ca.crt"
-export ECMWF_OIDC_ISSUER="https://$CODESPACE_NAME-8081.app.github.dev/realms/weather-review"
-export ECMWF_OIDC_AUDIENCE="review-api"
-export ECMWF_OIDC_JWKS_URL="$ECMWF_OIDC_ISSUER/protocol/openid-connect/certs"
-export ECMWF_OIDC_ROLE_CLAIM="review_role"
-export ECMWF_OIDC_ROLE_MAPPING='{"reviewer":"reviewer","review_lead":"review_lead","publisher":"publisher","admin":"admin"}'
-gunicorn --bind 0.0.0.0:8000 --workers 2 scripts.review_api_dev:application
+bash scripts/run-review-api.sh
 ```
 
-يجب أن يعرض Codespaces منفذ 8000 كرابط HTTPS خاص. لا تنشر المنفذ للعامة.
+من تبويب Ports في Codespaces، اترك المنافذ 8000 و8081 خاصة (Private)، ولا تفتح منفذ PostgreSQL 5432 للعامة. يستخدم Keycloak عنوان HTTPS الذي يوفره تمرير منافذ Codespaces.
 
 ## 5. إعداد تطبيق Windows
 
-في تبويب مراجعة المتنبئين أدخل:
-- API Base URL: رابط HTTPS لمنفذ 8000.
-- OIDC Issuer: رابط HTTPS لمنفذ 8081 متبوعاً بـ `/realms/weather-review`.
-- Public Client ID: `ecmwf-webp-desktop`.
+في تبويب مراجعة المتنبعين أدخل:
+- API Base URL: `https://<CODESPACE_NAME>-8000.app.github.dev`
+- OIDC Issuer: `https://<CODESPACE_NAME>-8081.app.github.dev/realms/weather-review`
+- Public Client ID: `ecmwf-webp-desktop`
 
-لا يوجد Client Secret. لا تحفظ Access Token أو Refresh Token في التطبيق.
+استبدل `<CODESPACE_NAME>` باسم Codespace الفعلي. لا يوجد Client Secret. لا تحفظ Access Token أو Refresh Token في التطبيق.
 
-## 6. دورة القبول
+**قيد مهم:** روابط Codespaces الخاصة محمية بتسجيل دخول GitHub. قد لا يستطيع تطبيق Windows المستقل الوصول إليها مباشرةً من دون مصادقة Codespaces. إذا ظهر رفض من بوابة GitHub قبل وصول الطلب إلى Keycloak أو API، فهذا لا يثبت فشل OIDC. لا تجعل المنافذ عامة لمجرد تجاوز هذا الحاجز؛ نحتاج عندها إلى مسار HTTPS تجريبي مناسب أو تنفيذ اختبار API داخل Codespace أولاً.
 
-1. سجّل الدخول بحساب reviewer.
-2. اختبر قائمة المراجعات؛ يجب أن تظهر حالة الحقل التجريبي.
-3. سجّل الدخول بحساب review_lead وأسند الحالة إلى المراجع.
+## 6. دورة القبول المطلوبة
+
+1. سجّل الدخول بحساب `test-reviewer`.
+2. تحقق من ظهور حالة الحقل التجريبي في قائمة المراجعات بعد إسنادها.
+3. سجّل الدخول بحساب `test-review_lead` وأسند الحالة إلى subject الخاص بالمراجع.
 4. افتح المراجعة وأضف تعليقاً.
 5. اعتمد الحقل مع سبب واضح.
-6. سجّل الخروج ثم الدخول بحساب publisher.
-7. افتح قائمة النشر وتحقق من ظهور الحقل المعتمد.
-8. تحقق أن publisher لا يستطيع قراءة قائمة المراجعات، وأن reviewer لا يستطيع قراءة قائمة النشر.
+6. سجّل الخروج ثم الدخول بحساب `test-publisher`.
+7. تحقق من ظهور الحقل في قائمة النشر.
+8. تحقق من رفض وصول publisher إلى قائمة المراجعات ورفض وصول reviewer إلى قائمة النشر.
 
-## ملاحظات أمان وحدود
+## ملاحظات وحدود
 
-- هذه بيئة تطوير فقط؛ Keycloak يعمل بوضع التطوير خلف HTTPS الذي يوفّره تمرير منافذ Codespaces.
-- PostgreSQL يستخدم شهادة اختبار محلية ويشترط `sslmode=verify-full`.
-- بيانات الاعتماد في `.env` مؤقتة ومولدة محلياً، ويجب عدم نسخها إلى المحادثة أو Git.
-- إغلاق Codespace أو حذفه يوقف البيئة؛ لا تعتمد عليها لتخزين بيانات دائمة.
-- لا تعتبر دورة العمل ناجحة حتى تُنفّذ فعلياً من تطبيق Windows وتُراجع سجلات API ونتيجة قاعدة البيانات.
+- PostgreSQL 16 + PostGIS يستخدم TLS بشهادة اختبار محلية و`sslmode=verify-full`.
+- Keycloak يعمل بوضع التطوير، وليس إعداداً إنتاجياً.
+- إغلاق Codespace أو حذفه يوقف البيئة.
+- لا تعتبر دورة العمل مكتملة حتى تنجح فعلياً من تطبيق Windows وتُراجع استجابات API ونتيجة قاعدة البيانات.
