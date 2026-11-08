@@ -137,11 +137,12 @@ class AssetSyncTests(unittest.TestCase):
         with self.assertRaises(CatalogApprovalError):
             ApprovedCatalogSink(
                 self.profile_store, self.routing, None,
-                CatalogWriteApproval(self.source.profile_id, (self.source.profile_id,), (), False),
+                CatalogWriteApproval(self.route_key, self.source.profile_id, (self.source.profile_id,), (), False),
             )
         sink = ApprovedCatalogSink(
             self.profile_store, self.routing, None,
             CatalogWriteApproval(
+                self.route_key,
                 self.source.profile_id,
                 (self.source.profile_id, self.target.profile_id),
                 (self.target.profile_id,),
@@ -159,7 +160,7 @@ class AssetSyncTests(unittest.TestCase):
         self.routing.set_default(self.source.profile_id)
         sink = ApprovedCatalogSink(
             self.profile_store, self.routing, None,
-            CatalogWriteApproval(self.source.profile_id, (self.source.profile_id,), (), True),
+            CatalogWriteApproval(self.route_key, self.source.profile_id, (self.source.profile_id,), (), True),
         )
         with self.assertRaises(CatalogApprovalError):
             sink.register_sidecar(self.make_sidecar())
