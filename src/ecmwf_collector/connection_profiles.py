@@ -199,10 +199,16 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
         path = Path(profile.sqlite_path).expanduser()
         if not path.is_file():
             return False, "ملف SQLite غير موجود؛ لم يتم إنشاء ملف جديد."
+        connection = None
         try:
-            with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=timeout) as connection:
-                connection.execute("SELECT 1").fetchone()
+            connection = sqlite3.connect(
+                f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=timeout
+            )
+            connection.execute("SELECT 1").fetchone()
             return True, "اتصال SQLite سليم."
+        finally:
+            if connection is not None:
+                connection.close()
         except Exception as exc:
             return False, f"فشل اختبار SQLite ({type(exc).__name__})."
 
