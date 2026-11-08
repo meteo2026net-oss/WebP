@@ -97,6 +97,7 @@ class ReviewConsoleAuthTests(unittest.TestCase):
             "http://localhost:8081",
             "http://192.0.2.10:8081",
             "https://127.0.0.1:8081",
+            "http://127.0.0.1:8082",
             "http://127.0.0.1:8081/other",
             "http://user@127.0.0.1:8081",
         ):
