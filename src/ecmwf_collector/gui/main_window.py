@@ -28,6 +28,7 @@ from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
 from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
+from .database_manager import DatabaseManagerWidget
 from ..state import StateStore
 from ..state_contracts import StateStoreProtocol
 from ..postgres_state import PostgresStateStore
@@ -271,6 +272,8 @@ class MainWindow(QMainWindow):
         self.source_tabs = QTabWidget()
         self.source_tabs.setLayoutDirection(Qt.RightToLeft)
         self.source_tabs.addTab(scroll, "WMO Support")
+        self.database_manager = DatabaseManagerWidget(self.secrets, project_root() / "config")
+        self.source_tabs.addTab(self.database_manager, "إدارة قواعد البيانات")
         self._build_ecmwf_tab()
         self._build_eccharts_tab()
         self._build_eta_tab()
