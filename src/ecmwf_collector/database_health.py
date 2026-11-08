@@ -30,7 +30,7 @@ class DatabaseHealth:
 
 
 def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> DatabaseHealth:
-    """Collect read-only tracking metadata from one enabled SQLite/PostgreSQL profile."""
+    """Collect read-only tracking metadata and physical size for one enabled DB profile."""
     profile.validate()
     base = dict(
         profile_id=profile.profile_id,
@@ -53,7 +53,8 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
             table = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'"
             ).fetchone()
-            database_bytes = path.stat().st_size
+            wal_path = path.with_name(path.name + "-wal")
+            database_bytes = path.stat().st_size + (wal_path.stat().st_size if wal_path.is_file() else 0)
             if not table:
                 return DatabaseHealth(**base, connected=True, tracking_table_available=False,
                                       database_bytes=database_bytes,
