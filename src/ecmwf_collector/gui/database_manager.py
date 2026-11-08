@@ -457,6 +457,7 @@ class DatabaseManagerWidget(QWidget):
             if answer != QMessageBox.Yes:
                 return
             approval = CatalogWriteApproval(
+                route_key=key,
                 destination_profile_id=destination_id,
                 schema_approved_profile_ids=all_ids,
                 replica_profile_ids=replica_ids,
