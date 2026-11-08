@@ -158,12 +158,11 @@ class AssetSyncTests(unittest.TestCase):
     def test_default_route_is_not_a_substitute_for_explicit_model_route(self):
         self.routing.clear_route(self.route_key)
         self.routing.set_default(self.source.profile_id)
-        sink = ApprovedCatalogSink(
-            self.profile_store, self.routing, None,
-            CatalogWriteApproval(self.route_key, self.source.profile_id, (self.source.profile_id,), (), True),
-        )
         with self.assertRaises(CatalogApprovalError):
-            sink.register_sidecar(self.make_sidecar())
+            ApprovedCatalogSink(
+                self.profile_store, self.routing, None,
+                CatalogWriteApproval(self.route_key, self.source.profile_id, (self.source.profile_id,), (), True),
+            )
         self.assertFalse(Path(self.source.sqlite_path).exists())
 
     def test_outbox_insert_failure_rolls_back_asset_registration(self):
@@ -190,12 +189,11 @@ class AssetSyncTests(unittest.TestCase):
 
     def test_missing_explicit_route_fails_before_schema_creation(self):
         self.routing.clear_route(self.route_key)
-        sink = ApprovedCatalogSink(
-            self.profile_store, self.routing, None,
-            CatalogWriteApproval(self.source.profile_id, (self.source.profile_id,), (), True),
-        )
-        with self.assertRaises(Exception):
-            sink.register_sidecar(self.make_sidecar())
+        with self.assertRaises(CatalogApprovalError):
+            ApprovedCatalogSink(
+                self.profile_store, self.routing, None,
+                CatalogWriteApproval(self.route_key, self.source.profile_id, (self.source.profile_id,), (), True),
+            )
         self.assertFalse(Path(self.source.sqlite_path).exists())
 
 
