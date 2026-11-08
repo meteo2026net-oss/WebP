@@ -28,7 +28,8 @@ from .fileinspect import inspect_file
 from .listing import (filter_day_folders, human_size, list_directory, parse_day_folder,
                       sort_day_folders)
 from .naming import ProductFile, parse_product_name
-from .state import StateStore, utc_now
+from .state import utc_now
+from .state_contracts import StateStoreProtocol
 
 log = logging.getLogger(__name__)
 ALL_KINDS = frozenset({"AN", "FM", "FP", "FS"})
@@ -108,7 +109,7 @@ def _decide(rec, local: Path, size: int | None) -> str:
     return "new"
 
 
-def build_plan(session, download_root: Path, state: StateStore, filters: Filters,
+def build_plan(session, download_root: Path, state: StateStoreProtocol, filters: Filters,
                start: date | None = None, end: date | None = None) -> Plan:
     dirs = [e for e in list_directory(session, "/") if e.is_dir]
     dirs = sort_day_folders(filter_day_folders(dirs, start, end))
@@ -190,7 +191,7 @@ class RunResult:
 
 
 class DownloadManager:
-    def __init__(self, settings: ConnectionSettings, state: StateStore, *,
+    def __init__(self, settings: ConnectionSettings, state: StateStoreProtocol, *,
                  factory=default_ftp_factory, sleep: Callable[[float], None] = time.sleep,
                  max_parallel: int = 3, min_free_bytes: int = 0, blocksize: int = 1024 * 1024,
                  on_progress: Callable[[Snapshot], None] | None = None, progress_interval: float = 0.25):
