@@ -30,6 +30,7 @@ sink = ApprovedCatalogSink(
     routing_store,
     secret_store,
     CatalogWriteApproval(
+        route_key="noaa_nomads::noaa_gfs::gfs_0p25",
         destination_profile_id=selected_profile_id,
         schema_approved_profile_ids=(selected_profile_id, replica_profile_id),
         replica_profile_ids=(replica_profile_id,),
