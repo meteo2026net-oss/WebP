@@ -32,6 +32,7 @@ class DatabaseProfile:
     port: int | None = None
     username: str = ""
     ssl_mode: str = "prefer"
+    ssl_ca: str = ""
     sqlite_path: str = ""
     enabled: bool = True
     credential_key: str = ""
@@ -47,6 +48,7 @@ class DatabaseProfile:
         port: int | None = None,
         username: str = "",
         ssl_mode: str = "prefer",
+        ssl_ca: str = "",
         sqlite_path: str = "",
         enabled: bool = True,
     ) -> "DatabaseProfile":
@@ -60,6 +62,7 @@ class DatabaseProfile:
             port=port,
             username=username,
             ssl_mode=ssl_mode,
+            ssl_ca=ssl_ca,
             sqlite_path=sqlite_path,
             enabled=enabled,
             credential_key=f"database-profile:{profile_id}",
@@ -85,6 +88,8 @@ class DatabaseProfile:
                 raise DatabaseProfileError("منفذ قاعدة البيانات يجب أن يكون بين 1 و65535.")
             if self.sqlite_path:
                 raise DatabaseProfileError("مسار SQLite لا ينطبق على قواعد البيانات الخادمية.")
+        if self.backend in {"mysql", "mariadb"} and self.ssl_mode in {"verify-ca", "verify-full"} and not self.ssl_ca.strip():
+            raise DatabaseProfileError("مسار شهادة CA مطلوب للتحقق من SSL في MySQL/MariaDB.")
         if not self.credential_key.strip():
             raise DatabaseProfileError("مرجع بيانات الاعتماد مطلوب.")
 
@@ -97,7 +102,7 @@ class DatabaseProfile:
     def from_metadata(cls, raw: dict) -> "DatabaseProfile":
         allowed = {
             "profile_id", "name", "backend", "database", "host", "port",
-            "username", "ssl_mode", "sqlite_path", "enabled", "credential_key",
+            "username", "ssl_mode", "ssl_ca", "sqlite_path", "enabled", "credential_key",
         }
         if not isinstance(raw, dict) or set(raw) - allowed:
             raise DatabaseProfileError("ملف تعريف الاتصال يحتوي حقولاً غير معروفة.")
@@ -235,5 +240,21 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
             return True, "اتصال PostgreSQL سليم."
         except Exception as exc:
             return False, f"فشل اختبار PostgreSQL ({type(exc).__name__})."
+
+    if profile.backend in {"mysql", "mariadb"}:
+        try:
+            from .database_drivers import open_mysql_connection
+            connection = open_mysql_connection(profile, secrets, timeout=timeout)
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
+            finally:
+                connection.close()
+            return True, f"اتصال {profile.backend} سليم."
+        except ImportError:
+            return False, "موصل MySQL/MariaDB PyMySQL غير مثبت."
+        except Exception as exc:
+            return False, f"فشل اختبار {profile.backend} ({type(exc).__name__})."
 
     return False, f"اختبار {profile.backend} غير متاح بعد؛ لم تتم محاولة الاتصال."
