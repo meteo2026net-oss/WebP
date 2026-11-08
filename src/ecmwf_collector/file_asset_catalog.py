@@ -96,6 +96,13 @@ def asset_from_sidecar(sidecar_path: Path) -> FileAsset:
 
     source = str(metadata.get("source") or "").strip().casefold()
     model = str(metadata.get("model") or "").strip().casefold()
+    integrity = str(metadata.get("integrity") or "").strip().casefold()
+    if source == "noaa/ncep nomads":
+        if "grib2 framing checked" not in integrity:
+            raise FileAssetError("sidecar لا يثبت فحص إطار GRIB2؛ لا يمكن تسجيل الملف كملف مفحوص.")
+    elif source in {"ecmwf_open_data", "cptec_inpe_eta"}:
+        if integrity != "ok":
+            raise FileAssetError("المصدر لم يسجل نتيجة فحص GRIB ناجحة.")
     if source == "ecmwf_open_data":
         model_ids = {"ifs": "ecmwf_ifs", "aifs-single": "ecmwf_aifs_single",
                      "aifs-ens": "ecmwf_aifs_ens"}
