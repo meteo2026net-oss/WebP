@@ -141,6 +141,36 @@ jobs:
           print(json.dumps(report, indent=2))
           PY
 
+      - name: Record SHA-256 for downloaded real GRIB2 members
+        if: always()
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("output/noaa-gefs-real")
+          files = sorted(
+              path for path in root.glob("*")
+              if path.is_file() and path.suffix.lower() in {".grib2", ".grb2", ".grib", ".grb"}
+          )
+          if not files:
+              print("No downloaded GRIB files are available to checksum.")
+          else:
+              entries = []
+              for path in files:
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  entries.append({"file": path.name, "size_bytes": path.stat().st_size, "sha256": digest})
+              (root / "SHA256SUMS.txt").write_text(
+                  "".join(f"{item['sha256']}  {item['file']}\\n" for item in entries),
+                  encoding="utf-8",
+              )
+              (root / "grib-sha256.json").write_text(
+                  json.dumps(entries, indent=2) + "\\n", encoding="utf-8"
+              )
+              print(json.dumps(entries, indent=2))
+          PY
+
       - name: Upload real NOAA GRIB2 files and decoded results
         if: always()
         uses: actions/upload-artifact@v4
