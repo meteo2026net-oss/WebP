@@ -163,6 +163,25 @@ class AssetSyncTests(unittest.TestCase):
             self.query(self.target.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0], 1
         )
 
+    def test_delivered_outbox_event_cannot_regress_after_late_failure(self):
+        self.source_catalog.initialize_schema()
+        self.source_catalog.register_asset(
+            self.sample_asset(), replica_profile_ids=[self.target.profile_id]
+        )
+        event_id = self.source_catalog.pending_outbox()[0]["event_id"]
+
+        self.source_catalog.finish_outbox(event_id, delivered=True)
+        self.source_catalog.finish_outbox(
+            event_id, delivered=False, error="late concurrent failure"
+        )
+
+        rows = self.query(
+            self.source.sqlite_path,
+            "SELECT status, attempts, last_error FROM webp_asset_outbox WHERE event_id=?",
+            (event_id,),
+        )
+        self.assertEqual(rows, [("delivered", 1, None)])
+
     def test_approved_sink_requires_exact_route_and_destination(self):
         with self.assertRaises(CatalogApprovalError):
             ApprovedCatalogSink(
