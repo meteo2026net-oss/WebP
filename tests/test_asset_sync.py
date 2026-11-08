@@ -133,6 +133,22 @@ class AssetSyncTests(unittest.TestCase):
             "delivered",
         )
 
+    def test_sync_is_idempotent_if_target_commit_precedes_source_ack(self):
+        self.source_catalog.initialize_schema()
+        FileAssetCatalog(self.target).initialize_schema()
+        asset = self.sample_asset()
+        self.source_catalog.register_asset(asset, replica_profile_ids=[self.target.profile_id])
+        # Simulate a crash after the target committed but before source Outbox ack.
+        FileAssetCatalog(self.target).register_asset(asset)
+        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None)
+        result = sync.sync_pending(
+            OutboxSyncApproval((self.target.profile_id,), confirmed=True)
+        )
+        self.assertEqual(result["delivered"], 1)
+        self.assertEqual(
+            self.query(self.target.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0], 1
+        )
+
     def test_approved_sink_requires_exact_route_and_destination(self):
         with self.assertRaises(CatalogApprovalError):
             ApprovedCatalogSink(
