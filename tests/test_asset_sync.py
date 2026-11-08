@@ -237,6 +237,7 @@ class AssetSyncTests(unittest.TestCase):
 
     def test_two_independent_outbox_workers_race_on_same_event(self):
         self.source_catalog.initialize_schema()
+        FileAssetCatalog(self.target).initialize_schema()
         self.source_catalog.register_asset(
             self.sample_asset(), replica_profile_ids=[self.target.profile_id]
         )
