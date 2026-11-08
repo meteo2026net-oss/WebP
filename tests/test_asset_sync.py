@@ -154,6 +154,39 @@ class AssetSyncTests(unittest.TestCase):
         self.assertTrue(Path(self.source.sqlite_path).exists())
         self.assertTrue(Path(self.target.sqlite_path).exists())
 
+    def test_default_route_is_not_a_substitute_for_explicit_model_route(self):
+        self.routing.clear_route(self.route_key)
+        self.routing.set_default(self.source.profile_id)
+        sink = ApprovedCatalogSink(
+            self.profile_store, self.routing, None,
+            CatalogWriteApproval(self.source.profile_id, (self.source.profile_id,), (), True),
+        )
+        with self.assertRaises(CatalogApprovalError):
+            sink.register_sidecar(self.make_sidecar())
+        self.assertFalse(Path(self.source.sqlite_path).exists())
+
+    def test_outbox_insert_failure_rolls_back_asset_registration(self):
+        self.source_catalog.initialize_schema()
+        connection = sqlite3.connect(self.source.sqlite_path)
+        try:
+            connection.execute("""
+                CREATE TRIGGER reject_outbox BEFORE INSERT ON webp_asset_outbox
+                BEGIN SELECT RAISE(ABORT, 'test outbox failure'); END
+            """)
+            connection.commit()
+        finally:
+            connection.close()
+        with self.assertRaises(Exception):
+            self.source_catalog.register_asset(
+                self.sample_asset(), replica_profile_ids=[self.target.profile_id]
+            )
+        self.assertEqual(
+            self.query(self.source.sqlite_path, "SELECT COUNT(*) FROM webp_file_assets")[0][0], 0
+        )
+        self.assertEqual(
+            self.query(self.source.sqlite_path, "SELECT COUNT(*) FROM webp_asset_outbox")[0][0], 0
+        )
+
     def test_missing_explicit_route_fails_before_schema_creation(self):
         self.routing.clear_route(self.route_key)
         sink = ApprovedCatalogSink(
