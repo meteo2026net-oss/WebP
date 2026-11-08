@@ -206,11 +206,11 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
             )
             connection.execute("SELECT 1").fetchone()
             return True, "اتصال SQLite سليم."
+        except Exception as exc:
+            return False, f"فشل اختبار SQLite ({type(exc).__name__})."
         finally:
             if connection is not None:
                 connection.close()
-        except Exception as exc:
-            return False, f"فشل اختبار SQLite ({type(exc).__name__})."
 
     if profile.backend == "postgresql":
         try:
