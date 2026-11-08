@@ -77,6 +77,90 @@ def _source_key(source_uri: str) -> str:
     return hashlib.sha256(source_uri.encode("utf-8")).hexdigest()
 
 
+def asset_from_sidecar(sidecar_path: Path) -> FileAsset:
+    """Build a trusted asset record from supported downloader sidecars.
+
+    The sidecar is accepted only when its named file is a sibling, exists, and
+    matches both the recorded byte count and SHA-256. Unknown source/model pairs
+    are rejected instead of being guessed or routed to a default model.
+    """
+    sidecar_path = Path(sidecar_path).resolve()
+    if not sidecar_path.is_file() or not sidecar_path.name.endswith(".source.json"):
+        raise FileAssetError("ملف البيانات الجانبي .source.json غير موجود أو غير صالح.")
+    try:
+        metadata = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FileAssetError("تعذرت قراءة بيانات المصدر الجانبية.") from exc
+    if not isinstance(metadata, dict):
+        raise FileAssetError("بيانات المصدر الجانبية يجب أن تكون كائن JSON.")
+
+    source = str(metadata.get("source") or "").strip().casefold()
+    model = str(metadata.get("model") or "").strip().casefold()
+    if source == "ecmwf_open_data":
+        model_ids = {"ifs": "ecmwf_ifs", "aifs-single": "ecmwf_aifs_single",
+                     "aifs-ens": "ecmwf_aifs_ens"}
+        if model not in model_ids:
+            raise FileAssetError("نموذج ECMWF غير معروف؛ لن يتم تخمين هوية النموذج.")
+        request = metadata.get("request") or {}
+        if not isinstance(request, dict):
+            raise FileAssetError("طلب ECMWF في sidecar غير صالح.")
+        resolution = str(metadata.get("resolution") or "unknown")
+        product_id = f"forecast_{str(request.get('type') or 'unknown')}_{resolution}"
+        provider_id, model_id = "ecmwf_open_data", model_ids[model]
+    elif source == "noaa/ncep nomads" and model in {"gfs", "gefs"}:
+        provider_id = "noaa_nomads"
+        model_id = f"noaa_{model}"
+        resolution = str(metadata.get("resolution") or "unknown")
+        product_id = f"{model}_{resolution}"
+    elif source == "cptec_inpe_eta":
+        domain = str(metadata.get("domain") or "").strip().casefold()
+        if domain not in {"ams_08km", "ams_40km", "ons_40km", "rjsp_01km"}:
+            raise FileAssetError("نطاق CPTEC ETA غير معروف.")
+        provider_id, model_id, product_id = "cptec_inpe", "cptec_eta", f"eta_{domain}"
+    else:
+        raise FileAssetError("مصدر أو نموذج غير مدعوم في sidecar؛ لا يوجد توجيه تخميني.")
+
+    filename = metadata.get("file") or metadata.get("file_name") or metadata.get("filename")
+    if not isinstance(filename, str) or not filename or Path(filename).name != filename:
+        raise FileAssetError("اسم الملف في sidecar غير صالح.")
+    asset_path = (sidecar_path.parent / filename).resolve()
+    if asset_path.parent != sidecar_path.parent or not asset_path.is_file():
+        raise FileAssetError("الملف المشار إليه غير موجود بجوار sidecar.")
+    actual_size = asset_path.stat().st_size
+    recorded_size = metadata.get("size_bytes")
+    if isinstance(recorded_size, bool) or not isinstance(recorded_size, int) or recorded_size != actual_size:
+        raise FileAssetError("حجم الملف لا يطابق الحجم المسجل في sidecar.")
+    digest = hashlib.sha256()
+    with asset_path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    recorded_sha = str(metadata.get("sha256") or "").lower()
+    if not _SHA256_RE.fullmatch(recorded_sha) or digest.hexdigest() != recorded_sha:
+        raise FileAssetError("بصمة الملف لا تطابق SHA-256 المسجل في sidecar.")
+
+    suffix = asset_path.suffix.casefold()
+    content_types = {".grib": "application/x-grib", ".grb": "application/x-grib",
+                     ".grib2": "application/x-grib2", ".grb2": "application/x-grib2",
+                     ".nc": "application/x-netcdf", ".csv": "text/csv"}
+    content_type = content_types.get(suffix)
+    if content_type is None:
+        raise FileAssetError("امتداد الملف غير مدعوم في كتالوج الأصول.")
+    run_time = metadata.get("run") or metadata.get("cycle_utc")
+    valid_time = metadata.get("valid_time") or metadata.get("returned_forecast_datetime")
+    source_uri = metadata.get("source_url") or metadata.get("url")
+    if source_uri is not None and not isinstance(source_uri, str):
+        raise FileAssetError("رابط المصدر في sidecar غير صالح.")
+    return FileAsset(
+        provider_id=provider_id, model_id=model_id, product_id=product_id,
+        local_path=str(asset_path), content_type=content_type, size_bytes=actual_size,
+        sha256=recorded_sha, run_time_utc=str(run_time) if run_time else None,
+        valid_time_utc=str(valid_time) if valid_time else None,
+        member_id=str(metadata.get("member")) if metadata.get("member") else None,
+        source_uri=source_uri, validation_status="framing_checked",
+        metadata_json=json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+    )
+
+
 class FileAssetCatalog:
     """Register immutable source assets in an explicitly selected DB profile."""
 
