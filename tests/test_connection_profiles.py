@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ecmwf_collector.connection_profiles import (
     DatabaseProfile, DatabaseProfileError, DatabaseProfileStore,
+    test_database_connection,
 )
 
 
@@ -68,6 +69,50 @@ class DatabaseProfileTests(unittest.TestCase):
                              encoding="utf-8")
         with self.assertRaises(DatabaseProfileError):
             self.store.list_profiles()
+
+
+    def test_sqlite_connection_test_does_not_create_missing_file(self):
+        missing = Path(self.temp.name) / "not-created.db"
+        profile = DatabaseProfile.create("Missing", "sqlite", sqlite_path=str(missing))
+        ok, message = test_database_connection(profile, secrets=None)
+        self.assertFalse(ok)
+        self.assertIn("لم يتم إنشاء", message)
+        self.assertFalse(missing.exists())
+
+    def test_sqlite_connection_test_runs_read_only_probe(self):
+        import sqlite3
+        existing = Path(self.temp.name) / "existing.db"
+        with sqlite3.connect(existing) as connection:
+            connection.execute("CREATE TABLE marker (value TEXT)")
+        profile = DatabaseProfile.create("Existing", "sqlite", sqlite_path=str(existing))
+        ok, message = test_database_connection(profile, secrets=None)
+        self.assertTrue(ok, message)
+
+    def test_mysql_connection_is_not_falsely_reported_as_supported(self):
+        profile = DatabaseProfile.create(
+            "MySQL", "mysql", host="localhost", port=3306,
+            database="weather", username="app",
+        )
+        ok, message = test_database_connection(profile, secrets=None)
+        self.assertFalse(ok)
+        self.assertIn("غير متاح بعد", message)
+
+    def test_secret_is_deleted_only_after_profile_metadata(self):
+        class FakeSecrets:
+            def __init__(self):
+                self.deleted = []
+            def delete_password(self, key):
+                self.deleted.append(key)
+                return True
+        profile = DatabaseProfile.create(
+            "Remote", "postgresql", host="db", port=5432,
+            database="weather", username="app",
+        )
+        self.store.save(profile)
+        secrets = FakeSecrets()
+        self.assertTrue(self.store.delete_with_secret(profile.profile_id, secrets))
+        self.assertIsNone(self.store.get(profile.profile_id))
+        self.assertEqual(secrets.deleted, [profile.credential_key])
 
 
 if __name__ == "__main__":
