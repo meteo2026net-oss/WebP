@@ -233,7 +233,7 @@ class FileAssetCatalog:
                         validation_status VARCHAR(32) NOT NULL,
                         metadata_json LONGTEXT NOT NULL,
                         registered_at_utc VARCHAR(40) NOT NULL
-                    )
+                    ) ENGINE=InnoDB
                 """)
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS webp_file_asset_sources (
@@ -245,7 +245,7 @@ class FileAssetCatalog:
                         UNIQUE KEY uq_asset_source (asset_id, source_uri_sha256),
                         CONSTRAINT fk_webp_file_asset_sources_asset FOREIGN KEY (asset_id)
                             REFERENCES webp_file_assets(asset_id) ON DELETE CASCADE
-                    )
+                    ) ENGINE=InnoDB
                 """)
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS webp_asset_outbox (
@@ -258,7 +258,7 @@ class FileAssetCatalog:
                         created_at_utc VARCHAR(40) NOT NULL,
                         updated_at_utc VARCHAR(40) NOT NULL,
                         UNIQUE KEY uq_asset_outbox_target (asset_key, target_profile_id)
-                    )
+                    ) ENGINE=InnoDB
                 """)
             else:
                 cursor.execute("""
