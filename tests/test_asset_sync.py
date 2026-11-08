@@ -3,6 +3,8 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from pathlib import Path
 
 from ecmwf_collector.asset_sync import (
@@ -181,6 +183,49 @@ class AssetSyncTests(unittest.TestCase):
             (event_id,),
         )
         self.assertEqual(rows, [("delivered", 1, None)])
+
+    def test_two_independent_outbox_workers_race_on_same_event(self):
+        self.source_catalog.initialize_schema()
+        self.source_catalog.register_asset(
+            self.sample_asset(), replica_profile_ids=[self.target.profile_id]
+        )
+
+        barrier = Barrier(2)
+        workers = [
+            AssetOutboxSynchronizer(
+                self.source.profile_id, self.profile_store, None,
+                approved_target_profile_ids=(self.target.profile_id,),
+            )
+            for _ in range(2)
+        ]
+        for worker in workers:
+            original_pending = worker.source_catalog.pending_outbox
+
+            def synchronized_pending(*, target_profile_id=None, limit=100,
+                                     _original=original_pending):
+                events = _original(target_profile_id=target_profile_id, limit=limit)
+                barrier.wait(timeout=10)
+                return events
+
+            worker.source_catalog.pending_outbox = synchronized_pending
+
+        approval = OutboxSyncApproval((self.target.profile_id,), confirmed=True)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda worker: worker.sync_pending(approval), workers))
+
+        statuses = self.query(
+            self.source.sqlite_path,
+            "SELECT status, attempts FROM webp_asset_outbox",
+        )
+        target_count = self.query(
+            self.target.sqlite_path,
+            "SELECT COUNT(*) FROM webp_file_assets",
+        )[0][0]
+        self.assertEqual(statuses[0][0], "delivered")
+        self.assertEqual(statuses[0][1], 1)
+        self.assertEqual(target_count, 1)
+        self.assertEqual(sum(item["delivered"] for item in results), 1)
+        self.assertEqual(sum(item["failed"] for item in results), 1)
 
     def test_approved_sink_requires_exact_route_and_destination(self):
         with self.assertRaises(CatalogApprovalError):
