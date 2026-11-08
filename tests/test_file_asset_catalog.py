@@ -53,16 +53,16 @@ class FileAssetCatalogTests(unittest.TestCase):
         first = self.catalog.register_asset(self.asset())
         second = self.catalog.register_asset(self.asset())
         self.assertEqual(first["asset_id"], second["asset_id"])
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_assets")[0][0], 1)
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_asset_sources")[0][0], 1)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_assets")[0][0], 1)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_asset_sources")[0][0], 1)
 
     def test_same_content_from_two_uris_keeps_both_provenance_sources(self):
         self.catalog.initialize_schema()
         first = self.catalog.register_asset(self.asset(source_uri="https://mirror-a.example/a.grib2"))
         second = self.catalog.register_asset(self.asset(source_uri="https://mirror-b.example/a.grib2"))
         self.assertEqual(first["asset_id"], second["asset_id"])
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_assets")[0][0], 1)
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_asset_sources")[0][0], 2)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_assets")[0][0], 1)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_asset_sources")[0][0], 2)
 
     def test_different_model_or_product_or_run_is_not_merged(self):
         self.catalog.initialize_schema()
@@ -70,7 +70,7 @@ class FileAssetCatalogTests(unittest.TestCase):
         self.catalog.register_asset(self.asset(model_id="ecmwf_ifs_hres"))
         self.catalog.register_asset(self.asset(product_id="pressure_levels"))
         self.catalog.register_asset(self.asset(run_time_utc="2026-11-08T12:00:00Z"))
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_assets")[0][0], 4)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_assets")[0][0], 4)
 
     def test_invalid_sha256_is_rejected_before_database_access(self):
         with self.assertRaises(FileAssetError):
@@ -89,7 +89,7 @@ class FileAssetCatalogTests(unittest.TestCase):
         connection = sqlite3.connect(self.db_path)
         try:
             connection.execute("""
-                CREATE TRIGGER reject_source BEFORE INSERT ON file_asset_sources
+                CREATE TRIGGER reject_source BEFORE INSERT ON webp_file_asset_sources
                 BEGIN SELECT RAISE(ABORT, 'test source failure'); END
             """)
             connection.commit()
@@ -97,7 +97,7 @@ class FileAssetCatalogTests(unittest.TestCase):
             connection.close()
         with self.assertRaises(Exception):
             self.catalog.register_asset(self.asset())
-        self.assertEqual(self.query("SELECT COUNT(*) FROM file_assets")[0][0], 0)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM webp_file_assets")[0][0], 0)
 
 
 if __name__ == "__main__":
