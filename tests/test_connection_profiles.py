@@ -115,5 +115,24 @@ class DatabaseProfileTests(unittest.TestCase):
         self.assertEqual(secrets.deleted, [profile.credential_key])
 
 
+    def test_profile_password_uses_os_secret_store_adapter(self):
+        class FakeSecrets:
+            def __init__(self):
+                self.values = {}
+            def set_password(self, key, password):
+                self.values[key] = password
+                return True
+            def get_password(self, key):
+                return self.values.get(key)
+        profile = DatabaseProfile.create(
+            "Remote", "postgresql", host="db.example", port=5432,
+            database="weather", username="app",
+        )
+        secrets = FakeSecrets()
+        self.assertTrue(self.store.set_password(profile, secrets, "vault-only-value"))
+        self.assertEqual(self.store.get_password(profile, secrets), "vault-only-value")
+        self.assertNotIn("vault-only-value", self.path.read_text(encoding="utf-8") if self.path.exists() else "")
+
+
 if __name__ == "__main__":
     unittest.main()
