@@ -108,7 +108,7 @@ class OidcPkceLogin:
             raise ReviewAuthError("عنوان النفق المحلي يحتوي على منفذ غير صالح") from exc
         if (
             parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
-            or port is None or parsed.username or parsed.password
+            or port != 8081 or parsed.username or parsed.password
             or parsed.path not in ("", "/") or parsed.query or parsed.fragment
         ):
             raise ReviewAuthError(
@@ -127,7 +127,8 @@ class OidcPkceLogin:
         }
         if not isinstance(metadata, dict):
             raise ReviewAuthError("استجابة Discovery ليست كائن JSON صالحاً")
-        if metadata.get("issuer", "").rstrip("/") != self.issuer:
+        metadata_issuer = metadata.get("issuer")
+        if not isinstance(metadata_issuer, str) or metadata_issuer.rstrip("/") != self.issuer:
             raise ReviewAuthError("عنوان issuer لا يطابق عنوان مزود الهوية الرسمي")
         for key, official_url in expected.items():
             value = metadata.get(key)
