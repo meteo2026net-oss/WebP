@@ -57,6 +57,25 @@ class NoaaGfsTests(unittest.TestCase):
             self.assertEqual(len(data["sha256"]), 64)
             self.assertFalse((Path(tmp) / (path.name + ".part")).exists())
 
+    def test_catalog_sink_is_called_only_after_verified_sidecar_is_written(self):
+        payload = b"GRIB" + b"x" * 128 + b"7777"
+        class Sink:
+            def __init__(self):
+                self.paths = []
+            def register_sidecar(self, path):
+                self.paths.append(Path(path))
+                self.assert_exists = Path(path).is_file()
+                return {"asset_id": "test"}
+        sink = Sink()
+        with tempfile.TemporaryDirectory() as tmp:
+            path, sidecar = download_gfs(
+                self.request(), Path(tmp), catalog_sink=sink,
+                opener=lambda url, timeout: FakeResponse(payload),
+            )
+            self.assertEqual(sink.paths, [sidecar])
+            self.assertTrue(sink.assert_exists)
+            self.assertTrue(path.is_file())
+
     def test_rejects_invalid_cycle_and_forecast_step(self):
         with self.assertRaises(NoaaGfsError):
             build_gfs_url(self.request(cycle=3))
