@@ -126,7 +126,7 @@ class FileAssetCatalog:
             cursor = connection.cursor()
             if dialect == "mysql":
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS file_assets (
+                    CREATE TABLE IF NOT EXISTS webp_file_assets (
                         asset_id CHAR(36) PRIMARY KEY,
                         asset_key CHAR(64) NOT NULL UNIQUE,
                         provider_id VARCHAR(128) NOT NULL,
@@ -145,20 +145,20 @@ class FileAssetCatalog:
                     )
                 """)
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS file_asset_sources (
+                    CREATE TABLE IF NOT EXISTS webp_file_asset_sources (
                         source_id CHAR(36) PRIMARY KEY,
                         asset_id CHAR(36) NOT NULL,
                         source_uri TEXT NOT NULL,
                         source_uri_sha256 CHAR(64) NOT NULL,
                         registered_at_utc VARCHAR(40) NOT NULL,
                         UNIQUE KEY uq_asset_source (asset_id, source_uri_sha256),
-                        CONSTRAINT fk_asset_source FOREIGN KEY (asset_id)
-                            REFERENCES file_assets(asset_id) ON DELETE CASCADE
+                        CONSTRAINT fk_webp_file_asset_sources_asset FOREIGN KEY (asset_id)
+                            REFERENCES webp_file_assets(asset_id) ON DELETE CASCADE
                     )
                 """)
             else:
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS file_assets (
+                    CREATE TABLE IF NOT EXISTS webp_file_assets (
                         asset_id TEXT PRIMARY KEY,
                         asset_key TEXT NOT NULL UNIQUE,
                         provider_id TEXT NOT NULL,
@@ -177,9 +177,9 @@ class FileAssetCatalog:
                     )
                 """)
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS file_asset_sources (
+                    CREATE TABLE IF NOT EXISTS webp_file_asset_sources (
                         source_id TEXT PRIMARY KEY,
-                        asset_id TEXT NOT NULL REFERENCES file_assets(asset_id) ON DELETE CASCADE,
+                        asset_id TEXT NOT NULL REFERENCES webp_file_assets(asset_id) ON DELETE CASCADE,
                         source_uri TEXT NOT NULL,
                         source_uri_sha256 TEXT NOT NULL,
                         registered_at_utc TEXT NOT NULL,
@@ -207,7 +207,7 @@ class FileAssetCatalog:
             cursor = connection.cursor()
             if dialect == "mysql":
                 cursor.execute(
-                    f"""INSERT INTO file_assets
+                    f"""INSERT INTO webp_file_assets
                     (asset_id,asset_key,provider_id,model_id,product_id,local_path,content_type,
                      size_bytes,sha256,run_time_utc,valid_time_utc,member_id,validation_status,
                      metadata_json,registered_at_utc)
@@ -223,7 +223,7 @@ class FileAssetCatalog:
                 )
             else:
                 cursor.execute(
-                    f"""INSERT INTO file_assets
+                    f"""INSERT INTO webp_file_assets
                     (asset_id,asset_key,provider_id,model_id,product_id,local_path,content_type,
                      size_bytes,sha256,run_time_utc,valid_time_utc,member_id,validation_status,
                      metadata_json,registered_at_utc)
@@ -240,12 +240,12 @@ class FileAssetCatalog:
             if asset.source_uri:
                 source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"webp:file-asset-source:{asset_id}:{_source_key(asset.source_uri)}"))
                 cursor.execute(
-                    f"""INSERT INTO file_asset_sources
+                    f"""INSERT INTO webp_file_asset_sources
                     (source_id,asset_id,source_uri,source_uri_sha256,registered_at_utc)
                     VALUES ({','.join([placeholder] * 5)})
                     ON CONFLICT(asset_id,source_uri_sha256) DO NOTHING"""
                     if dialect != "mysql" else
-                    f"""INSERT INTO file_asset_sources
+                    f"""INSERT INTO webp_file_asset_sources
                     (source_id,asset_id,source_uri,source_uri_sha256,registered_at_utc)
                     VALUES ({','.join([placeholder] * 5)})
                     ON DUPLICATE KEY UPDATE source_uri=VALUES(source_uri)""",
