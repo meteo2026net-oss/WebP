@@ -24,7 +24,7 @@ def _profile(name, url, backend):
         name, backend,
         database=unquote(parsed.path.lstrip("/")),
         host=parsed.hostname or "127.0.0.1",
-        port=parsed.port or (3306 if backend == "mysql" else 5432),
+        port=parsed.port or (3306 if backend in {"mysql", "mariadb"} else 5432),
         username=unquote(parsed.username or "root"),
         ssl_mode="disable",
     )
@@ -85,6 +85,9 @@ class ServerCatalogIntegrationTests(unittest.TestCase):
 
     def test_mysql_schema_register_and_outbox_sync(self):
         self._exercise("mysql", "ASSET_MYSQL_SOURCE_URL", "ASSET_MYSQL_TARGET_URL")
+
+    def test_mariadb_schema_register_and_outbox_sync(self):
+        self._exercise("mariadb", "ASSET_MARIADB_SOURCE_URL", "ASSET_MARIADB_TARGET_URL")
 
 
 if __name__ == "__main__":
