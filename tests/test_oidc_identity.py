@@ -76,5 +76,34 @@ class OIDCIdentityTests(unittest.TestCase):
             )
 
 
+    def test_maps_all_four_review_roles_from_server_owned_allowlist(self):
+        role_mapping = {
+            "reviewer": "reviewer",
+            "review_lead": "review_lead",
+            "publisher": "publisher",
+            "admin": "admin",
+        }
+        for claim_value, expected_role in role_mapping.items():
+            with self.subTest(role=expected_role):
+                client = Mock()
+                client.get_signing_key_from_jwt.return_value.key = object()
+                claims = {"sub": "test-" + expected_role, "review_role": claim_value}
+                settings = OIDCSettings(
+                    issuer="https://identity.example.test/realms/weather-review",
+                    audience="review-api",
+                    jwks_url="https://identity.example.test/realms/weather-review/certs",
+                    role_claim="review_role",
+                    role_mapping=role_mapping,
+                )
+                with patch.dict("sys.modules", {"jwt": Mock(decode=Mock(return_value=claims))}):
+                    actor = OIDCIdentityProvider(
+                        {"HTTP_AUTHORIZATION": "Bearer signed-token"},
+                        settings,
+                        jwks_client=client,
+                    ).current_actor()
+                self.assertEqual(actor.role, expected_role)
+                self.assertEqual(actor.subject, "test-" + expected_role)
+
+
 if __name__ == "__main__":
     unittest.main()
