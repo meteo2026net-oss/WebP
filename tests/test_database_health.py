@@ -66,7 +66,57 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertIn("معطّل", result.message)
         self.assertFalse(self.path.exists())
 
-    def test_mysql_profile_is_explicitly_not_supported_yet(self):
+    def test_mysql_health_reads_tracking_metrics_and_closes_connection(self):
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        class FakeCursor:
+            def __init__(self):
+                self.rows = [(1,), (3, 1, 1, 600, 120, "2026-11-03 00:00:00")]
+                self.statements = []
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql, params=None):
+                self.statements.append(sql.strip().upper())
+            def fetchone(self):
+                return self.rows.pop(0)
+
+        class FakeConnection:
+            def __init__(self):
+                self.fake_cursor = FakeCursor()
+                self.closed = False
+            def cursor(self):
+                return self.fake_cursor
+            def close(self):
+                self.closed = True
+
+        class FakeSecrets:
+            def get_password(self, key):
+                return "vault-secret"
+
+        connection = FakeConnection()
+        driver = ModuleType("pymysql")
+        driver.connect = lambda **kwargs: connection
+        profile = DatabaseProfile.create(
+            "MariaDB", "mariadb", host="localhost", port=3306,
+            database="weather", username="app", ssl_mode="disable",
+        )
+        with patch.dict(sys.modules, {"pymysql": driver}):
+            result = inspect_database(profile, FakeSecrets())
+        self.assertTrue(result.connected)
+        self.assertTrue(result.tracking_table_available)
+        self.assertEqual(result.tracked_files, 3)
+        self.assertEqual(result.completed_files, 1)
+        self.assertEqual(result.failed_files, 1)
+        self.assertEqual(result.remote_bytes, 600)
+        self.assertEqual(result.local_bytes, 120)
+        self.assertTrue(connection.closed)
+        self.assertTrue(all(sql.startswith("SELECT") for sql in connection.fake_cursor.statements))
+
+
         profile = DatabaseProfile.create(
             "MySQL", "mysql", host="localhost", port=3306,
             database="weather", username="app",
