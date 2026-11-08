@@ -117,13 +117,14 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertTrue(all(sql.startswith("SELECT") for sql in connection.fake_cursor.statements))
 
 
+    def test_mysql_health_fails_closed_without_vault_password(self):
         profile = DatabaseProfile.create(
             "MySQL", "mysql", host="localhost", port=3306,
             database="weather", username="app",
         )
         result = inspect_database(profile, secrets=None)
         self.assertFalse(result.connected)
-        self.assertIn("غير متاح", result.message)
+        self.assertFalse(result.tracking_table_available)
 
 
 if __name__ == "__main__":
