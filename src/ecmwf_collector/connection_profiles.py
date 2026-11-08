@@ -148,6 +148,74 @@ class DatabaseProfileStore:
         self._write(remaining)
         return True
 
+    def set_password(self, profile: DatabaseProfile, secrets, password: str) -> bool:
+        """Store a profile password in the OS credential vault, never in JSON."""
+        profile.validate()
+        if profile.backend == "sqlite":
+            raise DatabaseProfileError("SQLite لا يحتاج كلمة مرور ضمن ملف الاتصال.")
+        return bool(secrets.set_password(profile.credential_key, password))
+
+    def get_password(self, profile: DatabaseProfile, secrets) -> str | None:
+        profile.validate()
+        if profile.backend == "sqlite":
+            return None
+        return secrets.get_password(profile.credential_key)
+
+    def delete_with_secret(self, profile_id: str, secrets) -> bool:
+        """Remove metadata first, then remove its OS-vault secret if one exists."""
+        profile = self.get(profile_id)
+        if profile is None:
+            return False
+        if not self.delete(profile_id):
+            return False
+        if profile.backend != "sqlite":
+            secrets.delete_password(profile.credential_key)
+        return True
+
+
+def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5) -> tuple[bool, str]:
+    """Test only the selected database; never create databases or change user data."""
+    import sqlite3
+
+    profile.validate()
+    if not profile.enabled:
+        return False, "الاتصال معطّل."
+    if profile.backend == "sqlite":
+        path = Path(profile.sqlite_path).expanduser()
+        if not path.is_file():
+            return False, "ملف SQLite غير موجود؛ لم يتم إنشاء ملف جديد."
+        try:
+            with sqlite3.connect(str(path), timeout=timeout) as connection:
+                connection.execute("SELECT 1").fetchone()
+            return True, "اتصال SQLite سليم."
+        except Exception as exc:
+            return False, f"فشل اختبار SQLite ({type(exc).__name__})."
+
+    if profile.backend == "postgresql":
+        try:
+            import psycopg
+        except ImportError:
+            return False, "موصل PostgreSQL psycopg غير مثبت."
+        password = secrets.get_password(profile.credential_key)
+        if password is None:
+            return False, "كلمة مرور هذا الاتصال غير موجودة في مخزن أسرار النظام."
+        try:
+            with psycopg.connect(
+                host=profile.host,
+                port=profile.port,
+                dbname=profile.database,
+                user=profile.username,
+                password=password,
+                sslmode=profile.ssl_mode,
+                connect_timeout=timeout,
+            ) as connection:
+                connection.execute("SELECT 1")
+            return True, "اتصال PostgreSQL سليم."
+        except Exception as exc:
+            return False, f"فشل اختبار PostgreSQL ({type(exc).__name__})."
+
+    return False, f"اختبار {profile.backend} غير متاح بعد؛ لم تتم محاولة الاتصال."
+
     def _write(self, profiles: list[DatabaseProfile]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix="db-profiles-", suffix=".tmp", dir=self.path.parent)
