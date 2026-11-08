@@ -173,6 +173,20 @@ class DatabaseProfileStore:
             return False
         return True
 
+    def _write(self, profiles: list[DatabaseProfile]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix="db-profiles-", suffix=".tmp", dir=self.path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump([p.to_metadata() for p in profiles], handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+        except BaseException:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+            raise
+
 
 def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5) -> tuple[bool, str]:
     """Test only the selected database; never create databases or change user data."""
@@ -216,17 +230,3 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
             return False, f"فشل اختبار PostgreSQL ({type(exc).__name__})."
 
     return False, f"اختبار {profile.backend} غير متاح بعد؛ لم تتم محاولة الاتصال."
-
-    def _write(self, profiles: list[DatabaseProfile]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix="db-profiles-", suffix=".tmp", dir=self.path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump([p.to_metadata() for p in profiles], handle, ensure_ascii=False, indent=2)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-            raise
