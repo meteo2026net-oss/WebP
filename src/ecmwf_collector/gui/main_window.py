@@ -29,6 +29,7 @@ from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_
 from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
 from ..state import StateStore
+from ..state_contracts import StateStoreProtocol
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
 from ..gefs_decoder import calculate_gefs_ensemble_statistics
@@ -72,7 +73,7 @@ class _Bridge(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, cfg: AppConfig, config_path, secrets: SecretStore, state: StateStore):
+    def __init__(self, cfg: AppConfig, config_path, secrets: SecretStore, state: StateStoreProtocol):
         super().__init__()
         self.cfg, self.config_path, self.secrets, self.state = cfg, config_path, secrets, state
         self.pool = QThreadPool.globalInstance()
