@@ -125,6 +125,29 @@ class FileAssetCatalogTests(unittest.TestCase):
         with self.assertRaises(FileAssetError):
             asset_from_sidecar(sidecar)
 
+    def test_cptec_sidecar_normalizes_full_run_timestamp(self):
+        root = Path(self.temp.name)
+        data = b"GRIB" + b"eta-payload" + b"7777"
+        grib = root / "eta.grb2"
+        grib.write_bytes(data)
+        sidecar = root / "eta.grb2.source.json"
+        sidecar.write_text(json.dumps({
+            "source": "CPTEC_INPE_ETA",
+            "domain": "ams_08km",
+            "date": "20261107",
+            "cycle_utc": "06",
+            "filename": grib.name,
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "url": "https://dataserver.cptec.inpe.br/eta.grb2",
+            "integrity": "ok",
+        }), encoding="utf-8")
+        asset = asset_from_sidecar(sidecar)
+        self.assertEqual(asset.provider_id, "cptec_inpe")
+        self.assertEqual(asset.model_id, "cptec_eta")
+        self.assertEqual(asset.product_id, "eta_ams_08km")
+        self.assertEqual(asset.run_time_utc, "2026-11-07T06:00:00Z")
+
     def test_unknown_sidecar_model_is_rejected(self):
         root = Path(self.temp.name)
         grib = root / "unknown.grib2"
@@ -134,6 +157,7 @@ class FileAssetCatalogTests(unittest.TestCase):
             "source": "NOAA/NCEP NOMADS", "model": "UNRECOGNIZED",
             "file_name": grib.name, "size_bytes": grib.stat().st_size,
             "sha256": hashlib.sha256(b"GRIB-data").hexdigest(),
+            "integrity": "GRIB2 framing checked; SHA-256 recorded",
         }), encoding="utf-8")
         with self.assertRaises(FileAssetError):
             asset_from_sidecar(sidecar)

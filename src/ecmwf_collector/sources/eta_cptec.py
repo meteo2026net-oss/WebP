@@ -45,7 +45,7 @@ def list_eta_files(date: str, cycle: str = "00", domain: str = "ams_08km", *, op
     })
 
 
-def retrieve_eta_file(date: str, cycle: str, domain: str, filename: str, target, *, opener=None):
+def retrieve_eta_file(date: str, cycle: str, domain: str, filename: str, target, *, opener=None, catalog_sink=None):
     """Download one explicitly selected GRIB file, validate, hash and publish atomically."""
     _validate(date, cycle, domain)
     if not filename or PurePosixPath(filename).name != filename or not re.fullmatch(r"[A-Za-z0-9_.-]+", filename):
@@ -101,9 +101,16 @@ def retrieve_eta_file(date: str, cycle: str, domain: str, filename: str, target,
         "integrity": check.verdict,
         "operational_status_note": "Availability is determined from the live CPTEC directory listing; domains may be paused or archived.",
     }
-    target.with_suffix(target.suffix + ".source.json").write_text(
+    sidecar_path = target.with_suffix(target.suffix + ".source.json")
+    sidecar_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    if catalog_sink is not None:
+        try:
+            report["catalog_registration"] = catalog_sink.register_sidecar(sidecar_path)
+        except Exception as exc:
+            from ..catalog_errors import CatalogRegistrationError
+            raise CatalogRegistrationError(target, sidecar_path, exc) from None
     return report
 
 

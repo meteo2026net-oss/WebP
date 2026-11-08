@@ -31,13 +31,18 @@ def retrieve_open_data(request, target, *, source="ecmwf", model="ifs", resoluti
         for chunk in iter(lambda:stream.read(4*1024*1024),b""): h.update(chunk)
     report={"source":"ecmwf_open_data","endpoint":source,"model":model,"resolution":resolution,
       "request":request,"retrieved_at_utc":datetime.now(timezone.utc).isoformat(),
+      "run":(f"{request['date']}T{int(request.get('time',0)):02d}:00:00Z" if request.get("date") else None),
       "returned_forecast_datetime":getattr(result,"datetime",None).isoformat() if getattr(result,"datetime",None) else None,
       "file":target.name,"size_bytes":target.stat().st_size,"sha256":h.hexdigest(),
       "grib_edition":check.kind,"message_count":check.messages,"integrity":check.verdict}
     sidecar_path = target.with_suffix(target.suffix+".source.json")
     sidecar_path.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     if catalog_sink is not None:
-        report["catalog_registration"] = catalog_sink.register_sidecar(sidecar_path)
+        try:
+            report["catalog_registration"] = catalog_sink.register_sidecar(sidecar_path)
+        except Exception as exc:
+            from ..catalog_errors import CatalogRegistrationError
+            raise CatalogRegistrationError(target, sidecar_path, exc) from None
     return report
 
 def main():

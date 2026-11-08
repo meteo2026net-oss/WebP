@@ -33,6 +33,8 @@ from ..state import StateStore
 from ..state_contracts import StateStoreProtocol
 from ..postgres_state import PostgresStateStore
 from ..sources.noaa_gfs import GfsRequest, download_gfs
+from ..sources.ecmwf_open_data import retrieve_open_data
+from ..sources.eta_cptec import retrieve_eta_file
 from ..gefs_decoder import calculate_gefs_ensemble_statistics
 from ..tools.ensemble_to_map import write_gefs_ensemble_map_products
 from ..sources.noaa_gefs import (
@@ -299,6 +301,18 @@ class MainWindow(QMainWindow):
         self.source_tabs.addTab(compare, "مقارنة المصادر")
         self.source_tabs.addTab(ReviewConsole(self), "مراجعة المتنبئين")
         self.setCentralWidget(self.source_tabs)
+
+    def _catalog_sink_for(self, provider: str, model: str, product: str):
+        """Return only a session-approved sink; absence means local-only download."""
+        return self.database_manager.catalog_sink_for(provider, model, product)
+
+    @staticmethod
+    def _catalog_status(sink) -> str:
+        return (
+            "سُجلت بيانات الأصل في قاعدة الكتالوج المعتمدة."
+            if sink is not None else
+            "لم تُكتب بيانات إلى أي قاعدة؛ لم يوجد اعتماد كتالوج صالح لهذه الوجهة في الجلسة."
+        )
 
     def _build_ecmwf_tab(self):
         page = QWidget()
@@ -702,11 +716,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "إعدادات NOAA غير صالحة", str(exc))
             return
 
+        catalog_sink = self._catalog_sink_for("noaa_nomads", "noaa_gfs", f"gfs_{request.resolution}")
         self.btn_noaa_download.setEnabled(False)
         self.noaa_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل ملف GRIB2…")
 
         def work():
-            return download_gfs(request, output)
+            return download_gfs(request, output, catalog_sink=catalog_sink)
 
         def done(result):
             grib_path, metadata_path = result
@@ -715,13 +730,14 @@ class MainWindow(QMainWindow):
                 f"الملف: {grib_path}\n"
                 f"بيانات المصدر: {metadata_path}\n"
                 f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
-                "تم تسجيل SHA-256 في ملف metadata."
+                "تم تسجيل SHA-256 في ملف metadata.\n" + self._catalog_status(catalog_sink)
             )
             self.btn_noaa_download.setEnabled(True)
             self._log(f"اكتمل تنزيل NOAA GFS: {grib_path}")
 
         def failed(message):
-            self.noaa_status.setPlainText("تعذر تنزيل NOAA GFS: " + redact(message))
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل NOAA GFS: "
+            self.noaa_status.setPlainText(prefix + redact(message))
             self.btn_noaa_download.setEnabled(True)
 
         self._run(work, done, on_failed=failed)
@@ -842,6 +858,7 @@ class MainWindow(QMainWindow):
         self.btn_gefs_download.setEnabled(False)
         self.gefs_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل عضو GEFS…")
 
+        catalog_sink = self._catalog_sink_for("noaa_nomads", "noaa_gefs", "gefs_0p50")
         download_all = self.gefs_all_members.isChecked()
         max_workers = self.gefs_parallel.value()  # Read Qt widgets on the GUI thread only.
 
@@ -854,10 +871,10 @@ class MainWindow(QMainWindow):
             if download_all:
                 completed, failed = download_gefs_ensemble(
                     request, output, members=requested_members,
-                    max_workers=max_workers
+                    max_workers=max_workers, catalog_sink=catalog_sink
                 )
             else:
-                grib, metadata = download_gefs(request, output)
+                grib, metadata = download_gefs(request, output, catalog_sink=catalog_sink)
                 completed, failed = [(request.member, grib, metadata)], []
             manifest = write_gefs_ensemble_manifest(
                 request, output, completed, failed, requested_members=requested_members
@@ -866,11 +883,15 @@ class MainWindow(QMainWindow):
 
         def done(result):
             completed, failed, manifest = result
+            catalog_note = self._catalog_status(catalog_sink)
+            if catalog_sink is not None and any("catalog registration failed" in error for _, error in failed):
+                catalog_note = "اكتمل حفظ الملفات محلياً، لكن فشل تسجيل بعض الأعضاء في الكتالوج؛ راجع قائمة الإخفاقات."
             report = [
                 f"اكتمل تنزيل {len(completed)} عضو/أعضاء من GEFS.",
-                f"تعذر تنزيل {len(failed)} عضو/أعضاء.",
+                f"تعذر تنزيل/تسجيل {len(failed)} عضو/أعضاء.",
                 f"الصلاحية UTC: {request.valid_time.isoformat()}",
-                f"سجل المجموعة: {manifest.name}", "",
+                f"سجل المجموعة: {manifest.name}",
+                catalog_note, "",
             ]
             for member, grib, metadata in completed:
                 report.extend([f"{member}: {grib.name}", f"Metadata: {metadata.name}"])
@@ -882,7 +903,8 @@ class MainWindow(QMainWindow):
             self._log(f"GEFS: اكتمل {len(completed)} وفشل {len(failed)}.")
 
         def failed(message):
-            self.gefs_status.setPlainText("تعذر تنزيل NOAA GEFS: " + redact(message))
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل NOAA GEFS: "
+            self.gefs_status.setPlainText(prefix + redact(message))
             self.btn_gefs_download.setEnabled(True)
 
         self._run(work, done, on_failed=failed)
@@ -1039,21 +1061,49 @@ class MainWindow(QMainWindow):
             date = self.ecmwf_date.text().strip()
             if date and (len(date) != 8 or not date.isdigit()):
                 raise ValueError
-        except ValueError:
-            QMessageBox.warning(self, "إعدادات غير صالحة", "أدخل تاريخاً بصيغة YYYYMMDD إن لزم، وخطوة صحيحة ومتغيراً واحداً على الأقل.")
+            model = self.ecmwf_model.currentText()
+            resolution = self.ecmwf_resolution.currentText()
+            output = Path(self.ecmwf_output.text().strip()).expanduser()
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError):
+            QMessageBox.warning(self, "إعدادات غير صالحة", "أدخل تاريخاً بصيغة YYYYMMDD إن لزم، وخطوة صحيحة ومتغيراً واحداً على الأقل ومجلد حفظ صالحاً.")
             return
-        output = Path(self.ecmwf_output.text().strip())
-        output.mkdir(parents=True, exist_ok=True)
-        filename = f"{self.ecmwf_model.currentText()}_{date or 'latest'}_{self.ecmwf_time.currentText()}_step{step}.grib2"
-        target = output / filename
-        args = ["-m", "ecmwf_collector.sources.ecmwf_open_data",
-                "--time", self.ecmwf_time.currentText(), "--step", str(step),
-                "--param", *params, "--type", "fc", "--model", self.ecmwf_model.currentText(),
-                "--resolution", self.ecmwf_resolution.currentText(), "--output", str(target)]
+
+        request = {
+            "time": int(self.ecmwf_time.currentText()),
+            "step": step,
+            "param": params,
+            "type": "fc",
+        }
         if date:
-            args.extend(["--date", date])
+            request["date"] = date
+        model_ids = {"ifs": "ecmwf_ifs", "aifs-single": "ecmwf_aifs_single",
+                     "aifs-ens": "ecmwf_aifs_ens"}
+        catalog_sink = self._catalog_sink_for(
+            "ecmwf_open_data", model_ids[model], f"forecast_fc_{resolution}"
+        )
+        target = output / f"{model}_{date or 'latest'}_{request['time']:02d}_step{step}.grib2"
         self.ecmwf_log.setPlainText("جارٍ تنفيذ طلب ECMWF…")
-        self._source_command(args, self.ecmwf_log)
+
+        def work():
+            return retrieve_open_data(
+                request, target, source="ecmwf", model=model,
+                resolution=resolution, catalog_sink=catalog_sink,
+            )
+
+        def done(report):
+            import json
+            self.ecmwf_log.setPlainText(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+                + self._catalog_status(catalog_sink)
+            )
+            self._log(f"اكتمل تنزيل ECMWF: {target}")
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل ECMWF: "
+            self.ecmwf_log.setPlainText(prefix + redact(message))
+
+        self._run(work, done, on_failed=failed)
 
     def _eta_args(self):
         date = self.eta_date.text().strip()
@@ -1073,18 +1123,38 @@ class MainWindow(QMainWindow):
 
     def _on_eta_download(self):
         try:
-            args = self._eta_args()
+            date = self.eta_date.text().strip()
+            cycle = self.eta_cycle.currentText()
+            domain = self.eta_domain.currentText()
             filename = self.eta_filename.text().strip()
             if not filename:
                 raise ValueError("أدخل اسم ملف GRIB بعد استعراض الملفات.")
-            output = Path(self.eta_output.text().strip())
+            output = Path(self.eta_output.text().strip()).expanduser()
             output.mkdir(parents=True, exist_ok=True)
-            args.extend(["--file", filename, "--output", str(output / filename)])
         except (ValueError, OSError) as exc:
             QMessageBox.warning(self, "إعدادات غير صالحة", str(exc))
             return
+        catalog_sink = self._catalog_sink_for("cptec_inpe", "cptec_eta", f"eta_{domain}")
+        target = output / filename
         self.eta_log.setPlainText("جارٍ تنزيل ملف ETA وفحص GRIB…")
-        self._source_command(args, self.eta_log)
+
+        def work():
+            return retrieve_eta_file(
+                date, cycle, domain, filename, target, catalog_sink=catalog_sink
+            )
+
+        def done(report):
+            import json
+            self.eta_log.setPlainText(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+                + self._catalog_status(catalog_sink)
+            )
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل CPTEC ETA: "
+            self.eta_log.setPlainText(prefix + redact(message))
+
+        self._run(work, done, on_failed=failed)
 
     # ---------- الإعدادات ----------
     def _load_from_config(self):

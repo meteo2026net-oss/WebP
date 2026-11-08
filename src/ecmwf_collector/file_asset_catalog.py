@@ -152,7 +152,23 @@ def asset_from_sidecar(sidecar_path: Path) -> FileAsset:
     content_type = content_types.get(suffix)
     if content_type is None:
         raise FileAssetError("امتداد الملف غير مدعوم في كتالوج الأصول.")
-    run_time = metadata.get("run") or metadata.get("cycle_utc")
+    run_time = metadata.get("run")
+    if not run_time and source == "cptec_inpe_eta":
+        date_value = str(metadata.get("date") or "")
+        cycle_value = str(metadata.get("cycle_utc") or "")
+        try:
+            from datetime import datetime
+            datetime.strptime(date_value, "%Y%m%d")
+            if cycle_value not in {"00", "06", "12", "18"}:
+                raise ValueError
+            run_time = (
+                f"{date_value[:4]}-{date_value[4:6]}-{date_value[6:8]}"
+                f"T{cycle_value}:00:00Z"
+            )
+        except ValueError as exc:
+            raise FileAssetError("تاريخ أو دورة CPTEC في sidecar غير صالحين.") from exc
+    if not run_time:
+        run_time = metadata.get("cycle_utc")
     valid_time = metadata.get("valid_time") or metadata.get("returned_forecast_datetime")
     source_uri = metadata.get("source_url") or metadata.get("url")
     if source_uri is not None and not isinstance(source_uri, str):

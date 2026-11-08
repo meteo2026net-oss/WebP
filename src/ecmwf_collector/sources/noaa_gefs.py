@@ -126,7 +126,11 @@ def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 12
         if final_path.exists() and not metadata_path.exists(): final_path.unlink()
         raise
     if catalog_sink is not None:
-        catalog_sink.register_sidecar(metadata_path)
+        try:
+            catalog_sink.register_sidecar(metadata_path)
+        except Exception as exc:
+            from ..catalog_errors import CatalogRegistrationError
+            raise CatalogRegistrationError(final_path, metadata_path, exc) from None
     return final_path,metadata_path
 
 def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,

@@ -381,6 +381,7 @@ class DatabaseManagerWidget(QWidget):
                     if not restored:
                         raise RuntimeError("فشل حفظ الاتصال وتعذّر التراجع عن تحديث كلمة المرور؛ أعد مراجعة بيانات الاعتماد.")
                 raise
+            self.approved_catalog_sinks.clear()
             self.refresh()
         except Exception as exc:
             QMessageBox.warning(self, "تعذّر تعديل الاتصال", str(exc))
@@ -494,7 +495,8 @@ class DatabaseManagerWidget(QWidget):
             if answer != QMessageBox.Yes:
                 return
             synchronizer = AssetOutboxSynchronizer(
-                sink.approval.destination_profile_id, self.profile_store, self.secrets
+                sink.approval.destination_profile_id, self.profile_store, self.secrets,
+                approved_target_profile_ids=tuple(targets),
             )
             result = synchronizer.sync_pending(
                 OutboxSyncApproval(tuple(targets), confirmed=True), limit=100

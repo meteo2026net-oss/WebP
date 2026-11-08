@@ -69,7 +69,12 @@ class ApprovedCatalogSink:
             profile = profile_store.get(profile_id)
             if profile is None or not profile.enabled:
                 raise CatalogApprovalError("إحدى قواعد البيانات المعتمدة غير موجودة أو معطّلة.")
-            FileAssetCatalog(profile, secrets).initialize_schema()
+            try:
+                FileAssetCatalog(profile, secrets).initialize_schema()
+            except Exception as exc:
+                raise CatalogApprovalError(
+                    f"تعذّر تهيئة مخطط قاعدة البيانات المعتمدة ({type(exc).__name__})."
+                ) from None
 
     def register_sidecar(self, sidecar_path: Path) -> dict:
         asset = asset_from_sidecar(Path(sidecar_path))
@@ -113,21 +118,32 @@ class ApprovedCatalogSink:
 class AssetOutboxSynchronizer:
     """At-least-once replication; target writes are idempotent by asset_key."""
 
-    def __init__(self, source_profile_id: str, profile_store: DatabaseProfileStore, secrets):
+    def __init__(self, source_profile_id: str, profile_store: DatabaseProfileStore, secrets, *, approved_target_profile_ids: tuple[str, ...] = ()):
         source = profile_store.get(source_profile_id)
         if source is None or not source.enabled:
             raise CatalogApprovalError("قاعدة المصدر غير موجودة أو معطّلة.")
         self.source_profile_id = source_profile_id
         self.profile_store = profile_store
         self.secrets = secrets
+        self.approved_target_profile_ids = frozenset(approved_target_profile_ids)
+        if source_profile_id in self.approved_target_profile_ids:
+            raise CatalogApprovalError("قاعدة المصدر لا يمكن اعتمادها كوجهة مزامنة لنفسها.")
+        for target_id in self.approved_target_profile_ids:
+            target = profile_store.get(target_id)
+            if target is None or not target.enabled:
+                raise CatalogApprovalError("إحدى قواعد المزامنة المعتمدة غير موجودة أو معطّلة.")
         self.source_catalog = FileAssetCatalog(source, secrets)
 
     def sync_pending(self, approval: OutboxSyncApproval, *, limit: int = 100) -> dict:
         if not approval.confirmed:
             raise CatalogApprovalError("يلزم تأكيد صريح قبل كتابة قواعد المزامنة.")
         allowed = set(approval.target_profile_ids)
+        if len(allowed) != len(approval.target_profile_ids):
+            raise CatalogApprovalError("قائمة وجهات المزامنة تحتوي على تكرار.")
         if self.source_profile_id in allowed:
             raise CatalogApprovalError("قاعدة المصدر لا يمكن أن تكون وجهة مزامنة لنفسها.")
+        if not allowed.issubset(self.approved_target_profile_ids):
+            raise CatalogApprovalError("المزامنة تتضمن وجهة لم يشملها اعتماد الكتابة الحالي.")
         pending = self.source_catalog.pending_outbox(limit=limit)
         result = {"delivered": 0, "failed": 0, "skipped": 0, "items": []}
         for event in pending:

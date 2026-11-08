@@ -109,7 +109,7 @@ class AssetSyncTests(unittest.TestCase):
         self.source_catalog.register_asset(
             self.sample_asset(), replica_profile_ids=[self.target.profile_id]
         )
-        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None)
+        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None, approved_target_profile_ids=(self.target.profile_id,))
         with self.assertRaises(CatalogApprovalError):
             sync.sync_pending(OutboxSyncApproval((self.target.profile_id,), confirmed=False))
 
@@ -118,7 +118,7 @@ class AssetSyncTests(unittest.TestCase):
         self.source_catalog.register_asset(
             self.sample_asset(), replica_profile_ids=[self.target.profile_id]
         )
-        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None)
+        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None, approved_target_profile_ids=(self.target.profile_id,))
         approval = OutboxSyncApproval((self.target.profile_id,), confirmed=True)
         first = sync.sync_pending(approval)
         self.assertEqual(first["failed"], 1)
@@ -133,6 +133,20 @@ class AssetSyncTests(unittest.TestCase):
             "delivered",
         )
 
+    def test_sync_rejects_target_not_in_session_approval(self):
+        self.source_catalog.initialize_schema()
+        self.source_catalog.register_asset(
+            self.sample_asset(), replica_profile_ids=[self.target.profile_id]
+        )
+        sync = AssetOutboxSynchronizer(
+            self.source.profile_id, self.profile_store, None,
+            approved_target_profile_ids=(),
+        )
+        with self.assertRaises(CatalogApprovalError):
+            sync.sync_pending(
+                OutboxSyncApproval((self.target.profile_id,), confirmed=True)
+            )
+
     def test_sync_is_idempotent_if_target_commit_precedes_source_ack(self):
         self.source_catalog.initialize_schema()
         FileAssetCatalog(self.target).initialize_schema()
@@ -140,7 +154,7 @@ class AssetSyncTests(unittest.TestCase):
         self.source_catalog.register_asset(asset, replica_profile_ids=[self.target.profile_id])
         # Simulate a crash after the target committed but before source Outbox ack.
         FileAssetCatalog(self.target).register_asset(asset)
-        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None)
+        sync = AssetOutboxSynchronizer(self.source.profile_id, self.profile_store, None, approved_target_profile_ids=(self.target.profile_id,))
         result = sync.sync_pending(
             OutboxSyncApproval((self.target.profile_id,), confirmed=True)
         )

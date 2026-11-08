@@ -24,8 +24,24 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: webp_asset_source
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weather_test
+      ASSET_PG_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_source?sslmode=disable
+      ASSET_PG_TARGET_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_target?sslmode=disable
+      ASSET_MYSQL_SOURCE_URL: mysql://root:mysql@127.0.0.1:3306/webp_asset_source
+      ASSET_MYSQL_TARGET_URL: mysql://root:mysql@127.0.0.1:3306/webp_asset_target
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -37,10 +53,13 @@ jobs:
           sudo apt-get install -y libegl1 libgl1
       - name: Install test dependencies
         run: |
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client default-mysql-client
           python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2' requests 'Authlib>=1.7' 'joserfc>=1.2' 'PyMySQL>=1.1.1'
       - name: Initialize PostGIS and weather schema
         run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_source"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_target"
+          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/weather_platform_schema.sql
       - name: Compile Python sources
