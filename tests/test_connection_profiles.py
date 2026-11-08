@@ -211,6 +211,8 @@ class DatabaseProfileTests(unittest.TestCase):
 
     def test_failed_secret_deletion_preserves_profile_metadata(self):
         class FailingSecrets:
+            def get_password(self, key):
+                return "vault-secret"
             def delete_password(self, key):
                 return False
         profile = DatabaseProfile.create(
