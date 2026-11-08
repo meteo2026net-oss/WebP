@@ -4,7 +4,7 @@ import argparse, hashlib, json, os
 from datetime import datetime, timezone
 from pathlib import Path
 
-def retrieve_open_data(request, target, *, source="ecmwf", model="ifs", resolution="0p25", client_factory=None):
+def retrieve_open_data(request, target, *, source="ecmwf", model="ifs", resolution="0p25", client_factory=None, catalog_sink=None):
     """Retrieve an explicitly selected subset, validate it, then atomically publish."""
     target=Path(target); target.parent.mkdir(parents=True,exist_ok=True)
     if not request or "param" not in request or "step" not in request:
@@ -34,7 +34,10 @@ def retrieve_open_data(request, target, *, source="ecmwf", model="ifs", resoluti
       "returned_forecast_datetime":getattr(result,"datetime",None).isoformat() if getattr(result,"datetime",None) else None,
       "file":target.name,"size_bytes":target.stat().st_size,"sha256":h.hexdigest(),
       "grib_edition":check.kind,"message_count":check.messages,"integrity":check.verdict}
-    target.with_suffix(target.suffix+".source.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    sidecar_path = target.with_suffix(target.suffix+".source.json")
+    sidecar_path.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    if catalog_sink is not None:
+        report["catalog_registration"] = catalog_sink.register_sidecar(sidecar_path)
     return report
 
 def main():
