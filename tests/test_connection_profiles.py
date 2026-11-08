@@ -82,8 +82,12 @@ class DatabaseProfileTests(unittest.TestCase):
     def test_sqlite_connection_test_runs_read_only_probe(self):
         import sqlite3
         existing = Path(self.temp.name) / "existing.db"
-        with sqlite3.connect(existing) as connection:
+        connection = sqlite3.connect(existing)
+        try:
             connection.execute("CREATE TABLE marker (value TEXT)")
+            connection.commit()
+        finally:
+            connection.close()
         profile = DatabaseProfile.create("Existing", "sqlite", sqlite_path=str(existing))
         ok, message = test_database_connection(profile, secrets=None)
         self.assertTrue(ok, message)
