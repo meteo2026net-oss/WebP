@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..connection_profiles import DatabaseProfile, DatabaseProfileStore, test_database_connection
+from ..database_health import inspect_database
 from ..database_routing import DatabaseRoutingError, DatabaseRoutingStore
 
 
@@ -110,6 +111,19 @@ class _ProfileDialog(QDialog):
         return profile, self.password.text() or None
 
 
+class _HealthWorker(QThread):
+    completed = Signal(object)
+
+    def __init__(self, profiles, secrets, parent=None):
+        super().__init__(parent)
+        self.profiles = profiles
+        self.secrets = secrets
+
+    def run(self):
+        results = [inspect_database(profile, self.secrets) for profile in self.profiles]
+        self.completed.emit(results)
+
+
 class DatabaseManagerWidget(QWidget):
     def __init__(self, secrets, config_root: Path, parent=None):
         super().__init__(parent)
@@ -126,7 +140,8 @@ class DatabaseManagerWidget(QWidget):
         self.test_button = QPushButton("اختبار الاتصال")
         self.toggle_button = QPushButton("تفعيل / تعطيل")
         self.delete_button = QPushButton("حذف الاتصال")
-        for button in (self.add_button, self.edit_button, self.test_button, self.toggle_button, self.delete_button):
+        self.health_button = QPushButton("تحديث مؤشرات الصحة")
+        for button in (self.add_button, self.edit_button, self.test_button, self.toggle_button, self.delete_button, self.health_button):
             actions.addWidget(button)
         layout.addLayout(actions)
         self.profiles_table = QTableWidget(0, 7)
@@ -136,6 +151,16 @@ class DatabaseManagerWidget(QWidget):
         self.profiles_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.profiles_table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.profiles_table, 2)
+        self.health_button.clicked.connect(self._refresh_health)
+        layout.addWidget(QLabel("مؤشرات صحة سجل تتبع التنزيلات — قراءة فقط"))
+        self.health_table = QTableWidget(0, 8)
+        self.health_table.setHorizontalHeaderLabels(
+            ["الاتصال", "الحالة", "جدول التتبع", "السجلات", "مكتملة", "فاشلة", "الحجم المحلي", "آخر تحديث / ملاحظة"]
+        )
+        self.health_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.health_table.setSelectionBehavior(QTableWidget.SelectRows)
+        layout.addWidget(self.health_table, 1)
+        self._health_worker = None
 
         layout.addWidget(QLabel("توجيه النماذج والمنتجات إلى قواعد بيانات مستقلة"))
         route_form = QFormLayout()
@@ -211,6 +236,42 @@ class DatabaseManagerWidget(QWidget):
             combo.setCurrentIndex(index if index >= 0 else 0)
             combo.blockSignals(False)
         self._refresh_routes()
+
+    def _refresh_health(self):
+        if self._health_worker is not None and self._health_worker.isRunning():
+            return
+        profiles = self.profile_store.list_profiles()
+        if not profiles:
+            QMessageBox.information(self, "مؤشرات الصحة", "أضف اتصالاً واحداً على الأقل أولاً.")
+            return
+        self.health_button.setEnabled(False)
+        self.health_button.setText("جارٍ الفحص…")
+        self._health_worker = _HealthWorker(profiles, self.secrets, self)
+        self._health_worker.completed.connect(self._show_health)
+        self._health_worker.finished.connect(self._health_finished)
+        self._health_worker.start()
+
+    def _show_health(self, results):
+        self.health_table.setRowCount(len(results))
+        for row, result in enumerate(results):
+            state = "متصل" if result.connected else "غير متصل"
+            table = "متاح" if result.tracking_table_available else "غير موجود"
+            count = "—" if result.tracked_files is None else str(result.tracked_files)
+            completed = "—" if result.completed_files is None else str(result.completed_files)
+            failed = "—" if result.failed_files is None else str(result.failed_files)
+            local_size = "—" if result.local_bytes is None else f"{result.local_bytes:,} بايت"
+            latest = result.latest_update or result.message
+            values = (result.profile_name, state, table, count, completed, failed, local_size, latest)
+            for column, value in enumerate(values):
+                self.health_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.notice.setText(
+            "تنبيه: مؤشرات الجدول تخص بيانات تتبع التنزيلات فقط؛ لا تحصي ملفات CSV الفعلية "
+            "ولا أحجام ملفات GRIB/CSV الموجودة على القرص."
+        )
+
+    def _health_finished(self):
+        self.health_button.setEnabled(True)
+        self.health_button.setText("تحديث مؤشرات الصحة")
 
     def _selected_profile(self):
         row = self.profiles_table.currentRow()
