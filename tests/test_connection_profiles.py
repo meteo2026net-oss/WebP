@@ -92,14 +92,14 @@ class DatabaseProfileTests(unittest.TestCase):
         ok, message = test_database_connection(profile, secrets=None)
         self.assertTrue(ok, message)
 
-    def test_mysql_connection_is_not_falsely_reported_as_supported(self):
+    def test_mysql_connection_fails_closed_without_vault_password(self):
         profile = DatabaseProfile.create(
             "MySQL", "mysql", host="localhost", port=3306,
             database="weather", username="app",
         )
         ok, message = test_database_connection(profile, secrets=None)
         self.assertFalse(ok)
-        self.assertIn("غير متاح بعد", message)
+        self.assertIn("DatabaseDriverError", message)
 
     def test_mysql_connection_probe_uses_vault_and_disables_ssl_only_when_requested(self):
         import sys
