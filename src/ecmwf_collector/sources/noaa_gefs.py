@@ -93,7 +93,7 @@ def _verify_grib2(path: Path) -> None:
 
 
 def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 120,
-                  opener=urllib.request.urlopen) -> tuple[Path, Path]:
+                  opener=urllib.request.urlopen, catalog_sink=None) -> tuple[Path, Path]:
     """Download one GEFS member, resuming interrupted HTTP transfers safely."""
     url=build_gefs_url(request); output_dir=Path(output_dir); output_dir.mkdir(parents=True,exist_ok=True)
     day=request.run_date.strftime("%Y%m%d"); cycle=f"{request.cycle:02d}"
@@ -125,13 +125,16 @@ def download_gefs(request: GefsRequest, output_dir: Path, *, timeout: float = 12
         temp_meta.unlink(missing_ok=True)
         if final_path.exists() and not metadata_path.exists(): final_path.unlink()
         raise
+    if catalog_sink is not None:
+        catalog_sink.register_sidecar(metadata_path)
     return final_path,metadata_path
 
 def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
                            members: tuple[str, ...] | None = None,
                            timeout: float = 120,
                            max_workers: int = 4,
-                           opener=urllib.request.urlopen
+                           opener=urllib.request.urlopen,
+                           catalog_sink=None
                            ) -> tuple[list[tuple[str, Path, Path]], list[tuple[str, str]]]:
     """Download independent GEFS members concurrently with bounded connections."""
     selected = members or ("c00", *(f"p{number:02d}" for number in range(1, 31)))
@@ -163,6 +166,14 @@ def download_gefs_ensemble(request: GefsRequest, output_dir: Path, *,
                 completed.append(success)
             if error is not None:
                 failed.append(error)
+    if catalog_sink is not None:
+        # Keep database writes sequential even though member downloads are parallel.
+        # A catalogue error does not delete or invalidate an already downloaded GRIB.
+        for member, _grib_path, metadata_path in completed:
+            try:
+                catalog_sink.register_sidecar(metadata_path)
+            except Exception as exc:
+                failed.append((member, f"catalog registration failed; downloaded file retained ({type(exc).__name__})"))
     return completed, failed
 
 
