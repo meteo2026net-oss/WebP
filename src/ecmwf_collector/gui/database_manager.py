@@ -334,21 +334,35 @@ class DatabaseManagerWidget(QWidget):
             )
             if needs_new_password and not password:
                 raise ValueError("أدخل كلمة مرور جديدة عند تغيير نوع قاعدة البيانات.")
-            if password and not self.profile_store.set_password(updated, self.secrets, password):
-                raise RuntimeError("تعذّر تحديث كلمة المرور في مخزن أسرار النظام.")
+            previous_secret = (
+                self.secrets.get_password(current.credential_key)
+                if current.backend != "sqlite" else None
+            )
+            secret_updated = False
             removed_old_secret = False
-            old_secret = None
+            if password:
+                if not self.profile_store.set_password(updated, self.secrets, password):
+                    raise RuntimeError("تعذّر تحديث كلمة المرور في مخزن أسرار النظام.")
+                secret_updated = True
             if current.backend != "sqlite" and updated.backend == "sqlite":
-                old_secret = self.secrets.get_password(current.credential_key)
-                if old_secret is not None:
+                if previous_secret is not None:
                     if not self.secrets.delete_password(current.credential_key):
                         raise RuntimeError("تعذّر حذف كلمة المرور القديمة من مخزن أسرار النظام؛ لم يتغير نوع الاتصال.")
                     removed_old_secret = True
             try:
                 self.profile_store.save(updated)
             except Exception:
-                if removed_old_secret and not self.secrets.set_password(current.credential_key, old_secret):
-                    raise RuntimeError("فشل حفظ الاتصال وتعذّرت استعادة كلمة المرور القديمة؛ أعد إدخالها قبل الاستخدام.")
+                if removed_old_secret and previous_secret is not None:
+                    restored = self.secrets.set_password(current.credential_key, previous_secret)
+                    if not restored:
+                        raise RuntimeError("فشل حفظ الاتصال وتعذّرت استعادة كلمة المرور القديمة؛ أعد إدخالها قبل الاستخدام.")
+                elif secret_updated:
+                    if current.backend != "sqlite" and previous_secret is not None:
+                        restored = self.secrets.set_password(current.credential_key, previous_secret)
+                    else:
+                        restored = self.secrets.delete_password(current.credential_key)
+                    if not restored:
+                        raise RuntimeError("فشل حفظ الاتصال وتعذّر التراجع عن تحديث كلمة المرور؛ أعد مراجعة بيانات الاعتماد.")
                 raise
             self.refresh()
         except Exception as exc:
