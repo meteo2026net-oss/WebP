@@ -291,7 +291,10 @@ class ReviewApiClient:
                 "Cache-Control": "no-store",
             },
             timeout=(5, 25),
+            allow_redirects=False,
         )
+        if response.is_redirect:
+            raise ReviewAuthError("Review API redirect rejected; token was not forwarded")
         if response.status_code == 401:
             raise ReviewAuthError("انتهت صلاحية الجلسة أو رُفض الرمز؛ سجّل الدخول مجدداً")
         if response.status_code == 403:
