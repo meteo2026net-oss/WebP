@@ -100,6 +100,7 @@ class FileAssetCatalogTests(unittest.TestCase):
             "sha256": hashlib.sha256(data).hexdigest(),
             "source_url": "https://nomads.example/gfs.grib2",
             "resolution": "0p25",
+            "integrity": "GRIB2 framing checked; SHA-256 recorded",
         }
         sidecar = root / "gfs.grib2.source.json"
         sidecar.write_text(json.dumps(metadata), encoding="utf-8")
