@@ -380,11 +380,19 @@ class FileAssetCatalog:
         try:
             cursor = connection.cursor()
             cursor.execute(
-                f"UPDATE webp_asset_outbox SET status={placeholder}, attempts=attempts+1, last_error={placeholder}, updated_at_utc={placeholder} WHERE event_id={placeholder}",
+                f"UPDATE webp_asset_outbox SET status={placeholder}, attempts=attempts+1, last_error={placeholder}, updated_at_utc={placeholder} WHERE event_id={placeholder} AND status <> 'delivered'",
                 ("delivered" if delivered else "failed", None if delivered else (error or "تعذر النقل")[:1000], now, event_id),
             )
             if getattr(cursor, "rowcount", 1) == 0:
-                raise FileAssetError("حدث Outbox غير موجود.")
+                cursor.execute(
+                    f"SELECT status FROM webp_asset_outbox WHERE event_id={placeholder}",
+                    (event_id,),
+                )
+                existing = cursor.fetchone()
+                if existing is None:
+                    raise FileAssetError("حدث Outbox غير موجود.")
+                if existing[0] != "delivered":
+                    raise FileAssetError("تعذر تحديث حالة حدث Outbox.")
             connection.commit()
         except Exception:
             connection.rollback()
