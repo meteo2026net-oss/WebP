@@ -100,5 +100,30 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(self.case.events, [])
 
 
+    def test_admin_can_assign_and_reopen(self):
+        assign_review(self.case, actor_id="admin", role="admin",
+                      reviewer_id="reviewer", expected_version=1)
+        open_review(self.case, actor_id="admin", role="admin", expected_version=2)
+        decide_review(self.case, actor_id="admin", role="admin",
+                      decision="rejected", reason="Administrative review",
+                      expected_version=3)
+        reopen_review(self.case, actor_id="admin", role="admin",
+                      reason="Second review required", expected_version=4)
+        self.assertEqual(self.case.status, "pending")
+        self.assertEqual(self.case.review_version, 5)
+        self.assertEqual(
+            [event.event_type for event in self.case.events],
+            ["assigned", "opened", "rejected", "reopened"],
+        )
+
+    def test_reviewer_cannot_reopen_terminal_case(self):
+        self.case.status = "rejected"
+        with self.assertRaises(ReviewPermissionError):
+            reopen_review(self.case, actor_id="reviewer", role="reviewer",
+                          reason="Not permitted", expected_version=1)
+        self.assertEqual(self.case.status, "rejected")
+        self.assertEqual(self.case.review_version, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
