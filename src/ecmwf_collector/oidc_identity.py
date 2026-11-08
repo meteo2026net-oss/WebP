@@ -30,8 +30,21 @@ class OIDCSettings:
     def __post_init__(self) -> None:
         for label, value in (("issuer", self.issuer), ("jwks_url", self.jwks_url)):
             parsed = urlparse(value)
-            if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-                raise ValueError(f"OIDC {label} must be an absolute HTTPS URL without userinfo")
+            is_https = parsed.scheme == "https"
+            is_loopback_jwks = (
+                label == "jwks_url"
+                and parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            )
+            if (
+                not (is_https or is_loopback_jwks)
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError(
+                    f"OIDC {label} must be HTTPS, except JWKS may use HTTP on loopback only"
+                )
         if not self.audience.strip() or not self.role_claim.strip():
             raise ValueError("OIDC audience and role claim are required")
         if not self.role_mapping or any(role not in VALID_ROLES for role in self.role_mapping.values()):
