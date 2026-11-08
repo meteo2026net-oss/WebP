@@ -101,6 +101,59 @@ class DatabaseProfileTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("غير متاح بعد", message)
 
+    def test_mysql_connection_probe_uses_vault_and_disables_ssl_only_when_requested(self):
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        class FakeCursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                self.sql = sql
+            def fetchone(self):
+                return (1,)
+
+        class FakeConnection:
+            def __init__(self):
+                self.closed = False
+            def cursor(self):
+                return FakeCursor()
+            def close(self):
+                self.closed = True
+
+        class FakeSecrets:
+            def get_password(self, key):
+                return "vault-secret"
+
+        connection = FakeConnection()
+        driver = ModuleType("pymysql")
+        captured = {}
+        def connect(**kwargs):
+            captured.update(kwargs)
+            return connection
+        driver.connect = connect
+        profile = DatabaseProfile.create(
+            "MySQL", "mysql", host="localhost", port=3306,
+            database="weather", username="app", ssl_mode="disable",
+        )
+        with patch.dict(sys.modules, {"pymysql": driver}):
+            ok, message = test_database_connection(profile, FakeSecrets())
+        self.assertTrue(ok, message)
+        self.assertTrue(connection.closed)
+        self.assertEqual(captured["password"], "vault-secret")
+        self.assertTrue(captured["ssl_disabled"])
+        self.assertEqual(captured["database"], "weather")
+
+    def test_mysql_certificate_verification_requires_ca_file(self):
+        with self.assertRaises(DatabaseProfileError):
+            DatabaseProfile.create(
+                "MySQL TLS", "mysql", host="localhost", port=3306,
+                database="weather", username="app", ssl_mode="verify-full",
+            ).validate()
+
     def test_secret_is_deleted_only_after_profile_metadata(self):
         class FakeSecrets:
             def __init__(self):
