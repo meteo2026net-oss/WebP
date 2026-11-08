@@ -179,9 +179,10 @@ class DatabaseManagerWidget(QWidget):
         layout.addWidget(self.profiles_table, 2)
         self.health_button.clicked.connect(self._refresh_health)
         layout.addWidget(QLabel("مؤشرات صحة سجل تتبع التنزيلات — قراءة فقط"))
-        self.health_table = QTableWidget(0, 8)
+        self.health_table = QTableWidget(0, 10)
         self.health_table.setHorizontalHeaderLabels(
-            ["الاتصال", "الحالة", "جدول التتبع", "السجلات", "مكتملة", "فاشلة", "الحجم المحلي", "آخر تحديث / ملاحظة"]
+            ["الاتصال", "الحالة", "جدول التتبع", "السجلات", "مكتملة", "فاشلة",
+             "الحجم البعيد المسجل", "الحجم المحلي المسجل", "حجم قاعدة البيانات", "آخر تحديث / ملاحظة"]
         )
         self.health_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.health_table.setSelectionBehavior(QTableWidget.SelectRows)
