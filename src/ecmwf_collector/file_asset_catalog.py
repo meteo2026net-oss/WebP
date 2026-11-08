@@ -246,7 +246,20 @@ class FileAssetCatalog:
                         CONSTRAINT fk_webp_file_asset_sources_asset FOREIGN KEY (asset_id)
                             REFERENCES webp_file_assets(asset_id) ON DELETE CASCADE
                     )
+                         cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS webp_asset_outbox (
+                        event_id CHAR(36) PRIMARY KEY,
+                        asset_key CHAR(64) NOT NULL,
+                        target_profile_id VARCHAR(128) NOT NULL,
+                        status VARCHAR(16) NOT NULL,
+                        attempts INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        created_at_utc VARCHAR(40) NOT NULL,
+                        updated_at_utc VARCHAR(40) NOT NULL,
+                        UNIQUE KEY uq_asset_outbox_target (asset_key, target_profile_id)
+                    )
                 """)
+       """)
             else:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS webp_file_assets (
@@ -277,6 +290,19 @@ class FileAssetCatalog:
                         UNIQUE(asset_id, source_uri_sha256)
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS webp_asset_outbox (
+                        event_id TEXT PRIMARY KEY,
+                        asset_key TEXT NOT NULL,
+                        target_profile_id TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK (status IN ('pending','processing','delivered','failed')),
+                        attempts INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        created_at_utc TEXT NOT NULL,
+                        updated_at_utc TEXT NOT NULL,
+                        UNIQUE(asset_key, target_profile_id)
+                    )
+                """)
             connection.commit()
         except Exception:
             connection.rollback()
@@ -284,7 +310,73 @@ class FileAssetCatalog:
         finally:
             connection.close()
 
-    def register_asset(self, asset: FileAsset) -> dict[str, Any]:
+    def pending_outbox(self, *, target_profile_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise FileAssetError("حد دفعة Outbox يجب أن يكون بين 1 و1000.")
+        connection, dialect = self._connect()
+        placeholder = "%s" if dialect in {"postgresql", "mysql"} else "?"
+        try:
+            cursor = connection.cursor()
+            sql = "SELECT event_id,asset_key,target_profile_id,attempts FROM webp_asset_outbox WHERE status IN ('pending','failed')"
+            params: list[Any] = []
+            if target_profile_id is not None:
+                sql += f" AND target_profile_id={placeholder}"
+                params.append(target_profile_id)
+            sql += f" ORDER BY created_at_utc,event_id LIMIT {placeholder}"
+            params.append(limit)
+            cursor.execute(sql, tuple(params))
+            return [{"event_id": row[0], "asset_key": row[1], "target_profile_id": row[2], "attempts": int(row[3])}
+                    for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def load_asset_variants(self, asset_key: str) -> list[FileAsset]:
+        connection, dialect = self._connect()
+        placeholder = "%s" if dialect in {"postgresql", "mysql"} else "?"
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT provider_id,model_id,product_id,local_path,content_type,size_bytes,sha256,run_time_utc,valid_time_utc,member_id,validation_status,metadata_json,asset_id FROM webp_file_assets WHERE asset_key={placeholder}",
+                (asset_key,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise FileAssetError("أصل Outbox غير موجود في قاعدة المصدر.")
+            cursor.execute(
+                f"SELECT source_uri FROM webp_file_asset_sources WHERE asset_id={placeholder} ORDER BY source_uri_sha256",
+                (row[12],),
+            )
+            uris = [item[0] for item in cursor.fetchall()] or [None]
+            return [FileAsset(
+                provider_id=row[0], model_id=row[1], product_id=row[2], local_path=row[3],
+                content_type=row[4], size_bytes=int(row[5]), sha256=row[6],
+                run_time_utc=row[7], valid_time_utc=row[8], member_id=row[9],
+                source_uri=uri, validation_status=row[10], metadata_json=row[11],
+            ) for uri in uris]
+        finally:
+            connection.close()
+
+    def finish_outbox(self, event_id: str, *, delivered: bool, error: str | None = None) -> None:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        connection, dialect = self._connect()
+        placeholder = "%s" if dialect in {"postgresql", "mysql"} else "?"
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"UPDATE webp_asset_outbox SET status={placeholder}, attempts=attempts+1, last_error={placeholder}, updated_at_utc={placeholder} WHERE event_id={placeholder}",
+                ("delivered" if delivered else "failed", None if delivered else (error or "تعذر النقل")[:1000], now, event_id),
+            )
+            if getattr(cursor, "rowcount", 1) == 0:
+                raise FileAssetError("حدث Outbox غير موجود.")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def register_asset(self, asset: FileAsset, *, replica_profile_ids: tuple[str, ...] | list[str] = ()) -> dict[str, Any]:
         """Idempotently register metadata and preserve each distinct source URI."""
         asset.validate()
         from datetime import datetime, timezone
@@ -342,8 +434,31 @@ class FileAssetCatalog:
                     ON DUPLICATE KEY UPDATE source_uri=VALUES(source_uri)""",
                     (source_id,asset_id,asset.source_uri,_source_key(asset.source_uri),now),
                 )
+            targets = tuple(dict.fromkeys(replica_profile_ids))
+            if any(not isinstance(target, str) or not target.strip() for target in targets):
+                raise FileAssetError("معرّفات قواعد المزامنة غير صالحة.")
+            if self.profile.profile_id in targets:
+                raise FileAssetError("لا يمكن إضافة قاعدة المصدر نفسها كوجهة مزامنة.")
+            for target_id in targets:
+                event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"webp:asset-outbox:{asset_key}:{target_id}"))
+                if dialect == "mysql":
+                    cursor.execute("""
+                        INSERT INTO webp_asset_outbox
+                        (event_id,asset_key,target_profile_id,status,attempts,last_error,created_at_utc,updated_at_utc)
+                        VALUES (%s,%s,%s,'pending',0,NULL,%s,%s)
+                        ON DUPLICATE KEY UPDATE event_id=VALUES(event_id)
+                    """, (event_id, asset_key, target_id, now, now))
+                else:
+                    marks = "%s,%s,%s,'pending',0,NULL,%s,%s" if dialect == "postgresql" else "?,?,?,'pending',0,NULL,?,?"
+                    cursor.execute(f"""
+                        INSERT INTO webp_asset_outbox
+                        (event_id,asset_key,target_profile_id,status,attempts,last_error,created_at_utc,updated_at_utc)
+                        VALUES ({marks})
+                        ON CONFLICT(asset_key,target_profile_id) DO NOTHING
+                    """, (event_id, asset_key, target_id, now, now))
             connection.commit()
-            return {"asset_id": asset_id, "asset_key": asset_key, "source_registered": bool(asset.source_uri)}
+            return {"asset_id": asset_id, "asset_key": asset_key,
+                    "source_registered": bool(asset.source_uri), "outbox_enqueued": len(targets)}
         except Exception:
             connection.rollback()
             raise
