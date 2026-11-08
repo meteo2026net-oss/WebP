@@ -24,6 +24,7 @@ class DatabaseHealth:
     failed_files: int | None = None
     remote_bytes: int | None = None
     local_bytes: int | None = None
+    database_bytes: int | None = None
     latest_update: str | None = None
     message: str = ""
 
@@ -52,8 +53,10 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
             table = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'"
             ).fetchone()
+            database_bytes = path.stat().st_size
             if not table:
                 return DatabaseHealth(**base, connected=True, tracking_table_available=False,
+                                      database_bytes=database_bytes,
                                       message="الاتصال سليم، لكن جدول تتبع الملفات غير موجود.")
             row = connection.execute(
                 """SELECT COUNT(*),
@@ -68,8 +71,8 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                 **base, connected=True, tracking_table_available=True,
                 tracked_files=int(row[0] or 0), completed_files=int(row[1] or 0),
                 failed_files=int(row[2] or 0), remote_bytes=int(row[3] or 0),
-                local_bytes=int(row[4] or 0), latest_update=row[5],
-                message="تم فحص سجل التتبع بوضع القراءة فقط.",
+                local_bytes=int(row[4] or 0), database_bytes=database_bytes,
+                latest_update=row[5], message="تم فحص سجل التتبع بوضع القراءة فقط.",
             )
         except Exception as exc:
             return DatabaseHealth(**base, connected=False, tracking_table_available=False,
@@ -94,9 +97,13 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                 user=profile.username, password=password, sslmode=profile.ssl_mode,
                 connect_timeout=timeout, options="-c default_transaction_read_only=on",
             ) as connection:
+                database_bytes = int(connection.execute(
+                    "SELECT pg_database_size(current_database())"
+                ).fetchone()[0])
                 table = connection.execute("SELECT to_regclass('public.files')").fetchone()[0]
                 if table is None:
                     return DatabaseHealth(**base, connected=True, tracking_table_available=False,
+                                          database_bytes=database_bytes,
                                           message="الاتصال سليم، لكن جدول public.files غير موجود.")
                 row = connection.execute(
                     """SELECT COUNT(*),
@@ -111,7 +118,7 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                 **base, connected=True, tracking_table_available=True,
                 tracked_files=int(row[0] or 0), completed_files=int(row[1] or 0),
                 failed_files=int(row[2] or 0), remote_bytes=int(row[3] or 0),
-                local_bytes=int(row[4] or 0),
+                local_bytes=int(row[4] or 0), database_bytes=database_bytes,
                 latest_update=row[5].isoformat() if hasattr(row[5], "isoformat") else row[5],
                 message="تم فحص سجل التتبع بوضع القراءة فقط.",
             )
@@ -130,10 +137,22 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                     "WHERE table_schema=%s AND table_name='files'",
                     (profile.database,),
                 )
+                cursor.execute(
+                    "SELECT COALESCE(SUM(data_length + index_length), 0) "
+                    "FROM information_schema.tables WHERE table_schema=%s",
+                    (profile.database,),
+                )
+                database_bytes = int(cursor.fetchone()[0] or 0)
+                cursor.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema=%s AND table_name='files'",
+                    (profile.database,),
+                )
                 table_exists = bool(cursor.fetchone()[0])
                 if not table_exists:
                     return DatabaseHealth(
                         **base, connected=True, tracking_table_available=False,
+                        database_bytes=database_bytes,
                         message="الاتصال سليم، لكن جدول تتبع الملفات غير موجود.",
                     )
                 cursor.execute(
@@ -150,7 +169,7 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                 **base, connected=True, tracking_table_available=True,
                 tracked_files=int(row[0] or 0), completed_files=int(row[1] or 0),
                 failed_files=int(row[2] or 0), remote_bytes=int(row[3] or 0),
-                local_bytes=int(row[4] or 0),
+                local_bytes=int(row[4] or 0), database_bytes=database_bytes,
                 latest_update=row[5].isoformat() if hasattr(row[5], "isoformat") else row[5],
                 message="تم فحص سجل التتبع بوضع القراءة فقط.",
             )
