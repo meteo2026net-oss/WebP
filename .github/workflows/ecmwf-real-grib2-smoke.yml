@@ -1,6 +1,9 @@
 name: ECMWF real GRIB2 smoke test
 
 on:
+  push:
+    branches:
+      - feat/windows-one-click-desktop-package
   workflow_dispatch:
     inputs:
       variable:
@@ -52,7 +55,7 @@ jobs:
       - name: Inventory real GRIB messages
         env:
           PYTHONPATH: src
-          SELECTED_VARIABLE: ${{ inputs.variable }}
+          SELECTED_VARIABLE: ${{ inputs.variable || 'msl' }}
         run: |
           python -m ecmwf_collector.tools.inspect_grib \
             output/ecmwf-real/sample.grib2 \
