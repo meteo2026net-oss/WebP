@@ -49,11 +49,24 @@ class PostgresReviewRepositoryTests(unittest.TestCase):
                 (f"t-{self.token}",),
             )
             variable_id = cur.fetchone()[0]
+
+            # The bootstrap fixture may already have created this shared level.
+            # Reuse it; never delete shared reference data in tearDown().
             cur.execute(
                 """INSERT INTO weather.level(type_of_level, level_value, level_unit)
-                   VALUES ('surface', 0, 'surface') RETURNING level_id"""
+                   VALUES ('surface', 0, 'surface')
+                   ON CONFLICT (type_of_level, level_value, level_unit) DO NOTHING"""
             )
-            level_id = cur.fetchone()[0]
+            cur.execute(
+                """SELECT level_id FROM weather.level
+                   WHERE type_of_level = 'surface' AND level_value = 0
+                     AND level_unit = 'surface'"""
+            )
+            level_row = cur.fetchone()
+            if level_row is None:
+                raise RuntimeError("Required surface level fixture could not be created")
+            level_id = level_row[0]
+
             cur.execute(
                 """INSERT INTO weather.asset(asset_uri, asset_format, byte_size, sha256)
                    VALUES (%s, 'GRIB2', 4, %s) RETURNING asset_id""",
@@ -90,7 +103,6 @@ class PostgresReviewRepositoryTests(unittest.TestCase):
             self.conn.execute("DELETE FROM weather.review_case WHERE review_id = %s", (self.review_id,))
             self.conn.execute("DELETE FROM weather.field WHERE field_id = %s", (self.field_id,))
             self.conn.execute("DELETE FROM weather.asset WHERE asset_uri = %s", (f"test://{self.token}",))
-            self.conn.execute("DELETE FROM weather.level WHERE type_of_level = 'surface' AND level_value = 0 AND level_unit = 'surface'")
             self.conn.execute("DELETE FROM weather.variable WHERE code = %s", (f"t-{self.token}",))
             self.conn.execute("DELETE FROM weather.grid WHERE grid_hash = %s", (self.token.ljust(64, "0"),))
             self.conn.execute("DELETE FROM weather.forecast_run WHERE source_cycle = %s", (self.token,))
