@@ -286,9 +286,14 @@ class DatabaseManagerWidget(QWidget):
             count = "—" if result.tracked_files is None else str(result.tracked_files)
             completed = "—" if result.completed_files is None else str(result.completed_files)
             failed = "—" if result.failed_files is None else str(result.failed_files)
+            remote_size = "—" if result.remote_bytes is None else f"{result.remote_bytes:,} بايت"
             local_size = "—" if result.local_bytes is None else f"{result.local_bytes:,} بايت"
+            database_size = "—" if result.database_bytes is None else f"{result.database_bytes:,} بايت"
             latest = result.latest_update or result.message
-            values = (result.profile_name, state, table, count, completed, failed, local_size, latest)
+            values = (
+                result.profile_name, state, table, count, completed, failed,
+                remote_size, local_size, database_size, latest,
+            )
             for column, value in enumerate(values):
                 self.health_table.setItem(row, column, QTableWidgetItem(str(value)))
         self.notice.setText(
