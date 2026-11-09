@@ -129,7 +129,7 @@ class _ProfileDialog(QDialog):
             port=self.port.value() if backend != "sqlite" else None,
             username=self.username.text().strip() if backend != "sqlite" else "",
             ssl_mode=self.ssl.currentData(),
-            ssl_ca=self.ssl_ca.text().strip() if backend in {"mysql", "mariadb"} else "",
+            ssl_ca=self.ssl_ca.text().strip() if backend != "sqlite" else "",
             sqlite_path=self.sqlite_path.text().strip() if backend == "sqlite" else "",
             enabled=self.enabled.currentData(),
             credential_key=self.profile.credential_key,
