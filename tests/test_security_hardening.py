@@ -9,7 +9,44 @@ from unittest.mock import patch
 
 from ecmwf_collector.logging_setup import clear_secrets, redact
 from ecmwf_collector.secrets_store import SecretStore
+from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
 from scripts.verify_package_secrets import scan_package
+
+
+
+class MySQLGrantBoundaryTests(unittest.TestCase):
+    class _Cursor:
+        def __init__(self, grants):
+            self.grants = grants
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, statement):
+            self.statement = statement
+        def fetchall(self):
+            return [(grant,) for grant in self.grants]
+
+    class _Connection:
+        def __init__(self, grants):
+            self.grants = grants
+        def cursor(self):
+            return MySQLGrantBoundaryTests._Cursor(self.grants)
+
+    def test_database_scoped_crud_grants_are_accepted(self):
+        connection = self._Connection([
+            "GRANT USAGE ON *.* TO 'webp'@'%'",
+            "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_assets.* TO 'webp'@'%'",
+        ])
+        assert_mysql_application_role(connection, "webp_assets")
+
+    def test_database_scoped_grant_option_is_rejected(self):
+        connection = self._Connection([
+            "GRANT USAGE ON *.* TO 'webp'@'%'",
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON webp_assets.* TO 'webp'@'%' WITH GRANT OPTION",
+        ])
+        with self.assertRaises(DatabaseDriverError):
+            assert_mysql_application_role(connection, "webp_assets")
 
 
 class SecretStoreBackendTests(unittest.TestCase):
