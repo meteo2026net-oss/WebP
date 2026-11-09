@@ -75,7 +75,8 @@ def build_gefs_url(request: GefsRequest, *, base_url: str = BASE_URL) -> str:
     params.extend((f"var_{variable}", "on") for variable in request.variables)
     params.extend((f"lev_{level}", "on") for level in request.levels)
     params.extend([
-        ("subregion", ""),
+        # Do not send an empty subregion selector: NOMADS treats it as a
+        # one-point subset on some requests. Omitting it requests the full grid.
         ("dir", f"/gefs.{day}/{cycle}/atmos/pgrb2ap5"),
     ])
     return base_url + "?" + urllib.parse.urlencode(params)
