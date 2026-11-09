@@ -82,7 +82,7 @@ jobs:
           output = Path("output/wmo-wis2")
           output.mkdir(parents=True, exist_ok=True)
           (output / "wcmp2-record.json").write_text(
-              json.dumps(metadata, indent=2, ensure_ascii=False) + "\\n",
+              json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
               encoding="utf-8",
           )
 
@@ -102,7 +102,7 @@ jobs:
           grib_path.write_bytes(payload)
           digest = hashlib.sha256(payload).hexdigest()
           (output / "SHA256SUMS.txt").write_text(
-              f"{digest}  {filename}\\n", encoding="ascii"
+              f"{digest}  {filename}\n", encoding="ascii"
           )
 
           inventory = []
@@ -155,7 +155,7 @@ jobs:
               )
 
           (output / "grib-inventory.json").write_text(
-              json.dumps(inventory, indent=2) + "\\n", encoding="utf-8"
+              json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
           )
           summary = {
               "source": "WMO WIS2 Global Discovery Catalogue",
@@ -175,7 +175,7 @@ jobs:
               "workflow": "real WIS2-linked data smoke test; not scientific forecast verification",
           }
           (output / "validation-summary.json").write_text(
-              json.dumps(summary, indent=2) + "\\n", encoding="utf-8"
+              json.dumps(summary, indent=2) + "\n", encoding="utf-8"
           )
           print(json.dumps(summary, indent=2))
           PY
