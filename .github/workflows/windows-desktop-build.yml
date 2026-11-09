@@ -73,6 +73,8 @@ jobs:
         run: |
           Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
           Copy-Item "scripts/verify_portable_windows.ps1" "dist/ECMWFWebP/Verify-ECMWFWebP.ps1" -Force
+      - name: Scan portable package for credentials and private keys
+        run: python scripts/verify_package_secrets.py dist/ECMWFWebP
       - name: Generate package SHA-256 manifest
         shell: pwsh
         run: |
