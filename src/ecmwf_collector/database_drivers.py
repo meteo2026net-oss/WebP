@@ -8,6 +8,37 @@ class DatabaseDriverError(RuntimeError):
     """A database driver could not be initialized safely."""
 
 
+
+# Privileges that turn an application login into a server-level administrator
+# or grant access to server files / account management. Schema-scoped CRUD
+# grants remain valid for the explicitly selected application database.
+_FORBIDDEN_GLOBAL_PRIVILEGES = {
+    "ALL PRIVILEGES", "SUPER", "FILE", "PROCESS", "RELOAD", "SHUTDOWN",
+    "CREATE USER", "GRANT OPTION", "SYSTEM_USER", "SYSTEM_VARIABLES_ADMIN",
+    "CONNECTION_ADMIN", "ROLE_ADMIN", "BINLOG_ADMIN", "REPLICATION_SLAVE_ADMIN",
+    "REPLICATION_APPLIER", "PERSIST_RO_VARIABLES_ADMIN", "SET_USER_ID",
+}
+
+
+def assert_mysql_application_role(connection) -> None:
+    """Reject global/admin grants before treating a MySQL login as an app role."""
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW GRANTS")
+        grants = cursor.fetchall()
+    if not grants:
+        raise DatabaseDriverError("تعذّر التحقق من صلاحيات حساب MySQL/MariaDB.")
+    for row in grants:
+        statement = str(row[0] if isinstance(row, (tuple, list)) else row).upper()
+        if " ON *.* " not in f" {statement} ":
+            continue
+        privilege_clause = statement.split(" ON *.* ", 1)[0]
+        for privilege in _FORBIDDEN_GLOBAL_PRIVILEGES:
+            if privilege in privilege_clause:
+                raise DatabaseDriverError(
+                    "حساب MySQL/MariaDB يمتلك امتيازاً عاماً أو إدارياً غير مناسب لحساب التطبيق."
+                )
+
+
 def open_mysql_connection(profile, secrets, timeout: int = 5):
     """Open a bounded-time MySQL/MariaDB connection using the OS secret vault.
 
