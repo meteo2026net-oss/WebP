@@ -97,6 +97,7 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
                 host=profile.host, port=profile.port, dbname=profile.database,
                 user=profile.username, password=password, sslmode=profile.ssl_mode,
                 connect_timeout=timeout, options="-c default_transaction_read_only=on",
+                **({"sslrootcert": profile.ssl_ca} if profile.ssl_ca else {}),
             ) as connection:
                 database_bytes = int(connection.execute(
                     "SELECT pg_database_size(current_database())"
