@@ -220,9 +220,14 @@ class FileAssetCatalog:
                 options["sslrootcert"] = self.profile.ssl_ca
             return psycopg.connect(**options), "postgresql"
         if self.profile.backend in {"mysql", "mariadb"}:
-            from .database_drivers import open_mysql_connection
+            from .database_drivers import open_mysql_connection, assert_mysql_application_role
             connection = open_mysql_connection(self.profile, self.secrets, timeout=self.timeout)
-            connection.autocommit(False)
+            try:
+                assert_mysql_application_role(connection, self.profile.database)
+                connection.autocommit(False)
+            except Exception:
+                connection.close()
+                raise
             return connection, "mysql"
         raise FileAssetError(f"محرك قاعدة البيانات غير مدعوم: {self.profile.backend}")
 
