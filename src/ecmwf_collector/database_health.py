@@ -133,6 +133,8 @@ def inspect_database(profile: DatabaseProfile, secrets, timeout: int = 5) -> Dat
         try:
             from .database_drivers import open_mysql_connection
             connection = open_mysql_connection(profile, secrets, timeout=timeout)
+            from .database_drivers import assert_mysql_application_role
+            assert_mysql_application_role(connection)
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT COALESCE(SUM(data_length + index_length), 0) "
