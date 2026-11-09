@@ -11,8 +11,13 @@ FORBIDDEN_NAMES = {
     "database-routing.json",
     "state.db",
     "credentials.json",
+    ".pgpass",
+    ".my.cnf",
+    ".netrc",
+    "id_rsa",
+    "id_ed25519",
 }
-FORBIDDEN_SUFFIXES = {".sqlite", ".sqlite3", ".p12", ".pfx", ".key"}
+FORBIDDEN_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".p12", ".pfx", ".key"}
 DSN_WITH_PASSWORD = re.compile(
     rb"(?i)(?:postgres(?:ql)?|mysql|mariadb)://[^\s/:@]+:[^\s/@]+@"
 )
@@ -30,8 +35,11 @@ def scan_package(root: Path) -> list[str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
+        parts = [part.lower() for part in relative.parts]
         name = path.name.lower()
-        if name in FORBIDDEN_NAMES or name.startswith(".env."):
+        if (name in FORBIDDEN_NAMES or name.startswith(".env.")
+                or any(part == ".env" or part.startswith(".env.") for part in parts)
+                or any(part in {".ssh", ".aws"} for part in parts)):
             findings.append(f"forbidden credential/state file: {relative}")
         if path.suffix.lower() in FORBIDDEN_SUFFIXES:
             findings.append(f"forbidden credential/database file type: {relative}")
