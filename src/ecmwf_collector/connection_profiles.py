@@ -261,6 +261,8 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
             from .database_drivers import open_mysql_connection
             connection = open_mysql_connection(profile, secrets, timeout=timeout)
             try:
+                from .database_drivers import assert_mysql_application_role
+                assert_mysql_application_role(connection)
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT 1")
                     cursor.fetchone()
