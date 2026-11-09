@@ -17,7 +17,7 @@ BASE_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_atmos_0p50a.pl"
 _ALLOWED_VARIABLES = frozenset({
     "APCP", "CAPE", "CIN", "DPT", "GUST", "HGT", "HPBL", "ICEC",
     "LCDC", "MSLET", "PRMSL", "PWAT", "RH", "SNOD", "SPFH",
-    "TCDC", "TMP", "UGRD", "VGRD", "VVEL", "VIS", "WEASD",
+    "TCDC", "TMP", "TMAX", "UGRD", "VGRD", "VVEL", "VIS", "WEASD",
 })
 _LEVEL_RE = re.compile(r"^[a-z0-9_]+$")
 
