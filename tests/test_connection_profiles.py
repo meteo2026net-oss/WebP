@@ -115,6 +115,8 @@ class DatabaseProfileTests(unittest.TestCase):
                 self.sql = sql
             def fetchone(self):
                 return (1,)
+            def fetchall(self):
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE ON weather.* TO 'app'@'%'",)]
 
         class FakeConnection:
             def __init__(self):
@@ -189,6 +191,45 @@ class DatabaseProfileTests(unittest.TestCase):
         self.assertEqual(captured["ssl"]["ca"], str(ca_path))
         self.assertEqual(captured["ssl"]["verify_mode"], ssl.CERT_REQUIRED)
         self.assertTrue(captured["ssl"]["check_hostname"])
+
+    def test_mysql_global_admin_grant_is_rejected(self):
+        from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                self.sql = sql
+            def fetchall(self):
+                return [("GRANT ALL PRIVILEGES ON *.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        with self.assertRaises(DatabaseDriverError):
+            assert_mysql_application_role(Connection())
+
+    def test_mysql_schema_scoped_crud_grants_are_accepted(self):
+        from ecmwf_collector.database_drivers import assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                self.sql = sql
+            def fetchall(self):
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE ON weather.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        assert_mysql_application_role(Connection())
 
     def test_mysql_certificate_verification_requires_ca_file(self):
         with self.assertRaises(DatabaseProfileError):
