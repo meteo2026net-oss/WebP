@@ -118,13 +118,13 @@ class DatabaseHealthTests(unittest.TestCase):
         self.assertEqual(result.local_bytes, 120)
         self.assertEqual(result.database_bytes, 2048)
         self.assertTrue(connection.closed)
-        self.assertTrue(all(sql.startswith("SELECT") for sql in connection.fake_cursor.statements))
+        self.assertTrue(all(sql == "SHOW GRANTS" or sql.startswith("SELECT") for sql in connection.fake_cursor.statements))
 
 
     def test_mysql_health_fails_closed_without_vault_password(self):
         profile = DatabaseProfile.create(
             "MySQL", "mysql", host="localhost", port=3306,
-            database="weather", username="app",
+            database="weather", username="app", ssl_mode="prefer",
         )
         result = inspect_database(profile, secrets=None)
         self.assertFalse(result.connected)
