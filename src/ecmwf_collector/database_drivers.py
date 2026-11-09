@@ -12,7 +12,7 @@ class DatabaseDriverError(RuntimeError):
 # Privileges that turn an application login into a server-level administrator
 # or grant access to server files / account management. Schema-scoped CRUD
 # grants remain valid for the explicitly selected application database.
-_ALLOWED_APPLICATION_PRIVILEGES = {"SELECT", "INSERT", "UPDATE", "DELETE", "CREATE"}
+_ALLOWED_APPLICATION_PRIVILEGES = {"SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "REFERENCES"}
 
 
 def assert_mysql_application_role(connection, database: str) -> None:
