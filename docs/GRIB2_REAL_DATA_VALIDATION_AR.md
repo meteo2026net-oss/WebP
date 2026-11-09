@@ -177,3 +177,37 @@ PR: #71 (مفتوح / Draft؛ لم يتم الدمج).
 - PR #71 مفتوح وDraft وغير مدمج.
 - الرأس الحالي عند كتابة هذا القسم: `a98db397fc9034f40b71871f7c0de0408257e989`.
 - لم يتم تعديل `main`.
+
+
+## نتيجة الحزمة المحمولة على الرأس f44c3805287b9f03c67b1587172b5681587f4959 — 2026-11-09
+
+### Windows x64 — نجاح البناء وفحص Artifact مستقلاً
+
+- Workflow: [42541662604](https://github.com/meteo2026net-oss/WebP/actions/runs/42541662604) — **success** على الرأس `f44c3805287b9f03c67b1587172b5681587f4959`.
+- اكتملت كل الخطوات: تثبيت الاعتماديات، compile، اختبارات الوحدة، PyInstaller، التحقق من EXE، إضافة `START.bat` وأداة القبول، إنشاء manifest، تشغيل packaged preflight، التحقق من تغطية SHA-256، ورفع Artifact.
+- Artifact: `ECMWFWebP-Windows-x64`، ID `13641533485`، الحجم `157,085,002` bytes، انتهاء الصلاحية `2026-11-23`.
+- SHA-256 لأرشيف ZIP: `f7188c8bc9e5286ce28e690fc496798f5a8b757169997ebe16c3a1c1cdcec4c0`.
+- تم تنزيل الأرشيف وفحصه مستقلاً: ZIP CRC سليم؛ 3,979 ملفاً؛ manifest يحتوي 3,979 إدخالاً؛ لا ملفات مفقودة أو زائدة أو مكررة؛ كل بصمات SHA-256 تطابقت.
+- `ECMWFWebP.exe` موجود وحجمه 24,279,938 bytes، ترويسة PE سليمة ومعمارية AMD64/x64.
+- أداة القبول المضمنة وُجدت مع `START.bat` و`SHA256SUMS.txt`. فحص Windows runner اجتاز تشغيل التطبيق وخادم الخرائط المحلي وملفات HTML/CSS/JS.
+- [تنزيل Artifact من GitHub Actions](https://github.com/meteo2026net-oss/WebP/actions/runs/42541662604/artifacts/13641533485).
+
+**حدود القبول:** هذا يثبت البناء والفحص الآلي على Windows runner، ولا يثبت بعد تجربة المستخدم على جهاز Windows مستقل أو اتصال ECMWF بمفاتيح المستخدم أو إعداد PostgreSQL الحقيقي. راجع [قائمة القبول الميداني](WINDOWS_FINAL_ACCEPTANCE_AR.md).
+
+### NOAA GEFS وECMWF وPython على الرأس نفسه
+
+- Python: [42541662543](https://github.com/meteo2026net-oss/WebP/actions/runs/42541662543) — **success**؛ 529 اختباراً في 17.494 ثانية.
+- NOAA GEFS: [42541656536](https://github.com/meteo2026net-oss/WebP/actions/runs/42541656536) — **success**؛ Artifact ID `13641636511`، الحجم 1,554,460 bytes، SHA-256 للأرشيف `0b562fedd47f787264ae162709a11899b27889291bd568d57f065f54c4cc0dfa`.
+- فحص NOAA المستقل: ZIP سليم، وبصمات ملفات GRIB2 تطابق manifest. تم فك العضوين c00 وp01 للحقل TMAX عند 2m، وحُسب mean/spread على شبكة 361×720؛ جميع 259,920 خلية لها member_count=2. يظل هذا smoke test لعضوين فقط، وليس تحققاً علمياً للتنبؤ أو كامل أعضاء GEFS.
+- ECMWF: [42541656498](https://github.com/meteo2026net-oss/WebP/actions/runs/42541656498) — **success**؛ تحقق سجل التشغيل من 145 طبقة msl حقيقية وقيم المصدر والإحداثيات ومخرجات PNG وNPZ. Artifact ID `13641332379`، الحجم 66,075,935 bytes، SHA-256 للأرشيف `c95cff0d0f1a9386a316e00c3bf45f0665e46a18046579dddd742299efcb30fe`.
+
+### WMO WIS2 — نتيجة استكشاف الكتالوج
+
+- تم الوصول إلى [WIS2 Global Discovery Catalogue](https://wis2-gdc.weather.gc.ca/collections/wis2-discovery-metadata?f=json) واستعراض سجلات WCMP2؛ يؤكد الكتالوج وجود سجلات مجموعات بيانات وروابط خدمات واكتشاف، لكنه لا يعني أن كل سجل يوفّر ملف GRIB2.
+- يوضح [دليل WMO الرسمي](https://wmo-im.github.io/wis2-guide/guide/wis2-guide-APPROVED.html) أن GDC يصف روابط التنزيل وواجهات API والاشتراك، وأن روابط البيانات الفعلية قد تكون على عقدة الناشر أو Global Cache.
+- لم يُعثر في هذه الجولة على سجل GRIB2 محدد مع رابط binary مباشر صالح تم تنزيله وفكّه بواسطة ecCodes. لذلك تبقى WMO **غير مجتازة لاختبار GRIB2 مستقل**، ولا ننسب إليها نتائج NOAA أو ECMWF.
+
+### حالة PR
+
+- PR #71 ما زال مفتوحاً وDraft وغير مدمج.
+- لم يتم تعديل `main`.
