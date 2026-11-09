@@ -54,8 +54,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weather_test
       POSTGRES_STATE_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/webp_state_test
-      ASSET_PG_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_source?sslmode=disable
-      ASSET_PG_TARGET_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_target?sslmode=disable
+      ASSET_PG_SOURCE_URL: postgresql://webp_pg_source:webp_pg_source_password@localhost:5432/webp_asset_source?sslmode=disable
+      ASSET_PG_TARGET_URL: postgresql://webp_pg_target:webp_pg_target_password@localhost:5432/webp_asset_target?sslmode=disable
       ASSET_MYSQL_SOURCE_URL: mysql://webp_source:webp_source_password@127.0.0.1:3306/webp_asset_source
       ASSET_MYSQL_TARGET_URL: mysql://webp_target:webp_target_password@127.0.0.1:3306/webp_asset_target
       ASSET_MARIADB_SOURCE_URL: mysql://webp_source:webp_source_password@127.0.0.1:3307/webp_asset_source
