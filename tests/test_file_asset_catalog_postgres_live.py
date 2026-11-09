@@ -107,7 +107,8 @@ class FileAssetCatalogPostgresRoleLiveTests(unittest.TestCase):
         finally:
             connection.close()
         result = self.catalog.register_asset(self._asset())
-        self.assertTrue(result["source_registered"])\n        self.assertTrue(result["asset_id"])
+        self.assertTrue(result["source_registered"])
+        self.assertTrue(result["asset_id"])
 
     def test_live_role_with_database_admin_attribute_is_rejected(self):
         with psycopg.connect(ADMIN_DSN, autocommit=True) as conn:
