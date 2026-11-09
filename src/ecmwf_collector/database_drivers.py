@@ -39,7 +39,15 @@ def assert_mysql_application_role(connection, database: str) -> None:
         privilege_clause, scope_clause = normalized[6:].split(" ON ", 1)
         if " TO " not in scope_clause:
             raise DatabaseDriverError("تعذّر تفسير نطاق صلاحيات حساب MySQL/MariaDB.")
-        scope = scope_clause.split(" TO ", 1)[0].strip().lower()
+        scope, grantee_clause = scope_clause.split(" TO ", 1)
+        scope = scope.strip().lower()
+        # A scoped CRUD grant with GRANT OPTION can delegate those privileges
+        # to other accounts, defeating the dedicated application's least-
+        # privilege boundary even though its privilege names look harmless.
+        if "WITH GRANT OPTION" in grantee_clause or "GRANT OPTION" in grantee_clause:
+            raise DatabaseDriverError(
+                "حساب MySQL/MariaDB يستطيع إعادة منح الصلاحيات؛ هذا غير مسموح لحساب التطبيق."
+            )
         privileges = {part.strip() for part in privilege_clause.split(",")}
         if privileges == {"USAGE"} and scope == "*.*":
             continue
