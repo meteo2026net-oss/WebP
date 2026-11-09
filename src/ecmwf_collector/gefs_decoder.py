@@ -105,9 +105,21 @@ def decode_gefs_grib_field(
         for dataset in datasets:
             for variable in dataset.data_vars.values():
                 attrs = variable.attrs
+                # cfgrib exposes the selected level as a dataset coordinate
+                # for many single-level products; GRIB_level is not guaranteed
+                # to be copied into each variable's attributes.
+                raw_level = attrs.get("GRIB_level")
+                if raw_level is None and type_of_level in dataset.coords:
+                    coordinate = np.asarray(dataset.coords[type_of_level].values)
+                    if coordinate.size == 1:
+                        raw_level = coordinate.reshape(-1)[0]
+                try:
+                    actual_level = float(raw_level)
+                except (TypeError, ValueError):
+                    actual_level = float("nan")
                 if (attrs.get("GRIB_shortName") == short_name
                     and attrs.get("GRIB_typeOfLevel") == type_of_level
-                    and float(attrs.get("GRIB_level", float("nan"))) == float(level)):
+                    and actual_level == float(level)):
                     matches.append((dataset, variable))
         if len(matches) != 1:
             raise GefsGribDecodeError(
