@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime
 from pathlib import Path
 
@@ -115,6 +116,29 @@ class DownloaderTests(unittest.TestCase):
         self.assertEqual(rec.detected_type, "unknown")
         self.assertTrue(rec.validation.startswith("unverified"))
 
+    def test_transfer_flush_reports_disk_full(self):
+        st = self.server({FP: grib2(1000)})
+        manager = self.manager(st)
+        from ecmwf_collector.downloader import _Worker, DiskFullError
+
+        class FlushFails:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def write(self, chunk):
+                return len(chunk)
+            def flush(self):
+                raise OSError(28, "No space left on device")
+
+        worker = _Worker(manager)
+        ftp = make_factory(st)(True, 5)
+        ftp.cwd("/20261027")
+        item = self.plan(st).items[0]
+        with patch("builtins.open", return_value=FlushFails()):
+            with self.assertRaises(DiskFullError):
+                worker._transfer(ftp, item, 0, hashlib.sha256())
+
     def test_disk_space_guard(self):
         st = self.server({FP: grib2(1000)})
         res = self.manager(st, min_free_bytes=10 ** 18).run(self.plan(st).to_download)
@@ -129,7 +153,21 @@ class DownloaderTests(unittest.TestCase):
         res = self.manager(st).run(self.plan(st).to_download)
         self.assertEqual(res.downloaded, 1)
         self.assertEqual(len(st.retr_calls), 2)
+        self.assertEqual(self.sleeps, [1.0])  # backoff before rechecking a changing ECMWF product
         self.assertEqual(self.local("FPD10270000102703001").read_bytes(), data)
+
+    def test_source_that_keeps_changing_is_failed_without_publishing_partial_file(self):
+        data = grib2(3000)
+        st = self.server({FP: data}, size_sequence={FP: [len(data), len(data) + 1] * 3})
+        result = self.manager(st).run(self.plan(st).to_download)
+
+        self.assertEqual((result.downloaded, result.failed), (0, 1))
+        self.assertEqual(self.state.get(FP).status, "failed")
+        final = self.local("FPD10270000102703001")
+        self.assertFalse(final.exists())
+        self.assertFalse(final.with_name(final.name + ".part").exists())
+        self.assertEqual(self.sleeps, [1.0, 2.0])
+        self.assertEqual(len(st.retr_calls), 3)
 
     def test_permanent_failure_marks_failed(self):
         st = self.server({FP: grib2(3000)}, drop_after_bytes=[0] * 50)
@@ -198,6 +236,37 @@ class DownloaderTests(unittest.TestCase):
         self.assertEqual(res.downloaded, 4)
         for path, data in files.items():
             self.assertEqual(self.local(path.split("/")[-1]).read_bytes(), data)
+
+    def test_worker_session_close_error_does_not_escape_cleanup(self):
+        st = self.server({FP: grib2(100)})
+        from ecmwf_collector.downloader import _Worker
+        manager = self.manager(st)
+        worker = _Worker(manager)
+
+        class BrokenSession:
+            def close(self):
+                raise RuntimeError("socket close failed")
+
+        worker.session = BrokenSession()
+        worker.cwd = "/20261027"
+        with self.assertLogs("ecmwf_collector.downloader", level="ERROR"):
+            worker.close()
+
+        self.assertIsNone(worker.session)
+        self.assertIsNone(worker.cwd)
+
+    def test_unexpected_worker_exception_is_reported_to_run_result(self):
+        st = self.server({FP: grib2(100)})
+        plan = self.plan(st)
+        manager = self.manager(st)
+        with patch("ecmwf_collector.downloader._Worker.process",
+                   side_effect=RuntimeError("unexpected worker failure")):
+            result = manager.run(plan.to_download)
+
+        self.assertEqual(result.failed, 1)
+        self.assertIn("FPD10270000102703001", result.errors[0])
+        self.assertIn("RuntimeError", result.fatal_message)
+        self.assertEqual(self.state.get(FP).status, "failed")
 
     def test_bad_password_is_fatal_and_not_retried(self):
         st = self.server({FP: grib2(100)})

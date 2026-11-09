@@ -44,6 +44,30 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_config(p)
 
+    def test_malformed_numeric_values_raise_config_error(self):
+        for kwargs in (
+            {"port": None}, {"port": True}, {"timeout_seconds": "soon"},
+            {"max_retries": []}, {"max_parallel": 1.5}, {"min_free_gb": None},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ConfigError):
+                AppConfig(**kwargs).validate()
+
+    def test_malformed_filter_lists_raise_config_error(self):
+        for kwargs in (
+            {"selected_kinds": None}, {"selected_kinds": "FP"},
+            {"selected_kinds": ["FP", 3]}, {"selected_cycles": {"00"}},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ConfigError):
+                AppConfig(**kwargs).validate()
+
+    def test_load_config_wraps_malformed_values_as_config_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "s.json"
+            p.write_text(json.dumps({"port": None}), encoding="utf-8")
+            with self.assertRaises(ConfigError):
+                load_config(p)
+
+
 
 class FakeKeyring:
     def __init__(self):
@@ -66,6 +90,15 @@ class SecretsTests(unittest.TestCase):
         self.assertEqual(s.get_password("u"), "pw")
         self.assertTrue(s.delete_password("u"))
         self.assertIsNone(s.get_password("u"))
+
+    def test_postgres_dsn_uses_credential_vault(self):
+        backend = FakeKeyring()
+        store = SecretStore(backend)
+        dsn = "host=127.0.0.1 dbname=ecmwf_webp user=ecmwf_app password=hidden"
+        self.assertTrue(store.set_postgres_dsn(dsn))
+        self.assertEqual(store.get_postgres_dsn(), dsn)
+        self.assertTrue(store.delete_postgres_dsn())
+        self.assertIsNone(store.get_postgres_dsn())
 
     def test_backend_errors_do_not_raise(self):
         class Broken:

@@ -1,0 +1,147 @@
+name: Windows desktop package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "main.py"
+      - "serve_map.py"
+      - "ecmwf_webp.spec"
+      - "scripts/build_windows.ps1"
+      - "scripts/verify_portable_windows.ps1"
+      - "scripts/verify_package_secrets.py"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "environment.yml"
+      - "START.bat"
+      - ".github/workflows/windows-desktop-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "main.py"
+      - "serve_map.py"
+      - "ecmwf_webp.spec"
+      - "scripts/build_windows.ps1"
+      - "scripts/verify_portable_windows.ps1"
+      - "scripts/verify_package_secrets.py"
+      - "tests/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "environment.yml"
+      - "START.bat"
+      - ".github/workflows/windows-desktop-build.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: pip
+      - name: Install package and PyInstaller
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install -e . pyinstaller
+      - name: Compile Python sources
+        run: python -m compileall -q src main.py serve_map.py tests
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -t . -v
+      - name: Build desktop directory
+        run: python -m PyInstaller --noconfirm --clean ecmwf_webp.spec
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          $exe = "dist/ECMWFWebP/ECMWFWebP.exe"
+          if (-not (Test-Path $exe)) { throw "Missing $exe" }
+          Get-Item $exe | Format-List FullName,Length
+      - name: Stage one-click launcher and portable acceptance tool
+        shell: pwsh
+        run: |
+          Copy-Item "START.bat" "dist/ECMWFWebP/START.bat" -Force
+          Copy-Item "scripts/verify_portable_windows.ps1" "dist/ECMWFWebP/Verify-ECMWFWebP.ps1" -Force
+      - name: Scan portable package for credentials and private keys
+        run: python scripts/verify_package_secrets.py dist/ECMWFWebP
+      - name: Generate package SHA-256 manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "dist/ECMWFWebP").Path
+          $manifest = Join-Path $root "SHA256SUMS.txt"
+          $lines = Get-ChildItem -LiteralPath $root -File -Recurse |
+            ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+              $segments = $relative -split '[\\/]'
+              $hiddenSegment = $false
+              foreach ($segment in $segments) { if ($segment.StartsWith('.')) { $hiddenSegment = $true } }
+              if ($_.FullName -ne $manifest -and -not $hiddenSegment) {
+                $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                "$hash  $relative"
+              }
+            }
+          $lines | Set-Content -LiteralPath $manifest -Encoding ascii
+      - name: Run portable acceptance from a path containing spaces
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP "ECMWF WebP Portable Acceptance"
+          if (Test-Path -LiteralPath $testRoot) {
+            Remove-Item -LiteralPath $testRoot -Recurse -Force
+          }
+          [void](New-Item -ItemType Directory -Path $testRoot -Force)
+          Copy-Item -Path "dist/ECMWFWebP/*" -Destination $testRoot -Recurse -Force
+          $verifyScript = Join-Path $testRoot "Verify-ECMWFWebP.ps1"
+          if (-not (Test-Path -LiteralPath $verifyScript -PathType Leaf)) {
+            throw "The portable acceptance script was not copied to the spaced test path."
+          }
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File $verifyScript -StartupSeconds 12 -MapTimeoutSeconds 30
+          if ($LASTEXITCODE -ne 0) {
+            throw "Portable acceptance failed when launched from a directory containing spaces."
+          }
+      - name: Verify package manifest coverage and hashes
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "dist/ECMWFWebP").Path
+          $manifest = Join-Path $root "SHA256SUMS.txt"
+          $listed = @{}
+          foreach ($line in Get-Content -LiteralPath $manifest) {
+            if ($line.Length -lt 67 -or $line.Substring(64, 2) -ne '  ') { throw "Invalid SHA256 manifest line: $line" }
+            $expectedHash = $line.Substring(0, 64)
+            $relative = $line.Substring(66)
+            if ($expectedHash -notmatch '^[0-9a-f]{64}$') { throw "Invalid SHA256 value for: $relative" }
+            if ($listed.ContainsKey($relative)) { throw "Duplicate SHA256 manifest entry: $relative" }
+            $listed[$relative] = $expectedHash
+            $filePath = Join-Path $root $relative
+            if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) { throw "Manifest entry is missing from the portable package: $relative" }
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) { throw "SHA256 mismatch for package file: $relative" }
+          }
+          $packageFiles = @(Get-ChildItem -LiteralPath $root -File -Recurse | Where-Object {
+            $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+            $segments = $relative -split '[\\/]'
+            $hiddenSegment = $false
+            foreach ($segment in $segments) { if ($segment.StartsWith('.')) { $hiddenSegment = $true } }
+            $_.FullName -ne $manifest -and -not $hiddenSegment
+          })
+          if ($listed.Count -ne $packageFiles.Count) { throw "Manifest covers $($listed.Count) files but uploadable package contains $($packageFiles.Count) files." }
+          Write-Host "Verified $($listed.Count) package file hashes and manifest coverage."
+      - name: Upload portable Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ECMWFWebP-Windows-x64
+          path: dist/ECMWFWebP/
+          if-no-files-found: error
+          retention-days: 14

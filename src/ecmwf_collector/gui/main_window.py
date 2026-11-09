@@ -2,29 +2,46 @@
 from __future__ import annotations
 
 import logging
+import math
 import posixpath
 import socket
 import subprocess
 import sys
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
-from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QInputDialog, QTabWidget,
 )
 
 from ..config import CYCLES, KINDS, AppConfig, project_root, save_config
+from ..eccharts_wms import EcChartsWMSClient
+from ..storage_layout import default_wmo_download_root, processing_output_dir, source_output_dir
 from ..connection import ConnectionSettings, FtpError, open_session, test_connection
 from ..downloader import DownloadManager, Filters, build_plan
 from ..listing import RemoteEntry, browse, filter_day_folders, human_size, sort_day_folders
-from ..logging_setup import register_secret
+from ..logging_setup import redact, register_secret
 from ..secrets_store import SecretStore
+from .database_manager import DatabaseManagerWidget
 from ..state import StateStore
+from ..state_contracts import StateStoreProtocol
+from ..postgres_state import PostgresStateStore
+from ..sources.noaa_gfs import GfsRequest, download_gfs
+from ..sources.ecmwf_open_data import retrieve_open_data
+from ..sources.eta_cptec import retrieve_eta_file
+from ..gefs_decoder import calculate_gefs_ensemble_statistics
+from ..tools.ensemble_to_map import write_gefs_ensemble_map_products
+from ..sources.noaa_gefs import (
+    GefsRequest, download_gefs, download_gefs_ensemble, write_gefs_ensemble_manifest,
+)
+from .forecast_workspace import ForecastCatalogWidget, SynergieWorkspace
+from .review_console import ReviewConsole
 
 log = logging.getLogger(__name__)
 
@@ -59,11 +76,12 @@ class _Bridge(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, cfg: AppConfig, config_path, secrets: SecretStore, state: StateStore):
+    def __init__(self, cfg: AppConfig, config_path, secrets: SecretStore, state: StateStoreProtocol):
         super().__init__()
         self.cfg, self.config_path, self.secrets, self.state = cfg, config_path, secrets, state
         self.pool = QThreadPool.globalInstance()
         self._workers: set = set()
+        self._close_when_idle = False
         self._cwd = "/"
         self._entries: list[RemoteEntry] = []
         self._manager: DownloadManager | None = None
@@ -108,10 +126,31 @@ class MainWindow(QMainWindow):
         form.addRow(self.remember)
         btns = QHBoxLayout()
         self.btn_test = QPushButton("اختبار الاتصال")
+        self.btn_postgres = QPushButton("ربط PostgreSQL ونقل السجل")
+        self.btn_postgres.clicked.connect(self._on_configure_postgres)
+        self.btn_pg_diagnose = QPushButton("تشخيص PostgreSQL")
+        self.btn_db_status = QPushButton("حالة قاعدة البيانات")
+        self.btn_db_status.clicked.connect(self._on_database_status)
+        self.btn_pg_diagnose.clicked.connect(self._on_diagnose_postgres)
+        self.btn_pg_install = QPushButton("تثبيت PostgreSQL")
+        self.btn_pg_install.clicked.connect(self._on_install_postgres)
+        self.btn_backup = QPushButton("نسخ احتياطي للسجل")
+        self.btn_backup.clicked.connect(self._on_backup_sqlite)
+        self.btn_restore = QPushButton("استعادة نسخة SQLite")
+        self.btn_restore.clicked.connect(self._on_restore_sqlite)
+        self.btn_pg_restore = QPushButton("استعادة نسخة PostgreSQL")
+        self.btn_pg_restore.clicked.connect(self._on_restore_postgres)
         self.btn_save = QPushButton("حفظ الإعدادات")
         self.btn_test.clicked.connect(self._on_test)
         self.btn_save.clicked.connect(self._on_save)
         btns.addWidget(self.btn_test)
+        btns.addWidget(self.btn_postgres)
+        btns.addWidget(self.btn_pg_diagnose)
+        btns.addWidget(self.btn_db_status)
+        btns.addWidget(self.btn_pg_install)
+        btns.addWidget(self.btn_backup)
+        btns.addWidget(self.btn_restore)
+        btns.addWidget(self.btn_pg_restore)
         btns.addWidget(self.btn_save)
         btns.addStretch()
         form.addRow(btns)
@@ -188,7 +227,7 @@ class MainWindow(QMainWindow):
         self.min_free = QSpinBox()
         self.min_free.setRange(0, 100000)
         self.min_free.setSuffix(" GB")
-        dform.addRow("تنزيلات متزامنة (يُنصح 1)", self.parallel)
+        dform.addRow("تنزيلات متزامنة (يُنصح 3)", self.parallel)
         dform.addRow("مساحة حرة تُترك على القرص", self.min_free)
         act = QHBoxLayout()
         self.btn_preview = QPushButton("معاينة الخطة")
@@ -230,7 +269,892 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
-        self.setCentralWidget(scroll)
+
+        # تبويب مستقل لكل مزود بيانات؛ تبويب WMO يحتفظ بواجهة FTP الحالية.
+        self.source_tabs = QTabWidget()
+        self.source_tabs.setLayoutDirection(Qt.RightToLeft)
+        self.source_tabs.addTab(scroll, "WMO Support")
+        self.database_manager = DatabaseManagerWidget(self.secrets, project_root() / "config")
+        self.source_tabs.addTab(self.database_manager, "إدارة قواعد البيانات")
+        self._build_ecmwf_tab()
+        self._build_eccharts_tab()
+        self._build_eta_tab()
+        self._build_windy_gfs_tab()
+        self._build_noaa_gfs_tab()
+        self._build_noaa_gefs_tab()
+        self._build_placeholder_source_tab("DWD", "ICON / ICON-EU", "موصل DWD لم يُربط بعد.")
+        self._build_placeholder_source_tab("UK Met Office", "Global / UKV", "موصل Met Office لم يُربط بعد.")
+        self._build_placeholder_source_tab("JMA", "GSM / MSM", "موصل JMA لم يُربط بعد.")
+        self._build_placeholder_source_tab("Météo-France", "ARPEGE / AROME", "موصل Météo-France لم يُربط بعد.")
+        self._build_placeholder_source_tab("Copernicus", "ERA5 / CAMS", "موصل Copernicus لم يُربط بعد.")
+        self._build_placeholder_source_tab("EUMETSAT", "Satellite products", "موصل EUMETSAT لم يُربط بعد.")
+        self.source_tabs.addTab(SynergieWorkspace(), "SYNERGIE")
+        self.source_tabs.addTab(ForecastCatalogWidget(), "جميع التنبؤات")
+        compare = QWidget()
+        compare_layout = QVBoxLayout(compare)
+        compare_layout.addWidget(QLabel("مركز مقارنة المصادر"))
+        compare_layout.addWidget(QLabel(
+            "ستُعرض هنا مقارنة الحقول بعد توحيد وقت الصلاحية والشبكة والمستوى والوحدات، "
+            "مع إظهار دورة التشغيل لكل مصدر."
+        ))
+        compare_layout.addStretch()
+        self.source_tabs.addTab(compare, "مقارنة المصادر")
+        self.source_tabs.addTab(ReviewConsole(self), "مراجعة المتنبئين")
+        self.setCentralWidget(self.source_tabs)
+
+    def _catalog_sink_for(self, provider: str, model: str, product: str):
+        """Return only a session-approved sink; absence means local-only download."""
+        return self.database_manager.catalog_sink_for(provider, model, product)
+
+    @staticmethod
+    def _catalog_status(sink) -> str:
+        return (
+            "سُجلت بيانات الأصل في قاعدة الكتالوج المعتمدة."
+            if sink is not None else
+            "لم تُكتب بيانات إلى أي قاعدة؛ لم يوجد اعتماد كتالوج صالح لهذه الوجهة في الجلسة."
+        )
+
+    def _build_ecmwf_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("ECMWF Open Data — مصدر عام مستقل عن حساب WMO"))
+        form = QFormLayout()
+        self.ecmwf_date = QLineEdit()
+        self.ecmwf_date.setPlaceholderText("YYYYMMDD — اتركه فارغاً لأحدث دورة")
+        self.ecmwf_time = QComboBox()
+        self.ecmwf_time.addItems(["00", "06", "12", "18"])
+        self.ecmwf_model = QComboBox()
+        self.ecmwf_model.addItems(["ifs", "aifs-single", "aifs-ens"])
+        self.ecmwf_resolution = QComboBox()
+        self.ecmwf_resolution.addItems(["0p25", "0p1"])
+        self.ecmwf_step = QLineEdit("24")
+        self.ecmwf_params = QLineEdit("2t msl")
+        self.ecmwf_params.setPlaceholderText("مثال: 2t msl")
+        self.ecmwf_output = QLineEdit(str(source_output_dir("ECMWF", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.ecmwf_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.ecmwf_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("التاريخ", self.ecmwf_date)
+        form.addRow("دورة UTC", self.ecmwf_time)
+        form.addRow("النموذج", self.ecmwf_model)
+        form.addRow("الدقة", self.ecmwf_resolution)
+        form.addRow("خطوة التنبؤ (ساعة)", self.ecmwf_step)
+        form.addRow("المتغيرات", self.ecmwf_params)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        self.btn_ecmwf_download = QPushButton("تنزيل بيانات ECMWF")
+        self.btn_ecmwf_download.clicked.connect(self._on_ecmwf_download)
+        layout.addWidget(self.btn_ecmwf_download)
+        self.ecmwf_log = QPlainTextEdit()
+        self.ecmwf_log.setReadOnly(True)
+        self.ecmwf_log.setMinimumHeight(260)
+        layout.addWidget(self.ecmwf_log)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "ECMWF Open Data")
+
+
+    def _build_eccharts_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        title = QLabel("ECMWF ecCharts — خرائط WMS التفاعلية")
+        title.setStyleSheet("font-size: 17px; font-weight: 700;")
+        layout.addWidget(title)
+        note = QLabel(
+            "أدخل عنوان WMS الذي يتيحه اشتراككم. يُحفظ رمز الوصول في Windows Credential Manager "
+            "ولا يُكتب في ملف الإعدادات أو السجل. هذه الواجهة تسترجع خرائط مصوّرة وبيانات الطبقات، "
+            "ولا توفر ملفات GRIB الخام."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.eccharts_endpoint = QLineEdit()
+        self.eccharts_endpoint.setPlaceholderText("https://…/wms")
+        self.eccharts_endpoint.setLayoutDirection(Qt.LeftToRight)
+        saved_endpoint = self.secrets.get_password("eccharts_wms_endpoint")
+        if saved_endpoint:
+            self.eccharts_endpoint.setText(saved_endpoint)
+        self.eccharts_token = QLineEdit()
+        self.eccharts_token.setEchoMode(QLineEdit.Password)
+        self.eccharts_token.setPlaceholderText("رمز WMS من حساب ECMWF")
+        self.eccharts_token.setLayoutDirection(Qt.LeftToRight)
+        saved_token = self.secrets.get_password("eccharts_wms_token")
+        if saved_token:
+            self.eccharts_token.setText(saved_token)
+            register_secret(saved_token)
+        form.addRow("عنوان WMS", self.eccharts_endpoint)
+        form.addRow("رمز الوصول", self.eccharts_token)
+        layout.addLayout(form)
+        actions = QHBoxLayout()
+        self.btn_eccharts_capabilities = QPushButton("حفظ الرمز وجلب الطبقات")
+        self.btn_eccharts_capabilities.clicked.connect(self._on_eccharts_capabilities)
+        actions.addWidget(self.btn_eccharts_capabilities)
+        actions.addStretch()
+        layout.addLayout(actions)
+        self.eccharts_status = QLabel("لم يتم الاتصال بعد.")
+        self.eccharts_status.setWordWrap(True)
+        layout.addWidget(self.eccharts_status)
+        self.eccharts_layers = QTableWidget(0, 4)
+        self.eccharts_layers.setHorizontalHeaderLabels(["اسم الطبقة", "العنوان", "أنماط العرض", "الأوقات المتاحة"])
+        self.eccharts_layers.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.eccharts_layers.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.eccharts_layers.setAlternatingRowColors(True)
+        self.eccharts_layers.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.eccharts_layers, 1)
+        map_controls = QFormLayout()
+        self.eccharts_layer_select = QComboBox()
+        self.eccharts_bbox = QLineEdit("-180,-90,180,90")
+        self.eccharts_bbox.setLayoutDirection(Qt.LeftToRight)
+        map_controls.addRow("الطبقة المراد عرضها", self.eccharts_layer_select)
+        map_controls.addRow("النطاق الجغرافي BBOX (CRS:84)", self.eccharts_bbox)
+        layout.addLayout(map_controls)
+        self.btn_eccharts_map = QPushButton("عرض الخريطة للطبقة المحددة")
+        self.btn_eccharts_map.clicked.connect(self._on_eccharts_get_map)
+        layout.addWidget(self.btn_eccharts_map)
+        self.eccharts_map_preview = QLabel("ستظهر صورة الطبقة هنا بعد جلبها.")
+        self.eccharts_map_preview.setAlignment(Qt.AlignCenter)
+        self.eccharts_map_preview.setMinimumHeight(320)
+        self.eccharts_map_preview.setStyleSheet("background: #17202b; color: #d8e2ee;")
+        layout.addWidget(self.eccharts_map_preview, 2)
+        self.source_tabs.addTab(page, "ECMWF ecCharts")
+
+    def _on_eccharts_capabilities(self):
+        endpoint = self.eccharts_endpoint.text().strip()
+        token = self.eccharts_token.text().strip()
+        if not endpoint or not token:
+            QMessageBox.warning(self, "بيانات ناقصة", "أدخل عنوان WMS ورمز الوصول.")
+            return
+        if not self.secrets.available:
+            QMessageBox.warning(
+                self, "مخزن الأسرار غير متاح",
+                "لم يتوفر Windows Credential Manager عبر keyring؛ لن نحفظ الرمز في ملف عادي."
+            )
+            return
+        if not self.secrets.set_password("eccharts_wms_token", token):
+            QMessageBox.critical(self, "تعذر حفظ الرمز", "رفض مخزن أسرار Windows حفظ رمز ecCharts.")
+            return
+        if not self.secrets.set_password("eccharts_wms_endpoint", endpoint):
+            QMessageBox.critical(self, "تعذر حفظ العنوان", "تعذر حفظ عنوان WMS محلياً في مخزن الأسرار.")
+            return
+        register_secret(token)
+        self.eccharts_status.setText("جارٍ طلب قائمة الطبقات من ecCharts…")
+
+        def work():
+            return EcChartsWMSClient(endpoint, token).get_capabilities()
+
+        def done(capabilities):
+            self.eccharts_layer_select.clear()
+            self.eccharts_layer_select.addItems([layer.name for layer in capabilities.layers])
+            self.eccharts_layers.setRowCount(len(capabilities.layers))
+            for row, layer in enumerate(capabilities.layers):
+                values = [
+                    layer.name, layer.title, ", ".join(layer.styles) or "الافتراضي",
+                    ", ".join(layer.time_values[:4]) + (" …" if len(layer.time_values) > 4 else "")
+                    if layer.time_values else "غير معلنة",
+                ]
+                for col, value in enumerate(values):
+                    item = QTableWidgetItem(value)
+                    item.setToolTip(value)
+                    self.eccharts_layers.setItem(row, col, item)
+            self.eccharts_status.setText(
+                f"نجح الاتصال — {len(capabilities.layers)} طبقة | "
+                f"الخدمة: {capabilities.title or 'ecCharts WMS'} | WMS {capabilities.version}"
+            )
+
+        self._run(work, done, on_failed=lambda message: self.eccharts_status.setText(
+            "تعذر جلب الطبقات: " + redact(message)
+        ))
+
+
+    def _on_eccharts_get_map(self):
+        endpoint = self.eccharts_endpoint.text().strip()
+        token = self.eccharts_token.text().strip()
+        layer = self.eccharts_layer_select.currentText().strip()
+        try:
+            bbox = tuple(float(value.strip()) for value in self.eccharts_bbox.text().split(","))
+            if len(bbox) != 4:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "نطاق غير صالح", "أدخل أربع قيم رقمية مفصولة بفواصل: west,south,east,north.")
+            return
+        if not endpoint or not token or not layer:
+            QMessageBox.warning(self, "بيانات ناقصة", "أدخل بيانات الاتصال واجلب الطبقات أولاً.")
+            return
+        self.eccharts_map_preview.setText("جارٍ تحميل صورة الخريطة…")
+
+        def work():
+            return EcChartsWMSClient(endpoint, token).get_map(
+                layers=(layer,), bbox=bbox, crs="CRS:84", width=1400, height=900
+            )
+
+        def done(image_data):
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(image_data):
+                self.eccharts_map_preview.setText("وصلت استجابة غير قابلة للعرض كصورة.")
+                return
+            self.eccharts_map_preview.setPixmap(
+                pixmap.scaled(self.eccharts_map_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            self.eccharts_status.setText(f"تم عرض الطبقة: {layer}")
+
+        self._run(work, done, on_failed=lambda message: self.eccharts_map_preview.setText(
+            "تعذر تحميل الخريطة: " + redact(message)
+        ))
+
+    def _build_eta_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("CPTEC/INPE ETA — البرازيل"))
+        form = QFormLayout()
+        self.eta_date = QLineEdit(datetime.now(timezone.utc).strftime("%Y%m%d"))
+        self.eta_cycle = QComboBox()
+        self.eta_cycle.addItems(["00", "06", "12", "18"])
+        self.eta_domain = QComboBox()
+        self.eta_domain.addItems(["ams_08km", "ams_40km", "ons_40km", "rjsp_01km"])
+        self.eta_filename = QLineEdit()
+        self.eta_filename.setPlaceholderText("اختر اسماً من قائمة الملفات")
+        self.eta_output = QLineEdit(str(source_output_dir("CPTEC_ETA", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.eta_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.eta_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("التاريخ UTC", self.eta_date)
+        form.addRow("دورة UTC", self.eta_cycle)
+        form.addRow("النطاق", self.eta_domain)
+        form.addRow("اسم ملف GRIB", self.eta_filename)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        actions = QHBoxLayout()
+        self.btn_eta_list = QPushButton("استعراض الملفات المتاحة")
+        self.btn_eta_download = QPushButton("تنزيل الملف المحدد")
+        self.btn_eta_list.clicked.connect(self._on_eta_list)
+        self.btn_eta_download.clicked.connect(self._on_eta_download)
+        actions.addWidget(self.btn_eta_list)
+        actions.addWidget(self.btn_eta_download)
+        layout.addLayout(actions)
+        self.eta_log = QPlainTextEdit()
+        self.eta_log.setReadOnly(True)
+        self.eta_log.setMinimumHeight(260)
+        layout.addWidget(self.eta_log)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "CPTEC ETA")
+
+    def _build_windy_gfs_tab(self):
+        """Windy GFS point forecast UI; response remains in memory only."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA GFS عبر Windy Point Forecast API"))
+        note = QLabel(
+            "هذا تكامل توقعات نقطية عبر Windy باستخدام نموذج GFS، وليس تنزيل ملفات GRIB "
+            "مباشرة من NOAA. لا يحفظ البرنامج استجابة Windy أو يعيد توزيعها. "
+            "يُحفظ مفتاح API في Windows Credential Manager فقط."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.windy_api_key = QLineEdit()
+        self.windy_api_key.setEchoMode(QLineEdit.Password)
+        self.windy_api_key.setLayoutDirection(Qt.LeftToRight)
+        self.windy_api_key.setPlaceholderText("Windy Point Forecast API key")
+        saved_key = self.secrets.get_password("windy_gfs_api_key")
+        if saved_key:
+            self.windy_api_key.setText(saved_key)
+            register_secret(saved_key)
+        self.windy_latitude = QLineEdit("33.5138")
+        self.windy_longitude = QLineEdit("36.2765")
+        self.windy_latitude.setLayoutDirection(Qt.LeftToRight)
+        self.windy_longitude.setLayoutDirection(Qt.LeftToRight)
+        form.addRow("مفتاح API", self.windy_api_key)
+        form.addRow("خط العرض", self.windy_latitude)
+        form.addRow("خط الطول", self.windy_longitude)
+        layout.addLayout(form)
+        self.btn_windy_fetch = QPushButton("جلب توقع GFS لهذا الموقع")
+        self.btn_windy_fetch.clicked.connect(self._on_windy_gfs_fetch)
+        layout.addWidget(self.btn_windy_fetch)
+        self.windy_status = QLabel("لم يتم طلب بيانات Windy بعد.")
+        self.windy_status.setWordWrap(True)
+        layout.addWidget(self.windy_status)
+        self.windy_table = QTableWidget(0, 3)
+        self.windy_table.setHorizontalHeaderLabels(["وقت UTC", "المتغير", "القيمة"])
+        self.windy_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.windy_table.setAlternatingRowColors(True)
+        self.windy_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.windy_table, 1)
+        layout.addStretch()
+        self.source_tabs.addTab(page, "NOAA GFS / Windy")
+
+    def _on_windy_gfs_fetch(self):
+        api_key = self.windy_api_key.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, "مفتاح API مطلوب", "أدخل مفتاح Windy Point Forecast API.")
+            return
+        if not self.secrets.available:
+            QMessageBox.warning(
+                self, "مخزن الأسرار غير متاح",
+                "لن نخزن مفتاح API في ملف إعدادات عادي. فعّل Windows Credential Manager أولاً."
+            )
+            return
+        try:
+            latitude = float(self.windy_latitude.text().strip())
+            longitude = float(self.windy_longitude.text().strip())
+            if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "إحداثيات غير صالحة", "خط العرض بين -90 و90 وخط الطول بين -180 و180.")
+            return
+        if not self.secrets.set_password("windy_gfs_api_key", api_key):
+            QMessageBox.critical(self, "تعذر حفظ المفتاح", "رفض Windows Credential Manager حفظ مفتاح Windy.")
+            return
+        register_secret(api_key)
+        self.windy_status.setText("جارٍ طلب توقع GFS النقطي…")
+        self.btn_windy_fetch.setEnabled(False)
+
+        def work():
+            from ..windy_gfs import WindyGFSClient
+            return WindyGFSClient(api_key).fetch(latitude, longitude)
+
+        def done(forecast):
+            rows = forecast.rows()
+            display = []
+            for row in rows:
+                timestamp = row["time"].strftime("%Y-%m-%d %H:%M")
+                for name, value in row.items():
+                    if name == "time":
+                        continue
+                    unit = forecast.units.get(name, "")
+                    display.append((timestamp, name, f"{value if value is not None else '—'} {unit}".strip()))
+            self.windy_table.setRowCount(len(display))
+            for row_index, values in enumerate(display):
+                for col, value in enumerate(values):
+                    self.windy_table.setItem(row_index, col, QTableWidgetItem(str(value)))
+            self.windy_status.setText(
+                f"وصلت {len(rows)} أوقات تنبؤ و{len(forecast.values)} سلاسل متغيرات "
+                f"من {forecast.model_name} عبر Windy. البيانات معروضة مؤقتاً في الذاكرة فقط."
+            )
+            self.btn_windy_fetch.setEnabled(True)
+
+        def failed(message):
+            self.windy_status.setText("تعذر جلب توقع GFS: " + redact(message))
+            self.btn_windy_fetch.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _build_noaa_gfs_tab(self):
+        """Direct NOAA/NCEP GFS GRIB2 subset download from NOMADS."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA / NCEP GFS — تنزيل GRIB2 مباشر من NOMADS"))
+        note = QLabel(
+            "يتم تنزيل ملف فرعي للمتغيرات والمستويات المحددة، مع فحص ترويسة GRIB2 "
+            "وتسجيل SHA-256 وبيانات دورة التشغيل ووقت الصلاحية في ملف source.json. "
+            "لا يحتاج هذا المصدر إلى مفتاح API."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.noaa_date = QDateEdit(QDate.currentDate())
+        self.noaa_date.setCalendarPopup(True)
+        self.noaa_date.setDisplayFormat("yyyy-MM-dd")
+        self.noaa_cycle = QComboBox()
+        self.noaa_cycle.addItems(["00", "06", "12", "18"])
+        self.noaa_forecast_hour = QSpinBox()
+        self.noaa_forecast_hour.setRange(0, 384)
+        self.noaa_forecast_hour.setSingleStep(1)
+        self.noaa_forecast_hour.setValue(24)
+        self.noaa_forecast_hour.valueChanged.connect(lambda hour: self.noaa_forecast_hour.setSingleStep(1 if hour <= 120 else 3))
+        self.noaa_variables = QLineEdit("TMP,UGRD,VGRD")
+        self.noaa_variables.setPlaceholderText("TMP,UGRD,VGRD")
+        self.noaa_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
+        self.noaa_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.noaa_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.noaa_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.noaa_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("تاريخ التشغيل UTC", self.noaa_date)
+        form.addRow("دورة التشغيل UTC", self.noaa_cycle)
+        form.addRow("ساعة التنبؤ (fXXX)", self.noaa_forecast_hour)
+        form.addRow("المتغيرات", self.noaa_variables)
+        form.addRow("المستويات", self.noaa_levels)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        self.btn_noaa_download = QPushButton("تنزيل GFS GRIB2 والتحقق منه")
+        self.btn_noaa_download.clicked.connect(self._on_noaa_gfs_download)
+        layout.addWidget(self.btn_noaa_download)
+        self.noaa_status = QPlainTextEdit()
+        self.noaa_status.setReadOnly(True)
+        self.noaa_status.setMinimumHeight(220)
+        self.noaa_status.setPlainText("لم يبدأ تنزيل NOAA GFS بعد.")
+        layout.addWidget(self.noaa_status, 1)
+        self.source_tabs.addTab(page, "NOAA GFS GRIB2")
+
+    def _on_noaa_gfs_download(self):
+        try:
+            run_date = self.noaa_date.date().toPython()
+            variables = tuple(dict.fromkeys(
+                item.strip().upper() for item in self.noaa_variables.text().split(",") if item.strip()
+            ))
+            levels = tuple(dict.fromkeys(
+                item.strip().lower() for item in self.noaa_levels.text().split(",") if item.strip()
+            ))
+            request = GfsRequest(
+                run_date=run_date,
+                cycle=int(self.noaa_cycle.currentText()),
+                forecast_hour=self.noaa_forecast_hour.value(),
+                variables=variables,
+                levels=levels,
+            )
+            request.validate()
+            output = Path(self.noaa_output.text().strip())
+            if not str(output):
+                raise ValueError("حدد مجلد الحفظ.")
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "إعدادات NOAA غير صالحة", str(exc))
+            return
+
+        catalog_sink = self._catalog_sink_for("noaa_nomads", "noaa_gfs", f"gfs_{request.resolution}")
+        self.btn_noaa_download.setEnabled(False)
+        self.noaa_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل ملف GRIB2…")
+
+        def work():
+            return download_gfs(request, output, catalog_sink=catalog_sink)
+
+        def done(result):
+            grib_path, metadata_path = result
+            self.noaa_status.setPlainText(
+                "اكتمل التنزيل واجتاز الملف فحص إطار GRIB2 الأولي.\n"
+                f"الملف: {grib_path}\n"
+                f"بيانات المصدر: {metadata_path}\n"
+                f"الصلاحية UTC: {request.valid_time.isoformat()}\n"
+                "تم تسجيل SHA-256 في ملف metadata.\n" + self._catalog_status(catalog_sink)
+            )
+            self.btn_noaa_download.setEnabled(True)
+            self._log(f"اكتمل تنزيل NOAA GFS: {grib_path}")
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل NOAA GFS: "
+            self.noaa_status.setPlainText(prefix + redact(message))
+            self.btn_noaa_download.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _build_noaa_gefs_tab(self):
+        """Direct NOAA/NCEP GEFS ensemble-member GRIB2 download from NOMADS."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel("NOAA / NCEP GEFS — تنزيل بيانات المجموعة التجميعية"))
+        note = QLabel(
+            "شبكة 0.50 درجة، عضو ضابط c00 أو عضو اضطرابي p01–p30. "
+            "تُحفظ كل نتيجة كملف GRIB2 مستقل مع بيانات المصدر والعضو ودورة التشغيل "
+            "ووقت الصلاحية وبصمة SHA-256."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.gefs_date = QDateEdit(QDate.currentDate())
+        self.gefs_date.setCalendarPopup(True)
+        self.gefs_date.setDisplayFormat("yyyy-MM-dd")
+        self.gefs_cycle = QComboBox()
+        self.gefs_cycle.addItems(["00", "06", "12", "18"])
+        self.gefs_member = QComboBox()
+        self.gefs_member.addItem("العضو الضابط c00", "c00")
+        for member_number in range(1, 31):
+            member = f"p{member_number:02d}"
+            self.gefs_member.addItem(f"العضو {member}", member)
+        self.gefs_forecast_hour = QSpinBox()
+        self.gefs_forecast_hour.setRange(3, 384)
+        self.gefs_forecast_hour.setSingleStep(3)
+        self.gefs_forecast_hour.setValue(24)
+        self.gefs_forecast_hour.valueChanged.connect(lambda hour: self.gefs_forecast_hour.setSingleStep(3 if hour <= 192 else 6))
+        self.gefs_variables = QLineEdit("TMP,UGRD,VGRD")
+        self.gefs_variables.setPlaceholderText("TMP,UGRD,VGRD")
+        self.gefs_levels = QLineEdit("2_m_above_ground,10_m_above_ground")
+        self.gefs_levels.setPlaceholderText("2_m_above_ground,10_m_above_ground")
+        self.gefs_parallel = QSpinBox()
+        self.gefs_parallel.setRange(1, 8)
+        self.gefs_parallel.setValue(4)
+        self.gefs_parallel.setToolTip("عدد أعضاء GEFS التي تُنزّل بالتوازي؛ ابدأ بـ 4 وخفّضه عند بطء الخادم.")
+        self.gefs_all_members = QCheckBox("تنزيل المجموعة كاملة (c00 و p01–p30) — قد يستغرق وقتاً ومساحة كبيرة")
+        self.gefs_output = QLineEdit(str(source_output_dir("NOAA", project_root())))
+        choose = QPushButton("اختيار مجلد…")
+        choose.clicked.connect(lambda: self._choose_source_dir(self.gefs_output))
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.gefs_output, 1)
+        output_row.addWidget(choose)
+        form.addRow("تاريخ التشغيل UTC", self.gefs_date)
+        form.addRow("دورة التشغيل UTC", self.gefs_cycle)
+        form.addRow("عضو المجموعة", self.gefs_member)
+        form.addRow("ساعة التنبؤ", self.gefs_forecast_hour)
+        form.addRow("المتغيرات", self.gefs_variables)
+        form.addRow("المستويات", self.gefs_levels)
+        form.addRow("تنزيلات GEFS المتزامنة", self.gefs_parallel)
+        form.addRow("مجلد الحفظ", output_row)
+        layout.addLayout(form)
+        layout.addWidget(self.gefs_all_members)
+        self.btn_gefs_download = QPushButton("تنزيل عضو GEFS GRIB2 والتحقق منه")
+        self.btn_gefs_download.clicked.connect(self._on_noaa_gefs_download)
+        self.gefs_all_members.toggled.connect(
+            lambda checked: self.btn_gefs_download.setText(
+                "تنزيل جميع أعضاء GEFS (31 عضواً)" if checked
+                else "تنزيل عضو GEFS GRIB2 والتحقق منه"
+            )
+        )
+        layout.addWidget(self.btn_gefs_download)
+
+        analysis_form = QFormLayout()
+        self.gefs_decode_short_name = QLineEdit("t")
+        self.gefs_decode_type_of_level = QLineEdit("heightAboveGround")
+        self.gefs_decode_level = QLineEdit("2")
+        self.gefs_decode_threshold = QLineEdit()
+        self.gefs_decode_threshold.setPlaceholderText("اختياري — اتركه فارغاً لتعطيل الاحتمال")
+        analysis_form.addRow("GRIB shortName", self.gefs_decode_short_name)
+        analysis_form.addRow("GRIB typeOfLevel", self.gefs_decode_type_of_level)
+        analysis_form.addRow("GRIB level", self.gefs_decode_level)
+        analysis_form.addRow("عتبة الاحتمال (بنفس وحدة الحقل)", self.gefs_decode_threshold)
+        layout.addLayout(analysis_form)
+        self.btn_gefs_analyze = QPushButton("تحليل أعضاء GEFS المحفوظة وحساب الإحصاءات")
+        self.btn_gefs_analyze.clicked.connect(self._on_gefs_analyze)
+        layout.addWidget(self.btn_gefs_analyze)
+        self.btn_gefs_open_map = QPushButton("فتح خرائط GEFS في عارض الخرائط")
+        self.btn_gefs_open_map.clicked.connect(self._on_open_map)
+        layout.addWidget(self.btn_gefs_open_map)
+
+        self.gefs_status = QPlainTextEdit()
+        self.gefs_status.setReadOnly(True)
+        self.gefs_status.setMinimumHeight(220)
+        self.gefs_status.setPlainText("لم يبدأ تنزيل GEFS بعد.")
+        layout.addWidget(self.gefs_status, 1)
+        self.source_tabs.addTab(page, "NOAA GEFS")
+
+    def _on_noaa_gefs_download(self):
+        try:
+            variables = tuple(dict.fromkeys(
+                item.strip().upper() for item in self.gefs_variables.text().split(",") if item.strip()
+            ))
+            levels = tuple(dict.fromkeys(
+                item.strip().lower() for item in self.gefs_levels.text().split(",") if item.strip()
+            ))
+            request = GefsRequest(
+                run_date=self.gefs_date.date().toPython(),
+                cycle=int(self.gefs_cycle.currentText()),
+                forecast_hour=self.gefs_forecast_hour.value(),
+                member=self.gefs_member.currentData(),
+                variables=variables,
+                levels=levels,
+            )
+            request.validate()
+            output = Path(self.gefs_output.text().strip())
+            if not str(output):
+                raise ValueError("حدد مجلد الحفظ.")
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError, RuntimeError) as exc:
+            QMessageBox.warning(self, "إعدادات GEFS غير صالحة", str(exc))
+            return
+
+        self.btn_gefs_download.setEnabled(False)
+        self.gefs_status.setPlainText("جارٍ الاتصال بخدمة NOAA NOMADS وتنزيل عضو GEFS…")
+
+        catalog_sink = self._catalog_sink_for("noaa_nomads", "noaa_gefs", "gefs_0p50")
+        download_all = self.gefs_all_members.isChecked()
+        max_workers = self.gefs_parallel.value()  # Read Qt widgets on the GUI thread only.
+
+        requested_members = (
+            ("c00", *(f"p{number:02d}" for number in range(1, 31)))
+            if download_all else (request.member,)
+        )
+
+        def work():
+            if download_all:
+                completed, failed = download_gefs_ensemble(
+                    request, output, members=requested_members,
+                    max_workers=max_workers, catalog_sink=catalog_sink
+                )
+            else:
+                grib, metadata = download_gefs(request, output, catalog_sink=catalog_sink)
+                completed, failed = [(request.member, grib, metadata)], []
+            manifest = write_gefs_ensemble_manifest(
+                request, output, completed, failed, requested_members=requested_members
+            )
+            return completed, failed, manifest
+
+        def done(result):
+            completed, failed, manifest = result
+            catalog_note = self._catalog_status(catalog_sink)
+            if catalog_sink is not None and any("catalog registration failed" in error for _, error in failed):
+                catalog_note = "اكتمل حفظ الملفات محلياً، لكن فشل تسجيل بعض الأعضاء في الكتالوج؛ راجع قائمة الإخفاقات."
+            report = [
+                f"اكتمل تنزيل {len(completed)} عضو/أعضاء من GEFS.",
+                f"تعذر تنزيل/تسجيل {len(failed)} عضو/أعضاء.",
+                f"الصلاحية UTC: {request.valid_time.isoformat()}",
+                f"سجل المجموعة: {manifest.name}",
+                catalog_note, "",
+            ]
+            for member, grib, metadata in completed:
+                report.extend([f"{member}: {grib.name}", f"Metadata: {metadata.name}"])
+            for member, error in failed:
+                report.append(f"فشل {member}: {redact(error)}")
+            report.extend(["", "فحص إطار GRIB2 أولي؛ SHA-256 مسجل لكل ملف مكتمل."])
+            self.gefs_status.setPlainText("\n".join(report))
+            self.btn_gefs_download.setEnabled(True)
+            self._log(f"GEFS: اكتمل {len(completed)} وفشل {len(failed)}.")
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل NOAA GEFS: "
+            self.gefs_status.setPlainText(prefix + redact(message))
+            self.btn_gefs_download.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _on_gefs_analyze(self):
+        try:
+            short_name = self.gefs_decode_short_name.text().strip()
+            type_of_level = self.gefs_decode_type_of_level.text().strip()
+            level = float(self.gefs_decode_level.text().strip())
+            threshold_text = self.gefs_decode_threshold.text().strip()
+            threshold = float(threshold_text) if threshold_text else None
+            if not short_name or not type_of_level:
+                raise ValueError("أدخل shortName و typeOfLevel.")
+            if not math.isfinite(level) or (threshold is not None and not math.isfinite(threshold)):
+                raise ValueError("يجب أن يكون المستوى والعتبة أرقاماً محدودة وليست NaN أو Infinity.")
+        except ValueError as exc:
+            QMessageBox.warning(self, "إعدادات تحليل GEFS غير صالحة", str(exc))
+            return
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "اختر ملفي GEFS GRIB2 أو أكثر", self.gefs_output.text(),
+            "GRIB files (*.grib2 *.grb2 *.grib *.grb);;All files (*)",
+        )
+        if len(paths) < 2:
+            if paths:
+                QMessageBox.information(self, "عدد الأعضاء غير كافٍ", "يلزم اختيار عضوين على الأقل.")
+            return
+
+        output_root = Path(self.gefs_output.text().strip() or Path(paths[0]).parent).expanduser()
+        self.btn_gefs_analyze.setEnabled(False)
+        self.gefs_status.setPlainText("جارٍ فك حقول GRIB والتحقق من تطابق الأعضاء والشبكة والوحدات…")
+
+        def work():
+            import json
+            import numpy as np
+
+            statistics, field = calculate_gefs_ensemble_statistics(
+                paths, short_name=short_name, type_of_level=type_of_level,
+                level=level, threshold=threshold,
+            )
+            if output_root.suffix:
+                output_root = output_root.parent
+            output_dir = output_root / "GEFS_Analysis"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            valid_stamp = field["valid_time"].replace("-", "").replace(":", "").replace("T", "_").replace("Z", "")
+            stem = f"GEFS_{valid_stamp}_{short_name}_{stamp}"
+            arrays = {
+                "mean": statistics["mean"],
+                "spread": statistics["spread"],
+                "member_count": statistics["member_count"],
+                "latitude": field["latitude"],
+                "longitude": field["longitude"],
+            }
+            if "probability_exceeding_threshold_percent" in statistics:
+                arrays["probability_exceeding_threshold_percent"] = statistics[
+                    "probability_exceeding_threshold_percent"
+                ]
+            npz_path = output_dir / f"{stem}.npz"
+            np.savez_compressed(npz_path, **arrays)
+            report = {
+                "product": "GEFS ensemble statistics",
+                "source": "NOAA/NCEP NOMADS",
+                "members": field["members"],
+                "short_name": short_name,
+                "type_of_level": type_of_level,
+                "level": level,
+                "units": field["units"],
+                "initialization_time": field["initialization_time"],
+                "valid_time": field["valid_time"],
+                "forecast_hour": field["forecast_hour"],
+                "threshold": threshold,
+                "statistics": [
+                    "mean", "population_standard_deviation", "valid_member_count",
+                    *(["probability_exceeding_threshold_percent"] if threshold is not None else []),
+                ],
+                "grid_shape": list(statistics["mean"].shape),
+                "data_file": npz_path.name,
+                "validation": "GRIB field metadata, timestamps, units and latitude/longitude arrays checked across members",
+                "scientific_note": "No unit conversion or bias correction is applied; threshold uses the decoded field units.",
+            }
+            json_path = output_dir / f"{stem}.json"
+            json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            map_dir = project_root() / "output" / "map_data"
+            _, map_manifest = write_gefs_ensemble_map_products(
+                statistics, field, map_dir,
+                source_file=", ".join(Path(item).name for item in paths),
+            )
+            return report, npz_path, json_path, map_manifest
+
+        def done(result):
+            report, npz_path, json_path, map_manifest = result
+            self.gefs_status.setPlainText(
+                "اكتمل تحليل GEFS بعد اجتياز بوابة التحقق.\n"
+                f"الأعضاء: {', '.join(report['members'])}\n"
+                f"الحقل: {report['short_name']} / {report['type_of_level']} / {report['level']}\n"
+                f"الوحدات: {report['units']}\n"
+                f"الصلاحية UTC: {report['valid_time']}\n"
+                f"شكل الشبكة: {report['grid_shape']}\n"
+                f"ملف البيانات: {npz_path}\n"
+                f"ملف الوصف: {json_path}\n"
+                f"ملف طبقات الخرائط: {map_manifest}\n"
+                "ملاحظة: لا يوجد تحويل وحدات أو تصحيح انحياز."
+            )
+            self.btn_gefs_analyze.setEnabled(True)
+            self._log("اكتمل تحليل حقول GEFS والتحقق من توافق الأعضاء.")
+
+        def failed(message):
+            self.gefs_status.setPlainText("تعذر تحليل GEFS: " + redact(message))
+            self.btn_gefs_analyze.setEnabled(True)
+
+        self._run(work, done, on_failed=failed)
+
+    def _build_placeholder_source_tab(self, title, models, status):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(QLabel(title))
+        layout.addWidget(QLabel(f"النماذج المستهدفة: {models}"))
+        note = QLabel(status + " سيُضاف الاتصال والاستعراض والتنزيل وسجل الملفات داخل هذا التبويب.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch()
+        self.source_tabs.addTab(page, title)
+
+    def _choose_source_dir(self, field):
+        selected = QFileDialog.getExistingDirectory(self, "اختر مجلد الحفظ", field.text())
+        if selected:
+            field.setText(selected)
+
+    def _source_command(self, args, output_widget):
+        def work():
+            result = subprocess.run(
+                [sys.executable, *args], cwd=str(project_root()),
+                env={**__import__("os").environ, "PYTHONPATH": str(project_root() / "src")},
+                capture_output=True, text=True, timeout=60 * 60,
+            )
+            text = (result.stdout or "") + (("\\n" + result.stderr) if result.stderr else "")
+            if result.returncode:
+                raise RuntimeError(text or f"انتهى الأمر برمز {result.returncode}")
+            return text or "اكتملت العملية."
+        def done(result):
+            output_widget.setPlainText(result)
+            self._log("اكتملت مهمة مصدر البيانات.")
+        self._run(work, done, on_failed=lambda message: output_widget.setPlainText(message))
+
+    def _on_ecmwf_download(self):
+        try:
+            step = int(self.ecmwf_step.text().strip())
+            if step < 0:
+                raise ValueError
+            params = self.ecmwf_params.text().split()
+            if not params:
+                raise ValueError
+            date = self.ecmwf_date.text().strip()
+            if date and (len(date) != 8 or not date.isdigit()):
+                raise ValueError
+            model = self.ecmwf_model.currentText()
+            resolution = self.ecmwf_resolution.currentText()
+            output = Path(self.ecmwf_output.text().strip()).expanduser()
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError):
+            QMessageBox.warning(self, "إعدادات غير صالحة", "أدخل تاريخاً بصيغة YYYYMMDD إن لزم، وخطوة صحيحة ومتغيراً واحداً على الأقل ومجلد حفظ صالحاً.")
+            return
+
+        request = {
+            "time": int(self.ecmwf_time.currentText()),
+            "step": step,
+            "param": params,
+            "type": "fc",
+        }
+        if date:
+            request["date"] = date
+        model_ids = {"ifs": "ecmwf_ifs", "aifs-single": "ecmwf_aifs_single",
+                     "aifs-ens": "ecmwf_aifs_ens"}
+        catalog_sink = self._catalog_sink_for(
+            "ecmwf_open_data", model_ids[model], f"forecast_fc_{resolution}"
+        )
+        target = output / f"{model}_{date or 'latest'}_{request['time']:02d}_step{step}.grib2"
+        self.ecmwf_log.setPlainText("جارٍ تنفيذ طلب ECMWF…")
+
+        def work():
+            return retrieve_open_data(
+                request, target, source="ecmwf", model=model,
+                resolution=resolution, catalog_sink=catalog_sink,
+            )
+
+        def done(report):
+            import json
+            self.ecmwf_log.setPlainText(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+                + self._catalog_status(catalog_sink)
+            )
+            self._log(f"اكتمل تنزيل ECMWF: {target}")
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل ECMWF: "
+            self.ecmwf_log.setPlainText(prefix + redact(message))
+
+        self._run(work, done, on_failed=failed)
+
+    def _eta_args(self):
+        date = self.eta_date.text().strip()
+        if len(date) != 8 or not date.isdigit():
+            raise ValueError("أدخل التاريخ بصيغة YYYYMMDD.")
+        return ["-m", "ecmwf_collector.sources.eta_cptec", "--date", date,
+                "--cycle", self.eta_cycle.currentText(), "--domain", self.eta_domain.currentText()]
+
+    def _on_eta_list(self):
+        try:
+            args = self._eta_args() + ["--list"]
+        except ValueError as exc:
+            QMessageBox.warning(self, "تاريخ غير صالح", str(exc))
+            return
+        self.eta_log.setPlainText("جارٍ استعراض فهرس CPTEC…")
+        self._source_command(args, self.eta_log)
+
+    def _on_eta_download(self):
+        try:
+            date = self.eta_date.text().strip()
+            cycle = self.eta_cycle.currentText()
+            domain = self.eta_domain.currentText()
+            filename = self.eta_filename.text().strip()
+            if not filename:
+                raise ValueError("أدخل اسم ملف GRIB بعد استعراض الملفات.")
+            output = Path(self.eta_output.text().strip()).expanduser()
+            output.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError) as exc:
+            QMessageBox.warning(self, "إعدادات غير صالحة", str(exc))
+            return
+        catalog_sink = self._catalog_sink_for("cptec_inpe", "cptec_eta", f"eta_{domain}")
+        target = output / filename
+        self.eta_log.setPlainText("جارٍ تنزيل ملف ETA وفحص GRIB…")
+
+        def work():
+            return retrieve_eta_file(
+                date, cycle, domain, filename, target, catalog_sink=catalog_sink
+            )
+
+        def done(report):
+            import json
+            self.eta_log.setPlainText(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+                + self._catalog_status(catalog_sink)
+            )
+
+        def failed(message):
+            prefix = "اكتمل تنزيل الملف محلياً لكن تعذّر تسجيله في الكتالوج: " if "CatalogRegistrationError" in message else "تعذر تنزيل CPTEC ETA: "
+            self.eta_log.setPlainText(prefix + redact(message))
+
+        self._run(work, done, on_failed=failed)
 
     # ---------- الإعدادات ----------
     def _load_from_config(self):
@@ -242,7 +1166,7 @@ class MainWindow(QMainWindow):
         self.allow_plain.setChecked(c.allow_plain_ftp)
         self.remember.setChecked(c.remember_password and self.secrets.available)
         self.protocol.setCurrentIndex(max(self.protocol.findData(c.protocol), 0))
-        self.dl_dir.setText(c.download_root)
+        self.dl_dir.setText(str(default_wmo_download_root(c.download_root, project_root())))
         for k, cb in self.kind_boxes.items():
             cb.setChecked(k in c.selected_kinds)
         for k, cb in self.cycle_boxes.items():
@@ -278,6 +1202,482 @@ class MainWindow(QMainWindow):
             return None
         return ConnectionSettings.from_config(cfg, self.password.text())
 
+    def _on_database_status(self):
+        """Show the active state backend and its current record count."""
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل قراءة حالة قاعدة البيانات.",
+            )
+            return
+
+        def inspect():
+            count = self.state.count()
+            if isinstance(self.state, PostgresStateStore):
+                return "PostgreSQL", count, "اتصال قاعدة البيانات النشطة"
+            if isinstance(self.state, StateStore):
+                return "SQLite", count, str(project_root() / "state" / "state.db")
+            return type(self.state).__name__, count, "مسار غير متاح"
+
+        def show(result):
+            backend, count, location = result
+            message = (
+                f"قاعدة البيانات النشطة: {backend}\n"
+                f"عدد السجلات: {count:,}\n"
+                f"الموقع: {location}"
+            )
+            self._log(message.replace("\n", " | "))
+            QMessageBox.information(self, "حالة قاعدة البيانات", message)
+
+        self._run(inspect, show)
+
+    def _on_backup_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل إنشاء النسخة الاحتياطية.",
+            )
+            return
+
+        backup_dir = project_root() / "state" / "backups"
+        state = self.state
+
+        def create_backup():
+            if isinstance(state, StateStore):
+                from ..state_backup import create_manual_backup
+                backup = create_manual_backup(
+                    project_root() / "state" / "state.db", backup_dir, keep=30
+                )
+                return "SQLite", backup
+            if isinstance(state, PostgresStateStore):
+                from ..postgres_backup import create_postgres_backup
+                backup = create_postgres_backup(state._dsn, backup_dir, keep=30)
+                return "PostgreSQL", backup
+            raise RuntimeError("نوع قاعدة البيانات النشطة غير معروف؛ لم يُجر أي تغيير.")
+
+        def backup_done(result):
+            kind, backup = result
+            self._log(f"اكتملت نسخة {kind} الاحتياطية والتحقق منها: {backup}")
+            QMessageBox.information(
+                self, "اكتمل النسخ الاحتياطي",
+                f"تم إنشاء نسخة {kind} والتحقق من سلامة الأرشيف.\\n\\n{backup}\\n\\n"
+                "يُحتفظ بآخر 30 نسخة من هذا النوع.",
+            )
+
+        self._log("جارٍ إنشاء نسخة احتياطية والتحقق منها في الخلفية…")
+        self._run(create_backup, backup_done)
+
+    def _on_restore_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة PostgreSQL.",
+            )
+            return
+        if not isinstance(self.state, PostgresStateStore):
+            QMessageBox.information(
+                self, "PostgreSQL غير نشط",
+                "يجب ربط PostgreSQL ونقل السجل إليه قبل استخدام استعادته.",
+            )
+            return
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة PostgreSQL الاحتياطية", str(backup_dir),
+            "PostgreSQL custom backups (*.dump)",
+        )
+        if not selected:
+            return
+        archive = Path(selected)
+        if not archive.is_file():
+            QMessageBox.critical(
+                self, "نسخة PostgreSQL غير موجودة",
+                "الملف المحدد غير موجود. لم يتم تغيير قاعدة البيانات.",
+            )
+            return
+
+        admin_dsn, accepted = QInputDialog.getText(
+            self, "صلاحية استعادة PostgreSQL",
+            "أدخل سلسلة اتصال حساب PostgreSQL بصلاحية SUPERUSER (الإدخال مخفي). "
+            "حساب مالك قاعدة البيانات غير كافٍ للاستعادة الكاملة. لن تُحفظ هذه البيانات:",
+            QLineEdit.Password,
+        )
+        if not accepted or not admin_dsn.strip():
+            return
+        admin_dsn = admin_dsn.strip()
+        register_secret(admin_dsn)
+        answer = QMessageBox.warning(
+            self, "تأكيد استعادة PostgreSQL",
+            "سيتحقق التطبيق في الخلفية من بصمة النسخة وقاعدة البيانات وصلاحيات الاستعادة. "
+            "إذا اجتازت الفحوصات، سينشئ أرشيف أمان للحالة الحالية ثم ينفذ الاستعادة "
+            "داخل معاملة واحدة. قد يستغرق فحص النسخة الكبيرة بعض الوقت، وستبقى الواجهة مستجيبة. "
+            "هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log(f"بدء استعادة PostgreSQL من: {archive}")
+
+        app_store = self.state
+
+        def work():
+            from ..postgres_backup import restore_postgres_backup
+            safety_copy = restore_postgres_backup(
+                admin_dsn, archive, backup_dir, timeout=3600
+            )
+            # The restricted application DSN is checked in the worker too; a slow
+            # or unavailable local PostgreSQL service must not freeze the GUI.
+            try:
+                verified_count = app_store.count()
+                return safety_copy, verified_count, None
+            except Exception as exc:
+                return safety_copy, None, f"{type(exc).__name__}: {redact(str(exc))}"
+
+        def restore_failed(message):
+            self._log(
+                f"فشلت استعادة PostgreSQL قبل اكتمالها أو التحقق منها: {message}"
+            )
+            QMessageBox.critical(
+                self, "تعذّرت استعادة PostgreSQL",
+                f"تعذّر إكمال الاستعادة أو أحد فحوص ما بعد الاستعادة.\\n{message}\\n"
+                "راجع سجل التطبيق واحتفظ بنسخة الأمان إذا أُنشئت؛ لا تحذف النسخة الأصلية.",
+            )
+
+        def restore_done(result):
+            safety_copy, verified_count, verification_error = result
+            self._postgres_restore_done(
+                archive, safety_copy, verified_count, verification_error
+            )
+
+        self._run(work, restore_done, on_failed=restore_failed)
+
+    def _postgres_restore_done(
+        self,
+        archive: Path,
+        safety: Path,
+        verified_count: int | None,
+        verification_error: str | None = None,
+    ):
+        if verification_error:
+            self._log(
+                f"اكتملت الاستعادة، لكن تعذّر التحقق عبر حساب التطبيق: {verification_error}. "
+                f"نسخة الأمان السابقة: {safety}"
+            )
+            QMessageBox.warning(
+                self, "استعادة مع تحذير",
+                "أُنجزت استعادة PostgreSQL، لكن تعذّر فحص السجل باستخدام حساب التطبيق. "
+                f"تفاصيل التحقق: {verification_error}\\nنسخة الأمان: {safety}",
+            )
+            return
+
+        self._log(
+            f"اكتملت استعادة PostgreSQL من {archive}. "
+            f"عدد السجلات: {verified_count}. نسخة الأمان السابقة: {safety}"
+        )
+        QMessageBox.information(
+            self, "اكتملت استعادة PostgreSQL",
+            f"تمت الاستعادة والتحقق من حساب التطبيق.\\n"
+            f"عدد السجلات: {verified_count}\\n"
+            f"نسخة الأمان السابقة: {safety}",
+        )
+
+    def _on_restore_sqlite(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء جميع المهام قبل استعادة قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "قاعدة PostgreSQL نشطة",
+                "استعادة نسخ SQLite متاحة فقط عندما تكون SQLite هي قاعدة البيانات النشطة.",
+            )
+            return
+        from ..state_backup import validate_backup
+
+        backup_dir = project_root() / "state" / "backups"
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "اختر نسخة SQLite الاحتياطية", str(backup_dir),
+            "SQLite backups (*.db)",
+        )
+        if not selected:
+            return
+        backup_path = Path(selected)
+        try:
+            validate_backup(backup_path)
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "نسخة احتياطية غير صالحة",
+                f"لن يتم تغيير قاعدة البيانات الحالية.\\n{type(exc).__name__}: {redact(str(exc))}",
+            )
+            return
+        answer = QMessageBox.question(
+            self, "تأكيد استعادة قاعدة البيانات",
+            "سيُستبدل سجل SQLite الحالي بمحتويات النسخة المحددة. "
+            "سينشئ التطبيق نسخة أمان من السجل الحالي أولاً. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        state_path = project_root() / "state" / "state.db"
+        old_store = self.state
+        old_store.close()
+        from ..state_backup import restore_sqlite_backup
+
+        def restore():
+            return restore_sqlite_backup(
+                backup_path, state_path, backup_dir, keep=30
+            )
+
+        def restored(safety_copy):
+            try:
+                self.state = StateStore(state_path)
+                self._log(
+                    f"تمت استعادة النسخة {backup_path}. "
+                    f"نسخة الأمان السابقة: {safety_copy}"
+                )
+                QMessageBox.information(
+                    self, "اكتملت الاستعادة",
+                    f"تم استرجاع السجل وإعادة فتح قاعدة البيانات.\\n"
+                    f"نسخة الأمان من السجل السابق: {safety_copy}",
+                )
+            except Exception as exc:
+                self._log(
+                    f"تمت عملية الاستعادة لكن تعذّر إعادة فتح SQLite: "
+                    f"{type(exc).__name__}: {redact(str(exc))}"
+                )
+                QMessageBox.critical(
+                    self, "تعذّرت إعادة فتح قاعدة البيانات",
+                    f"ملف قاعدة البيانات قد تم تحديثه، لكن تعذّر فتحه: "
+                    f"{type(exc).__name__}: {redact(str(exc))}",
+                )
+
+        def restore_failed(message):
+            try:
+                self.state = StateStore(state_path)
+            except Exception as reopen_exc:
+                self._log(
+                    f"تعذّرت إعادة فتح SQLite بعد فشل الاستعادة: "
+                    f"{type(reopen_exc).__name__}: {redact(str(reopen_exc))}"
+                )
+            QMessageBox.critical(
+                self, "تعذّرت الاستعادة",
+                f"فشلت الاستعادة: {message}\\n"
+                "لم يتم اعتماد قاعدة البيانات الجديدة. افحص مجلد state/backups "
+                "للعثور على نسخة الأمان إن أُنشئت.",
+            )
+
+        self._log("جارٍ استعادة نسخة SQLite والتحقق منها في الخلفية…")
+        self._run(restore, restored, on_failed=restore_failed)
+
+    def _on_install_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "انتظر انتهاء المهام الحالية قبل تثبيت PostgreSQL.",
+            )
+            return
+        answer = QMessageBox.warning(
+            self, "تثبيت PostgreSQL 16",
+            "سيستخدم التطبيق Windows Package Manager لتنزيل مثبّت PostgreSQL الرسمي "
+            "من EDB وتشغيله بوضع تفاعلي. قد يطلب Windows صلاحية مسؤول.\n\n"
+            "مهم: ستحدد كلمة مرور مدير قاعدة البيانات بنفسك داخل نافذة المثبّت. "
+            "لن ينشئ التطبيق كلمة مرور افتراضية ولن يحفظ كلمة مرور المدير.\n\n"
+            "قد يستغرق التنزيل والتثبيت عدة دقائق. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._log("بدء تثبيت PostgreSQL 16 عبر Windows Package Manager...")
+        from ..postgres_windows import install_postgres_with_winget
+        self._run(install_postgres_with_winget, self._postgres_install_done)
+
+    def _postgres_install_done(self, result):
+        diagnostics = result.get("diagnostics", {})
+        services = diagnostics.get("services", [])
+        service_text = "\n".join(
+            f"{item['name']}: {item['state']}" for item in services
+        ) or "لم تُكتشف خدمة مسجلة بعد."
+        self._log(
+            "اكتمل فحص ما بعد تثبيت PostgreSQL. "
+            f"الخادم مكتشف: {diagnostics.get('server_installation_detected')}"
+        )
+        QMessageBox.information(
+            self, "نتيجة تثبيت PostgreSQL",
+            ("PostgreSQL موجود مسبقاً." if result.get("already_present")
+             else "اكتمل تثبيت PostgreSQL واكتشف التطبيق الخادم.")
+            + "\n\nخدمات Windows:\n" + service_text
+            + "\n\nيمكنك الآن ربط PostgreSQL ونقل سجل SQLite بعد إنشاء نسخة احتياطية والتحقق من السجلات. "
+              "سيُطلب منك إدخال سلسلة اتصال المدير، ولن تُحفظ بيانات اعتماده.",
+        )
+        if QMessageBox.question(
+            self, "ربط PostgreSQL الآن",
+            "سيُنشأ حساب تطبيق محدود الصلاحيات، وتُنقل السجلات بعد إنشاء نسخة SQLite احتياطية والتحقق منها. هل تريد المتابعة؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        ) == QMessageBox.Yes:
+            self._on_configure_postgres()
+
+    def _on_diagnose_postgres(self):
+        """Show read-only local PostgreSQL installation and service diagnostics."""
+        try:
+            from ..postgres_windows import diagnose_postgres_installation
+
+            result = diagnose_postgres_installation()
+            labels = {
+                "postgres": "خادم PostgreSQL",
+                "pg_ctl": "أداة إدارة الخدمة",
+                "initdb": "أداة تهيئة قاعدة البيانات",
+                "pg_dump": "أداة النسخ الاحتياطي",
+                "pg_restore": "أداة الاستعادة",
+            }
+            lines = [
+                "نتيجة تشخيص محلي للقراءة فقط؛ لم يتم تثبيت أو تشغيل أو إيقاف أي خدمة.",
+                "",
+                f"اكتشاف الخادم: {'نعم' if result['server_installation_detected'] else 'لا'}",
+                f"وجود أدوات العميل: {'مكتملة' if result['client_tools_found'] else 'غير مكتملة'}",
+                f"وجود خدمة تعمل: {'نعم' if result['service_running'] else 'لا'}",
+                "",
+                "الملفات التنفيذية:",
+            ]
+            for key, label in labels.items():
+                lines.append(f"{label}: {result['tools'].get(key) or 'غير موجود'}")
+            lines.append("")
+            lines.append("خدمات Windows:")
+            if result["services"]:
+                lines.extend(
+                    f"{service['name']}: {service['state']}"
+                    for service in result["services"]
+                )
+            else:
+                lines.append("لم يتم اكتشاف خدمة PostgreSQL مسجلة.")
+            QMessageBox.information(self, "تشخيص PostgreSQL", "\n".join(lines))
+        except Exception as exc:
+            self._log(f"فشل تشخيص PostgreSQL: {type(exc).__name__}: {redact(str(exc))}")
+            QMessageBox.warning(
+                self, "تعذّر التشخيص",
+                f"{type(exc).__name__}: {redact(str(exc))}",
+            )
+
+    def _on_configure_postgres(self):
+        if self._downloading or self._workers:
+            QMessageBox.information(
+                self, "انتظر انتهاء المهمة",
+                "أوقف التنزيل وانتظر انتهاء المهام الحالية قبل تغيير قاعدة البيانات.",
+            )
+            return
+        if not isinstance(self.state, StateStore):
+            QMessageBox.information(
+                self, "PostgreSQL نشط بالفعل",
+                "التطبيق يستخدم PostgreSQL حالياً. لم يتم تغيير قاعدة البيانات.",
+            )
+            return
+        dsn, accepted = QInputDialog.getText(
+            self,
+            "إعداد PostgreSQL",
+            "أدخل سلسلة اتصال مدير PostgreSQL لقاعدة محلية موجودة (تُخفى). سيُنشأ حساب تطبيق محدود الصلاحيات:",
+            QLineEdit.Password,
+        )
+        if not accepted or not dsn.strip():
+            return
+
+        admin_dsn = dsn.strip()
+        register_secret(admin_dsn)
+        sqlite_store = self.state
+        state_path = project_root() / "state" / "state.db"
+        backup_dir = project_root() / "state" / "backups"
+
+        def migrate():
+            from ..postgres_provision import (
+                provision_application_login, remove_new_application_login,
+            )
+            from ..postgres_state import PostgresStateStore
+            from ..tools.migrate_sqlite_to_postgres import create_sqlite_backup
+
+            postgres_store = None
+            app_role_provisioned = False
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+                backup_path = backup_dir / f"state-before-postgres-{stamp}.db"
+                create_sqlite_backup(state_path, backup_path)
+
+                source_records = sqlite_store.all_records()
+                app_dsn = provision_application_login(admin_dsn)
+                app_role_provisioned = True
+                register_secret(app_dsn)
+                postgres_store = PostgresStateStore(app_dsn)
+                postgres_store.import_records(source_records)
+                target_records = postgres_store.all_records()
+                target_by_path = {record.remote_path: record for record in target_records}
+                mismatches = [
+                    record.remote_path for record in source_records
+                    if target_by_path.get(record.remote_path) != record
+                ]
+                if mismatches:
+                    raise RuntimeError(
+                        f"التحقق من الترحيل لم ينجح لعدد {len(mismatches)} سجلات."
+                    )
+                if len(target_records) != len(source_records):
+                    raise RuntimeError(
+                        "عدد السجلات في PostgreSQL لا يطابق عدد سجلات SQLite."
+                    )
+                if not self.secrets.set_postgres_dsn(app_dsn):
+                    raise RuntimeError(
+                        "تعذّر حفظ بيانات الاتصال في مخزن بيانات اعتماد Windows؛ "
+                        "لم يتم تبديل قاعدة البيانات الحالية."
+                    )
+                result = (postgres_store, len(source_records), backup_path)
+                postgres_store = None
+                app_role_provisioned = False
+                return result
+            except Exception:
+                if postgres_store is not None:
+                    postgres_store.close()
+                if app_role_provisioned:
+                    try:
+                        remove_new_application_login(admin_dsn)
+                    except Exception:
+                        log.exception(
+                            "تعذّر تأكيد إزالة حساب PostgreSQL الذي أُنشئ أثناء ترحيل فاشل"
+                        )
+                raise
+
+        def migrated(result):
+            postgres_store, record_count, backup_path = result
+            self.state = postgres_store
+            sqlite_store.close()
+            self._log(
+                f"تم ربط PostgreSQL والتحقق من {record_count} سجلات. "
+                f"نسخة SQLite الاحتياطية محفوظة في: {backup_path}"
+            )
+            QMessageBox.information(
+                self, "اكتمل ربط PostgreSQL",
+                f"تم نقل السجل والتحقق منه بنجاح.\\n"
+                f"عدد السجلات: {record_count}\\n"
+                f"نسخة SQLite الاحتياطية: {backup_path}\\n"
+                "ستستخدم الجلسات القادمة PostgreSQL تلقائياً.",
+            )
+
+        def migration_failed(message):
+            self._log(
+                "تعذّر ربط PostgreSQL؛ بقيت قاعدة SQLite الحالية نشطة. "
+                f"التفاصيل: {message}"
+            )
+            QMessageBox.critical(
+                self, "فشل ربط PostgreSQL",
+                f"لم يتم تبديل قاعدة البيانات الحالية.\\n"
+                f"السبب: {message}\\n"
+                "تبقى قاعدة SQLite الأصلية هي النشطة.",
+            )
+
+        self._log(
+            "بدأ ترحيل SQLite إلى PostgreSQL في الخلفية: "
+            "نسخ احتياطي، نقل، مقارنة السجلات، ثم تبديل آمن عند النجاح…"
+        )
+        self._run(migrate, migrated, on_failed=migration_failed)
+
     def _on_save(self):
         cfg = self._read_cfg()
         try:
@@ -303,19 +1703,28 @@ class MainWindow(QMainWindow):
         return p if p.is_absolute() else project_root() / p
 
     # ---------- المهام الخلفية ----------
-    def _run(self, fn, on_done, busy=True):
+    def _run(self, fn, on_done, busy=True, on_failed=None):
         w = Worker(fn)
         self._workers.add(w)
 
         def done(res):
             self._workers.discard(w)
             self._busy(False)
-            on_done(res)
+            try:
+                on_done(res)
+            finally:
+                self._finish_close_if_idle()
 
         def failed(msg):
             self._workers.discard(w)
             self._busy(False)
-            self._log(f"خطأ: {msg}")
+            safe_message = redact(str(msg))
+            self._log(f"خطأ: {safe_message}")
+            try:
+                if on_failed is not None:
+                    on_failed(safe_message)
+            finally:
+                self._finish_close_if_idle()
 
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
@@ -325,7 +1734,7 @@ class MainWindow(QMainWindow):
 
     def _busy(self, busy: bool):
         locked = busy or self._downloading
-        for b in (self.btn_test, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
+        for b in (self.btn_test, self.btn_postgres, self.btn_db_status, self.btn_backup, self.btn_restore, self.btn_pg_restore, self.btn_pg_install, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
                   self.btn_preview, self.btn_start, self.btn_process):
             b.setEnabled(not locked)
 
@@ -450,7 +1859,12 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(True)
         self.btn_pause.setText("إيقاف مؤقت")
         self._log(f"بدأ التنزيل: {len(items)} ملف")
-        self._run(lambda: manager.run(items), self._download_done, busy=False)
+        self._run(
+            lambda: manager.run(items),
+            self._download_done,
+            busy=False,
+            on_failed=self._download_failed,
+        )
 
     def _download_done(self, result):
         self._downloading = False
@@ -459,6 +1873,23 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self._busy(False)
         self._log("انتهى:\n" + result.summary_ar())
+
+    def _download_failed(self, message: str):
+        """Restore the download controls after an unexpected worker failure."""
+        self._downloading = False
+        self._manager = None
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_pause.setText("إيقاف مؤقت")
+        self.pbar_label.setText("توقف التنزيل بسبب خطأ؛ يمكن مراجعة السجل ثم إعادة المحاولة.")
+        self._busy(False)
+        self._log(f"تعذّر إكمال التنزيل: {message}")
+        QMessageBox.warning(
+            self,
+            "تعذّر إكمال التنزيل",
+            f"توقفت مهمة التنزيل بسبب خطأ غير متوقع.\\n{message}\\n"
+            "يمكنك مراجعة السجل وإعادة المحاولة؛ الملفات المكتملة تبقى محفوظة.",
+        )
 
     def _on_progress(self, snap):
         total = max(snap.bytes_total, 1)
@@ -497,9 +1928,15 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         try:
+            if getattr(sys, "frozen", False):
+                command = [sys.executable, "--map-server"]
+                working_directory = str(project_root())
+            else:
+                command = [sys.executable, str(project_root() / "serve_map.py")]
+                working_directory = str(project_root())
             subprocess.Popen(
-                [sys.executable, str(project_root() / "serve_map.py")],
-                cwd=str(project_root()),
+                command,
+                cwd=working_directory,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
@@ -510,7 +1947,7 @@ class MainWindow(QMainWindow):
 
     def _on_process_downloads(self):
         download_root = self._download_root()
-        output_root = project_root() / "output" / "map_data"
+        output_root = processing_output_dir(project_root())
         self._log(f"بدء فحص ملفات GRIB المنزلة وتحويل الحقول المتوافقة: {download_root}")
 
         def work():
@@ -526,7 +1963,7 @@ class MainWindow(QMainWindow):
         self._log(
             f"انتهت المعالجة: ملفات حُوّلت={len(converted)}، طبقات={layer_count}، "
             f"ملفات لم تُحوّل أو تعذّر فحصها={len(failed)}.\n"
-            f"قائمة الطبقات: {project_root() / 'output' / 'map_data' / 'manifest.json'}\n"
+            f"قائمة الطبقات: {processing_output_dir(project_root()) / 'manifest.json'}\n"
             "لعرضها شغّل serve_map.py من مجلد المشروع ثم افتح الرابط الذي يظهر."
         )
         for item in failed[:10]:
@@ -540,12 +1977,36 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self._log(f"تعذّر التصدير: {exc}")
 
+    def _finish_close_if_idle(self):
+        """Close only after every worker has returned to the GUI thread."""
+        if self._close_when_idle and not self._workers and not self._downloading:
+            self._close_when_idle = False
+            QTimer.singleShot(0, self.close)
+
     def closeEvent(self, event):
-        if self._manager:
-            self._manager.stop()
-            self.pool.waitForDone(10000)
+        if self._workers or self._downloading:
+            answer = QMessageBox.question(
+                self,
+                "مهام قيد التنفيذ",
+                "توجد عملية تعمل في الخلفية (نسخ احتياطي أو استعادة أو ترحيل أو تنزيل).\n"
+                "هل تريد إيقاف التنزيل إن وجد، ثم إبقاء التطبيق مفتوحاً حتى تنتهي العمليات بأمان؟",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Yes:
+                self._close_when_idle = True
+                if self._manager:
+                    self._manager.stop()
+                    self._log("طُلب الإغلاق؛ يجري إيقاف التنزيل بأمان وانتظار اكتمال المهام الأخرى…")
+                else:
+                    self._log("طُلب الإغلاق؛ سيبقى التطبيق مفتوحاً حتى تنتهي المهمة الخلفية بأمان…")
+                event.ignore()
+            else:
+                event.ignore()
+            return
         super().closeEvent(event)
 
     def _log(self, msg: str):
-        log.info(msg.replace("\n", " | "))
-        self.status.appendPlainText(msg)
+        safe_message = redact(str(msg))
+        log.info(safe_message.replace("\n", " | "))
+        self.status.appendPlainText(safe_message)

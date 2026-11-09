@@ -108,7 +108,11 @@ class StateTests(unittest.TestCase):
             s = StateStore(p)
             s.upsert("/x", status="failed", last_error="boom")
             s.close()
-            self.assertEqual(StateStore(p).get("/x").last_error, "boom")
+            reopened = StateStore(p)
+            try:
+                self.assertEqual(reopened.get("/x").last_error, "boom")
+            finally:
+                reopened.close()
 
 
 if __name__ == "__main__":

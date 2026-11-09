@@ -3,30 +3,48 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 import webbrowser
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+sys.path.insert(0, str(BUNDLE_ROOT / "src"))
+from ecmwf_collector.config import project_root  # noqa: E402
 from ecmwf_collector.tools.point_query import sample_npz  # noqa: E402
 
-MAP_DATA = (ROOT / "output" / "map_data").resolve()
-ALLOWED_ROOTS = ((ROOT / "map_viewer").resolve(), MAP_DATA)
+MAP_DATA = (project_root() / "output" / "map_data").resolve()
+MAP_VIEWER = (BUNDLE_ROOT / "map_viewer").resolve()
+ALLOWED_ROOTS = (MAP_VIEWER, MAP_DATA)
+ROOT = BUNDLE_ROOT
 
 
 class MapOnlyHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args) -> None:
+        # BaseHTTPRequestHandler writes to sys.stderr, which is None in a
+        # windowed PyInstaller executable. Route access logs to the same file.
+        logging.getLogger("ecmwf_webp.map_server").info(
+            "HTTP %s - %s", self.address_string(), format % args
+        )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def translate_path(self, path: str) -> str:
         relative = unquote(urlsplit(path).path).lstrip("/")
-        candidate = (ROOT / relative).resolve()
+        # Generated scientific products live in the writable per-user data tree,
+        # while the static viewer is bundled read-only with the application.
+        if relative == "output/map_data" or relative.startswith("output/map_data/"):
+            data_relative = relative[len("output/map_data"):].lstrip("/")
+            candidate = (MAP_DATA / data_relative).resolve()
+        else:
+            candidate = (BUNDLE_ROOT / relative).resolve()
         if any(candidate == allowed or allowed in candidate.parents for allowed in ALLOWED_ROOTS):
             return str(candidate)
-        return str(ROOT / "__map_file_not_found__")
+        return str(BUNDLE_ROOT / "__map_file_not_found__")
 
     def _json_response(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -56,7 +74,7 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
                 self._json_response(404, {"error": "This layer has no point-query data."})
                 return
             data_path = (MAP_DATA / data_name).resolve()
-            if data_path.parent != MAP_DATA or not data_path.is_file():
+            if data_path.parent != MAP_DATA.resolve() or not data_path.is_file():
                 self._json_response(404, {"error": "Scientific data file is unavailable."})
                 return
             method = query.get("method", ["nearest"])[0]
@@ -94,19 +112,35 @@ class MapOnlyHandler(SimpleHTTPRequestHandler):
         return None
 
 
-def main():
+def main(open_browser: bool = True):
+    # Frozen GUI builds may have stdout=None; never use print() for startup.
+    log_dir = project_root() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("ecmwf_webp.map_server")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.FileHandler(log_dir / "map_server.log", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
     address = ("127.0.0.1", 8765)
     server = ThreadingHTTPServer(address, MapOnlyHandler)
     url = f"http://{address[0]}:{address[1]}/map_viewer/"
-    print(f"Map viewer: {url}")
-    print("Local server exposes map assets and point sampling only. Press Ctrl+C to stop.")
-    webbrowser.open(url)
+    logger.info("Map viewer server listening at %s", url)
+    # Never let a desktop browser launch block the local HTTP server. The
+    # GUI opens the URL after its own readiness check; CLI use keeps the
+    # historical convenience, while CI can pass --no-browser.
+    if open_browser:
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping map server...")
+        logger.info("Map server interrupted by user")
+    except Exception:
+        logger.exception("Map server failed")
+        raise
     finally:
         server.server_close()
+        logger.info("Map server stopped")
 
 
 if __name__ == "__main__":

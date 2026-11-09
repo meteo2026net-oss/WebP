@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: weather_review
+      POSTGRES_USER: review_admin
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?Run start-review-stack.sh first}
+    command:
+      - bash
+      - -ec
+      - |
+        install -d -o postgres -g postgres -m 700 /var/lib/postgresql/certs
+        cp /run/certs/server.crt /var/lib/postgresql/certs/server.crt
+        cp /run/certs/server.key /var/lib/postgresql/certs/server.key
+        chown postgres:postgres /var/lib/postgresql/certs/server.*
+        chmod 600 /var/lib/postgresql/certs/server.key
+        exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/server.crt -c ssl_key_file=/var/lib/postgresql/certs/server.key
+    ports:
+      - "5432:5432"
+    volumes:
+      - review_pgdata:/var/lib/postgresql/data
+      - ./certs:/run/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U review_admin -d weather_review"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.3
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USERNAME:-kcadmin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?Run start-review-stack.sh first}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: ${KC_HOSTNAME:?Run start-review-stack.sh from Codespaces}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  review_pgdata:

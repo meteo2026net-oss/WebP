@@ -28,7 +28,8 @@ from .fileinspect import inspect_file
 from .listing import (filter_day_folders, human_size, list_directory, parse_day_folder,
                       sort_day_folders)
 from .naming import ProductFile, parse_product_name
-from .state import StateStore, utc_now
+from .state import utc_now
+from .state_contracts import StateStoreProtocol
 
 log = logging.getLogger(__name__)
 ALL_KINDS = frozenset({"AN", "FM", "FP", "FS"})
@@ -108,7 +109,7 @@ def _decide(rec, local: Path, size: int | None) -> str:
     return "new"
 
 
-def build_plan(session, download_root: Path, state: StateStore, filters: Filters,
+def build_plan(session, download_root: Path, state: StateStoreProtocol, filters: Filters,
                start: date | None = None, end: date | None = None) -> Plan:
     dirs = [e for e in list_directory(session, "/") if e.is_dir]
     dirs = sort_day_folders(filter_day_folders(dirs, start, end))
@@ -190,9 +191,9 @@ class RunResult:
 
 
 class DownloadManager:
-    def __init__(self, settings: ConnectionSettings, state: StateStore, *,
+    def __init__(self, settings: ConnectionSettings, state: StateStoreProtocol, *,
                  factory=default_ftp_factory, sleep: Callable[[float], None] = time.sleep,
-                 max_parallel: int = 1, min_free_bytes: int = 0, blocksize: int = 256 * 1024,
+                 max_parallel: int = 3, min_free_bytes: int = 0, blocksize: int = 1024 * 1024,
                  on_progress: Callable[[Snapshot], None] | None = None, progress_interval: float = 0.25):
         self.settings, self.state, self.factory, self.sleep = settings, state, factory, sleep
         self.max_parallel = max(1, min(int(max_parallel), 3))
@@ -318,9 +319,15 @@ class _Worker:
         self.cwd: str | None = None
 
     def close(self) -> None:
-        if self.session is not None:
-            self.session.close()
-        self.session, self.cwd = None, None
+        session, self.session = self.session, None
+        self.cwd = None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                # Cleanup errors must not mask the original download result or
+                # terminate a worker before its failure is reported to the GUI.
+                log.exception("تعذّر إغلاق جلسة FTP للعامل")
 
     def loop(self) -> None:
         m = self.m
@@ -352,6 +359,18 @@ class _Worker:
                     self.close()
                     m._push_front(item)
                     m._fatal(fatal_message=str(exc))
+                except Exception as exc:
+                    # A worker-thread exception must reach the GUI result; otherwise
+                    # threading prints it and the application can report a false success.
+                    self.close()
+                    message = f"خطأ داخلي غير متوقع: {type(exc).__name__}: {exc}"
+                    log.exception("%s: %s", item.name, message)
+                    try:
+                        m.state.upsert(item.remote_path, status="failed", last_error=message[:500])
+                    except Exception:
+                        log.exception("تعذّر تحديث حالة الملف بعد خطأ العامل: %s", item.name)
+                    m._finish_item(item.name, "failed", message)
+                    m._fatal(fatal_message=f"توقفت المهمة بسبب خطأ داخلي أثناء تنزيل {item.name}: {type(exc).__name__}")
         finally:
             self.close()
 
@@ -372,6 +391,12 @@ class _Worker:
             except _SourceChanged as exc:
                 last = exc
                 log.warning("%s: %s", item.name, exc)
+                # ECMWF may still be writing the product. Back off before
+                # checking its size again instead of immediately polling FTP.
+                if attempt < m.settings.max_retries:
+                    delay = min(2.0 ** (attempt - 1), 30.0)
+                    log.info("%s: إعادة فحص حجم المصدر بعد %.0f ثانية", item.name, delay)
+                    m.sleep(delay)
             except NetworkError as exc:
                 last = exc
                 break  # open_session استنفد محاولاته بالفعل
@@ -428,6 +453,14 @@ class _Worker:
                 h.update(chunk)
                 m._add_bytes(len(chunk), item.name)
             ftp.retrbinary(f"RETR {item.name}", cb, blocksize=m.blocksize, rest=offset if offset else None)
+            try:
+                # Detect buffered write failures (notably ENOSPC) before treating
+                # the transfer as complete or leaving the file handle.
+                fh.flush()
+            except OSError as exc:
+                if exc.errno == errno.ENOSPC:
+                    raise DiskFullError("امتلأ القرص أثناء تفريغ البيانات إلى الملف") from exc
+                raise
 
     def download_one(self, item: PlanItem) -> None:
         m, ftp = self.m, self.session.ftp

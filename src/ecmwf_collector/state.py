@@ -79,12 +79,33 @@ class StateStore:
                              (utc_now(), remote_path))
             self._db.commit()
 
-    def all_records(self) -> list[FileRecord]:
+    def count(self) -> int:
+        """Return the number of tracked remote files."""
         with self._lock:
-            rows = self._db.execute("SELECT remote_path,remote_size,local_path,status,local_size,sha256,"
-                                    "detected_type,validation,downloaded_at,attempts,last_error,updated_at "
-                                    "FROM files ORDER BY remote_path").fetchall()
-        return [FileRecord(*r) for r in rows]
+            row = self._db.execute("SELECT COUNT(*) FROM files").fetchone()
+        return int(row[0])
+
+    def iter_records(self, batch_size: int = 500):
+        """Yield ordered records in bounded batches for large database migrations."""
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
+        query = ("SELECT remote_path,remote_size,local_path,status,local_size,sha256,"
+                 "detected_type,validation,downloaded_at,attempts,last_error,updated_at "
+                 "FROM files ORDER BY remote_path")
+        with self._lock:
+            cursor = self._db.execute(query)
+            try:
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    for row in rows:
+                        yield FileRecord(*row)
+            finally:
+                cursor.close()
+
+    def all_records(self) -> list[FileRecord]:
+        return list(self.iter_records())
 
     def export_csv(self, path: Path) -> int:
         recs = self.all_records()

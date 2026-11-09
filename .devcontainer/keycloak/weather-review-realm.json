@@ -1,0 +1,59 @@
+{
+  "realm": "weather-review",
+  "enabled": true,
+  "displayName": "Weather Review Test",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "ecmwf-webp-desktop",
+      "name": "ECMWF WebP Desktop Test",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1/*"],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "review-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "review-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "review-role-attribute",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "review_role",
+            "claim.name": "review_role",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "reviewer" },
+      { "name": "review_lead" },
+      { "name": "publisher" },
+      { "name": "admin" }
+    ]
+  }
+}

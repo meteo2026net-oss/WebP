@@ -7,6 +7,19 @@ from ecmwf_collector.tools.migrate_sqlite_to_postgres import create_sqlite_backu
 
 
 class SQLiteBackupTests(unittest.TestCase):
+    def test_iter_records_yields_all_rows_in_bounded_batches(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = StateStore(Path(temp) / "state.db")
+            try:
+                for index in range(7):
+                    store.upsert(f"/archive/{index}.grib", status="downloaded")
+                expected = store.all_records()
+                self.assertEqual(list(store.iter_records(batch_size=2)), expected)
+                with self.assertRaises(ValueError):
+                    list(store.iter_records(batch_size=0))
+            finally:
+                store.close()
+
     def test_online_backup_preserves_all_state_records(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -201,8 +214,9 @@ class PostgresProvisionTests(unittest.TestCase):
                 provision_application_login("host=127.0.0.1 dbname=weatherdb")
 
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
-        self.assertTrue(any("REVOKE ALL ON SCHEMA public" in item for item in statements))
-        self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
+        self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
+        self.assertTrue(any("DROP ROLE IF EXISTS" in item and '"ecmwf_webp_app"' in item for item in statements))
 
 
 class ConfigurePostgresCliTests(unittest.TestCase):
@@ -267,7 +281,6 @@ class ConfigurePostgresCliTests(unittest.TestCase):
             contextlib.redirect_stderr(output),
         ):
             result = configure_postgres.main()
-
         self.assertEqual(result, 3)
         cleanup.assert_called_once_with(admin_dsn)
         self.assertIn("table and data were retained", output.getvalue())
@@ -302,18 +315,74 @@ class ConfigurePostgresCliTests(unittest.TestCase):
             SQL=lambda value: FakeSQL(value),
             Identifier=lambda value: '"' + value.replace('"', '""') + '"',
         )
-        fake_psycopg = types.SimpleNamespace(
-            sql=fake_sql, connect=lambda *_a, **_k: FakeConnection()
-        )
+        fake_psycopg = types.SimpleNamespace(sql=fake_sql, connect=lambda *_a, **_k: FakeConnection())
         with patch.dict(sys.modules, {"psycopg": fake_psycopg}):
             remove_new_application_login("host=127.0.0.1 dbname=weatherdb")
-
         self.assertTrue(any("REVOKE CONNECT ON DATABASE" in item for item in statements))
         self.assertTrue(any("REVOKE ALL PRIVILEGES ON TABLE public.files" in item for item in statements))
         self.assertTrue(any("REVOKE ALL PRIVILEGES ON SCHEMA public" in item for item in statements))
         self.assertTrue(any("DROP ROLE IF EXISTS" in item for item in statements))
         self.assertFalse(any("DROP TABLE" in item.upper() for item in statements))
         self.assertFalse(any("TRUNCATE" in item.upper() or "DELETE FROM" in item.upper() for item in statements))
+
+
+class MigrationSnapshotTests(unittest.TestCase):
+    def test_migration_reads_the_created_backup_not_the_live_sqlite_database(self):
+        import contextlib
+        import io
+        import os
+        from unittest.mock import patch
+        from ecmwf_collector.tools import migrate_sqlite_to_postgres as migration
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "live-state.db"
+            source.write_bytes(b"live database placeholder")
+            backup_dir = root / "backups"
+            opened_paths = []
+
+            class FakeSQLite:
+                def __init__(self, path):
+                    opened_paths.append(Path(path))
+                def count(self):
+                    return 2
+                def iter_records(self, batch_size=500):
+                    return iter((object(), object()))
+                def close(self):
+                    pass
+
+            class FakePostgres:
+                def __init__(self, _dsn):
+                    pass
+                def import_records(self, records):
+                    return len(records)
+                def all_records(self):
+                    return []
+                def close(self):
+                    pass
+
+            def make_backup(_source, backup):
+                backup.write_bytes(b"consistent snapshot")
+
+            output = io.StringIO()
+            with (
+                patch.dict(os.environ, {"ECMWF_POSTGRES_DSN": "host=localhost dbname=test"}),
+                patch.object(migration, "create_sqlite_backup", side_effect=make_backup),
+                patch.object(migration, "StateStore", FakeSQLite),
+                patch.object(migration, "PostgresStateStore", FakePostgres),
+                patch("sys.argv", ["migrate_sqlite_to_postgres", "--sqlite", str(source),
+                                   "--backup-dir", str(backup_dir)]),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(migration.main(), 0)
+
+            self.assertEqual(len(opened_paths), 1)
+            self.assertNotEqual(opened_paths[0], source.resolve())
+            # Windows may expose the same directory through its 8.3 short name.
+            self.assertTrue(os.path.samefile(opened_paths[0].parent, backup_dir))
+            self.assertTrue(opened_paths[0].is_file())
+            self.assertIn("Migration progress: 2/2 (100.0%)", output.getvalue())
+            self.assertIn("SQLite backup retained at:", output.getvalue())
 
 
 if __name__ == "__main__":

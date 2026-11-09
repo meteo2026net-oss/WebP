@@ -1,21 +1,92 @@
 name: Python tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: weather_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d weather_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: webp_asset_source
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: mariadb
+          MARIADB_DATABASE: webp_asset_source
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weather_test
+      POSTGRES_STATE_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/webp_state_test
+      ASSET_PG_SOURCE_URL: postgresql://webp_pg_source:webp_pg_source_password@localhost:5432/webp_asset_source?sslmode=disable
+      ASSET_PG_TARGET_URL: postgresql://webp_pg_target:webp_pg_target_password@localhost:5432/webp_asset_target?sslmode=disable
+      ASSET_MYSQL_SOURCE_URL: mysql://webp_source:webp_source_password@127.0.0.1:3306/webp_asset_source
+      ASSET_MYSQL_TARGET_URL: mysql://webp_target:webp_target_password@127.0.0.1:3306/webp_asset_target
+      ASSET_MARIADB_SOURCE_URL: mysql://webp_source:webp_source_password@127.0.0.1:3307/webp_asset_source
+      ASSET_MARIADB_TARGET_URL: mysql://webp_target:webp_target_password@127.0.0.1:3307/webp_asset_target
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray
+        run: |
+          sudo apt-get install -y postgresql-client default-mysql-client
+          python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray PySide6 'psycopg[binary]>=3.2' requests 'Authlib>=1.7' 'joserfc>=1.2' 'PyMySQL>=1.1.1'
+      - name: Initialize PostGIS and weather schema
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_source"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_target"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_state_test"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE webp_pg_source LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'webp_pg_source_password'; CREATE ROLE webp_pg_target LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'webp_pg_target_password'; GRANT CONNECT ON DATABASE webp_asset_source TO webp_pg_source; GRANT CONNECT ON DATABASE webp_asset_target TO webp_pg_target;"
+          psql "postgresql://postgres:postgres@localhost:5432/webp_asset_source" -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA public TO webp_pg_source"
+          psql "postgresql://postgres:postgres@localhost:5432/webp_asset_target" -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA public TO webp_pg_target"
+          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
+          mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
+          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
+          mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/weather_platform_schema.sql
       - name: Compile Python sources
         run: python -m compileall -q src main.py serve_map.py tests
       - name: Check map viewer JavaScript syntax
