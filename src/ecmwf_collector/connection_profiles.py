@@ -47,7 +47,7 @@ class DatabaseProfile:
         host: str = "",
         port: int | None = None,
         username: str = "",
-        ssl_mode: str = "prefer",
+        ssl_mode: str = "verify-full",
         ssl_ca: str = "",
         sqlite_path: str = "",
         enabled: bool = True,
