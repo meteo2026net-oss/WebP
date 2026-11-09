@@ -265,7 +265,7 @@ class DatabaseProfileTests(unittest.TestCase):
             def execute(self, sql):
                 pass
             def fetchall(self):
-                return [("GRANT SELECT, CREATE ON weather.* TO 'app'@'%'",)]
+                return [("GRANT SELECT, DROP ON weather.* TO 'app'@'%'",)]
 
         class Connection:
             def cursor(self):
@@ -292,6 +292,25 @@ class DatabaseProfileTests(unittest.TestCase):
                 return Cursor()
 
         assert_mysql_application_role(Connection())
+
+    def test_mysql_scoped_create_for_approved_catalog_is_accepted(self):
+        from ecmwf_collector.database_drivers import assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                pass
+            def fetchall(self):
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON weather.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        assert_mysql_application_role(Connection(), "weather")
 
     def test_mysql_certificate_verification_requires_ca_file(self):
         with self.assertRaises(DatabaseProfileError):
