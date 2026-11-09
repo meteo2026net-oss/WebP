@@ -28,28 +28,23 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy eccodes requests
 
-      - name: Resolve WIS2 discovery metadata and download a real WRF GRIB2 field
+      - name: Resolve DWD WIS2 metadata and decode a real ICON-EPS GRIB2 message
         run: |
           python - <<'PY'
           import hashlib
           import json
+          import re
           from pathlib import Path
-          from urllib.parse import urljoin
 
           import numpy as np
           import requests
-          from eccodes import (
-              codes_get,
-              codes_get_values,
-              codes_grib_new_from_file,
-              codes_release,
-          )
+          from eccodes import codes_get, codes_get_values, codes_grib_new_from_file, codes_release
 
-          record_id = "urn:wmo:md:cy-dom:weather.prediction.deterministic.local"
+          record_id = "urn:wmo:md:de-dwd:icon-eps.ALL"
           metadata_url = (
               "https://wis2-gdc.weather.gc.ca/collections/"
               "wis2-discovery-metadata/items/"
-              "urn:wmo:md:cy-dom:weather.prediction.deterministic.local?f=json"
+              "urn:wmo:md:de-dwd:icon-eps.ALL?f=json"
           )
           session = requests.Session()
           session.headers.update({"User-Agent": "WebP-WIS2-GRIB2-validation/1.0"})
@@ -61,143 +56,173 @@ jobs:
               raise SystemExit(f"Unexpected WIS2 metadata record: {metadata.get('id')!r}")
 
           properties = metadata.get("properties", {})
+          formats = {str(item.get("name", "")).upper() for item in properties.get("formats", [])}
+          if "GRIB2" not in formats:
+              raise SystemExit(f"WIS2 metadata does not declare GRIB2: {sorted(formats)}")
           if properties.get("wmo:dataPolicy") != "core":
               raise SystemExit("The selected WIS2 dataset is not declared as core data")
           rights = str(properties.get("rights", "")).lower()
-          if "free" not in rights or "unrestricted" not in rights:
-              raise SystemExit("The WIS2 metadata does not declare free and unrestricted access")
+          if "free and unrestricted" not in rights:
+              raise SystemExit("WIS2 metadata does not declare free and unrestricted data access")
 
           data_links = [
               link for link in metadata.get("links", [])
               if link.get("rel") == "data"
-              and link.get("type") == "application/grib"
+              and "opendata.dwd.de/weather/wmc/icon-eps/data/grib" in link.get("href", "")
           ]
           if len(data_links) != 1:
-              raise SystemExit(f"Expected one GRIB data link in WIS2 metadata; found {len(data_links)}")
-          directory_url = data_links[0]["href"]
-          if not directory_url.endswith("/"):
-              directory_url += "/"
+              raise SystemExit(f"Expected one DWD ICON-EPS data directory link; found {len(data_links)}")
+          directory_url = data_links[0]["href"].rstrip("/") + "/"
 
           output = Path("output/wmo-wis2")
           output.mkdir(parents=True, exist_ok=True)
           (output / "wcmp2-record.json").write_text(
-              json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+              json.dumps(metadata, indent=2, ensure_ascii=False) + "\\n",
               encoding="utf-8",
           )
 
-          filename = "WRF_T2m.grb"
-          source_url = urljoin(directory_url, filename)
-          response = session.get(source_url, timeout=90)
-          response.raise_for_status()
-          payload = response.content
-          grib_path = output / filename
-          grib_path.write_bytes(payload)
-          response_details = {
-              "url": source_url,
-              "http_status": response.status_code,
-              "content_type": response.headers.get("Content-Type"),
-              "content_length_header": response.headers.get("Content-Length"),
-              "downloaded_bytes": len(payload),
-              "first_16_bytes_hex": payload[:16].hex(),
-              "last_16_bytes_hex": payload[-16:].hex(),
-              "edition_byte": payload[7] if len(payload) > 7 else None,
-          }
-          (output / "download-response.json").write_text(
-              json.dumps(response_details, indent=2) + "\\n", encoding="utf-8"
-          )
-          print(json.dumps(response_details, indent=2))
-          if len(payload) < 100_000:
-              raise SystemExit(f"Downloaded WIS2 GRIB file is unexpectedly small: {len(payload)} bytes")
-          if payload[:4] != b"GRIB" or payload[7] != 2:
-              edition = payload[7] if len(payload) > 7 else None
-              raise SystemExit(
-                  f"Downloaded WIS2 file is not a GRIB2 edition-2 message; "
-                  f"first_bytes={payload[:16].hex()} edition={edition}"
-              )
-          if b"7777" not in payload[-64:]:
-              raise SystemExit("Downloaded WIS2 file is missing the GRIB end marker near EOF")
+          listing_response = session.get(directory_url, timeout=30)
+          listing_response.raise_for_status()
+          candidates = sorted(set(re.findall(r'href=["\\'](fc_\\d{10}icgle_006\\.grib)["\\']', listing_response.text)))
+          if not candidates:
+              raise SystemExit("No ICON-EPS +006 GRIB files were found in the DWD directory listing")
+          filename = candidates[-1]
+          source_url = directory_url + filename
 
-          digest = hashlib.sha256(payload).hexdigest()
+          def read_prefix(max_bytes):
+              response = session.get(
+                  source_url,
+                  headers={"Range": f"bytes=0-{max_bytes - 1}"},
+                  stream=True,
+                  timeout=120,
+              )
+              response.raise_for_status()
+              chunks = bytearray()
+              try:
+                  for chunk in response.iter_content(chunk_size=1024 * 1024):
+                      if chunk:
+                          chunks.extend(chunk)
+                      if len(chunks) >= max_bytes:
+                          break
+              finally:
+                  response.close()
+              return bytes(chunks), {
+                  "http_status": response.status_code,
+                  "content_type": response.headers.get("Content-Type"),
+                  "content_range": response.headers.get("Content-Range"),
+                  "content_length_header": response.headers.get("Content-Length"),
+                  "prefix_bytes_read": len(chunks),
+              }
+
+          prefix, response_details = read_prefix(32 * 1024 * 1024)
+          grib_offset = prefix.find(b"GRIB")
+          if grib_offset < 0 or len(prefix) < grib_offset + 16:
+              raise SystemExit(f"No complete GRIB header found in DWD file prefix: {response_details}")
+          edition = prefix[grib_offset + 7]
+          if edition != 2:
+              raise SystemExit(f"DWD WIS2-linked file is not GRIB2; edition={edition}")
+
+          message_length = int.from_bytes(prefix[grib_offset + 8:grib_offset + 16], "big")
+          if message_length < 20:
+              raise SystemExit(f"Invalid GRIB2 message length in section 0: {message_length}")
+          if grib_offset + message_length > len(prefix):
+              prefix, response_details = read_prefix(64 * 1024 * 1024)
+              grib_offset = prefix.find(b"GRIB")
+              if grib_offset < 0 or len(prefix) < grib_offset + 16:
+                  raise SystemExit("GRIB2 header was not present in the larger DWD prefix")
+              edition = prefix[grib_offset + 7]
+              message_length = int.from_bytes(prefix[grib_offset + 8:grib_offset + 16], "big")
+          if edition != 2 or grib_offset + message_length > len(prefix):
+              raise SystemExit(
+                  f"Could not capture one complete GRIB2 message; edition={edition}, "
+                  f"message_length={message_length}, prefix_bytes={len(prefix)}"
+              )
+
+          message = prefix[grib_offset:grib_offset + message_length]
+          if message[-4:] != b"7777":
+              raise SystemExit("The extracted GRIB2 message does not end with section 8 marker 7777")
+
+          filename_out = "dwd-icon-eps-first-message.grib2"
+          grib_path = output / filename_out
+          grib_path.write_bytes(message)
+          digest = hashlib.sha256(message).hexdigest()
           (output / "SHA256SUMS.txt").write_text(
-              f"{digest}  {filename}\n", encoding="ascii"
+              f"{digest}  {filename_out}\\n", encoding="ascii"
+          )
+
+          response_details.update({
+              "source_url": source_url,
+              "selected_filename": filename,
+              "grib_offset_in_source_prefix": grib_offset,
+              "grib_edition": edition,
+              "grib_message_length": message_length,
+              "sha256_extracted_message": digest,
+          })
+          (output / "download-response.json").write_text(
+              json.dumps(response_details, indent=2) + "\\n",
+              encoding="utf-8",
           )
 
           inventory = []
-          finite_value_count = 0
           with grib_path.open("rb") as stream:
-              while True:
-                  handle = codes_grib_new_from_file(stream)
-                  if handle is None:
-                      break
-                  try:
-                      row = {"file": filename}
-                      for key in (
-                          "edition", "centre", "shortName", "name", "paramId",
-                          "typeOfLevel", "level", "units", "gridType",
-                          "dataDate", "dataTime", "stepType", "stepRange",
-                          "Ni", "Nj", "numberOfPoints",
-                      ):
-                          try:
-                              row[key] = codes_get(handle, key)
-                          except Exception:
-                              row[key] = None
-
-                      values = np.asarray(codes_get_values(handle), dtype=float)
-                      finite = int(np.isfinite(values).sum())
-                      if finite < 1:
-                          raise SystemExit(f"GRIB message has no finite decoded values: {row}")
-                      row["decoded_value_count"] = int(values.size)
-                      row["finite_value_count"] = finite
-                      row["minimum_value"] = float(np.nanmin(values))
-                      row["maximum_value"] = float(np.nanmax(values))
-                      finite_value_count += finite
-                      inventory.append(row)
-                  finally:
-                      codes_release(handle)
-
-          if not inventory:
-              raise SystemExit("ecCodes did not decode any GRIB messages")
-          if any(row["edition"] != 2 for row in inventory):
-              raise SystemExit("At least one decoded message is not GRIB edition 2")
-          temperature_fields = [
-              row for row in inventory
-              if row.get("shortName") in {"2t", "t2m"}
-              and row.get("typeOfLevel") == "heightAboveGround"
-              and row.get("level") == 2
-          ]
-          if not temperature_fields:
-              raise SystemExit(
-                  "The WRF_T2m file decoded, but no 2-metre temperature field "
-                  "at heightAboveGround level 2 was found"
-              )
+              handle = codes_grib_new_from_file(stream)
+              if handle is None:
+                  raise SystemExit("ecCodes could not decode the extracted DWD GRIB2 message")
+              try:
+                  row = {}
+                  for key in (
+                      "edition", "centre", "shortName", "name", "paramId",
+                      "typeOfLevel", "level", "units", "gridType",
+                      "dataDate", "dataTime", "stepType", "stepRange",
+                      "Ni", "Nj", "numberOfPoints",
+                  ):
+                      try:
+                          row[key] = codes_get(handle, key)
+                      except Exception:
+                          row[key] = None
+                  values = np.asarray(codes_get_values(handle), dtype=float)
+                  finite = int(np.isfinite(values).sum())
+                  if row.get("edition") != 2:
+                      raise SystemExit(f"ecCodes reports a non-GRIB2 message: {row}")
+                  if finite < 1:
+                      raise SystemExit(f"Decoded DWD message contains no finite values: {row}")
+                  row["decoded_value_count"] = int(values.size)
+                  row["finite_value_count"] = finite
+                  row["minimum_value"] = float(np.nanmin(values))
+                  row["maximum_value"] = float(np.nanmax(values))
+                  inventory.append(row)
+              finally:
+                  codes_release(handle)
 
           (output / "grib-inventory.json").write_text(
-              json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
+              json.dumps(inventory, indent=2) + "\\n", encoding="utf-8"
           )
           summary = {
               "source": "WMO WIS2 Global Discovery Catalogue",
               "wcmp2_record_id": record_id,
               "dataset_title": properties.get("title"),
-              "producer": "Cyprus Department of Meteorology",
-              "model": "WRF-ARW",
+              "producer": "Deutscher Wetterdienst (DWD)",
+              "model": "ICON-EPS",
               "data_policy": properties.get("wmo:dataPolicy"),
-              "file": filename,
+              "declared_formats": sorted(formats),
+              "source_file": filename,
               "source_url": source_url,
-              "size_bytes": len(payload),
+              "decoded_message_file": filename_out,
+              "decoded_message_bytes": len(message),
               "sha256": digest,
               "grib_edition": 2,
               "decoded_message_count": len(inventory),
-              "finite_decoded_values": finite_value_count,
-              "validated_2m_temperature_messages": len(temperature_fields),
-              "workflow": "real WIS2-linked data smoke test; not scientific forecast verification",
+              "finite_decoded_values": inventory[0]["finite_value_count"],
+              "field": inventory[0],
+              "workflow": "real WIS2-linked GRIB2 message smoke test; not scientific forecast verification",
           }
           (output / "validation-summary.json").write_text(
-              json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+              json.dumps(summary, indent=2) + "\\n", encoding="utf-8"
           )
           print(json.dumps(summary, indent=2))
           PY
 
-      - name: Upload WIS2 metadata, real GRIB2 and decode evidence
+      - name: Upload WIS2 metadata, decoded GRIB2 message and evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
