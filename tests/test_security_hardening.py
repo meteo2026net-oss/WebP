@@ -66,6 +66,14 @@ class PackageSecretScanTests(unittest.TestCase):
             )
             self.assertTrue(any("DSN containing a password" in item for item in scan_package(root)))
 
+    def test_environment_credential_directory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secret_dir = root / ".env"
+            secret_dir.mkdir()
+            (secret_dir / "settings").write_text("credential", encoding="utf-8")
+            self.assertTrue(any(".env" in item for item in scan_package(root)))
+
     def test_private_key_material_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
