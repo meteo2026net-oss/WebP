@@ -73,6 +73,41 @@ class PackageSecretScanTests(unittest.TestCase):
             self.assertTrue(any("private key material" in item for item in scan_package(root)))
 
 
+class PostgresTlsCaTests(unittest.TestCase):
+    def test_connection_probe_passes_explicit_ca_to_libpq(self):
+        from ecmwf_collector.connection_profiles import DatabaseProfile, test_database_connection
+
+        class FakeConnection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, statement):
+                self.statement = statement
+
+        captured = {}
+        driver = ModuleType("psycopg")
+        driver.connect = lambda **kwargs: (captured.update(kwargs) or FakeConnection())
+
+        class FakeSecrets:
+            def get_password(self, key):
+                return "vault-password"
+
+        with tempfile.TemporaryDirectory() as directory:
+            ca_file = Path(directory) / "root-ca.pem"
+            ca_file.write_text("test certificate", encoding="utf-8")
+            profile = DatabaseProfile.create(
+                "Verified PostgreSQL", "postgresql", host="db.example",
+                port=5432, database="weather", username="app",
+                ssl_mode="verify-full", ssl_ca=str(ca_file),
+            )
+            with patch.dict(sys.modules, {"psycopg": driver}):
+                ok, message = test_database_connection(profile, FakeSecrets())
+        self.assertTrue(ok, message)
+        self.assertEqual(captured["sslmode"], "verify-full")
+        self.assertEqual(captured["sslrootcert"], str(ca_file))
+
+
 class StartupDsnRedactionTests(unittest.TestCase):
     def tearDown(self):
         clear_secrets()
