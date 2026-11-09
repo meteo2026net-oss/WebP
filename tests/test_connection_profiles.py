@@ -304,7 +304,7 @@ class DatabaseProfileTests(unittest.TestCase):
             def execute(self, sql):
                 pass
             def fetchall(self):
-                return [("GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON weather.* TO 'app'@'%'",)]
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON weather.* TO 'app'@'%'",)]
 
         class Connection:
             def cursor(self):
