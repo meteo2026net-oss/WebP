@@ -262,7 +262,7 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
             connection = open_mysql_connection(profile, secrets, timeout=timeout)
             try:
                 from .database_drivers import assert_mysql_application_role
-                assert_mysql_application_role(connection)
+                assert_mysql_application_role(connection, profile.database)
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT 1")
                     cursor.fetchone()
