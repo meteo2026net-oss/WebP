@@ -164,6 +164,8 @@ class DatabaseProfileTests(unittest.TestCase):
                 pass
             def fetchone(self):
                 return (1,)
+            def fetchall(self):
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE ON weather.* TO 'app'@'%'",)]
 
         class FakeConnection:
             def cursor(self):
