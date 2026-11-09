@@ -46,7 +46,7 @@ def scan_package(root: Path) -> list[str]:
         is_public_proj_data = (
             path.suffix.lower() == ".db"
             and tuple(part.lower() for part in relative.parts[-4:])
-            == ("pyproj", "proj_dir", "share", "proj")
+            == ("pyproj", "proj_dir", "share", "proj", "proj.db")
         )
         if path.suffix.lower() in FORBIDDEN_SUFFIXES and not is_public_proj_data:
             findings.append(f"forbidden credential/database file type: {relative}")
@@ -60,7 +60,7 @@ def scan_package(root: Path) -> list[str]:
         # PE/DLL binaries can contain coincidental PEM marker byte sequences.
         # Inspect private-key headers in text-like files only; DSN scanning
         # above remains byte-based for every packaged file.
-        if b"\\x00" not in content and PRIVATE_KEY_HEADER.search(content):
+        if 0 not in content and PRIVATE_KEY_HEADER.search(content):
             findings.append(f"private key material: {relative}")
     return findings
 
