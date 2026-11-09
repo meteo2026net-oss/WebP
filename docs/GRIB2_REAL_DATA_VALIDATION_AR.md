@@ -104,3 +104,45 @@ PR: #71 (مفتوح / Draft؛ لم يتم الدمج).
 ### WMO
 
 لم أجد ضمن ملفات المشروع Workflow أو اختبار تنزيل GRIB2 فعلياً من مصدر WMO مستقل؛ الموجود حالياً اختبارا ECMWF وNOAA فقط. لذلك لا أدرج نتيجة WMO ناجحة أو بصمة منسوبة إليه.
+
+
+## تحديث حاسم على الرأس 1c4a18ba2eec5d48c0fb7ce00503e2e3848df2c0 — 2026-11-09
+
+هذا القسم أحدث من حالات NOAA/ECMWF السابقة أعلاه، ويصححها بالنسبة إلى الرأس الحالي فقط.
+
+### NOAA GEFS — اجتاز اختبار البيانات الحقيقية
+
+- Workflow: [42540998783](https://github.com/meteo2026net-oss/WebP/actions/runs/42540998783) — **success** على الرأس الحالي.
+- المصدر: NOAA/NCEP NOMADS، GEFS بدقة 0.50 درجة.
+- دورة التشغيل: 2026-11-08 00 UTC؛ التنبؤ +24 ساعة؛ وقت الصلاحية 2026-11-09 00:00 UTC.
+- الحقل: `TMAX` / ecCodes `tmax`، Maximum temperature، الوحدة K.
+- inventory الفعلي للعضوين c00 وp01: `paramId=3015`، `typeOfLevel=heightAboveGround`، `level=2`، `stepType=max`، `stepRange=18-24`، والشبكة `regular_ll`.
+- تم فك الحقل فعلياً من الملفين، وحساب mean وspread وmember_count على شبكة `361 × 720`.
+- عدد الخلايا الصالحة: 259,920 للمتوسط و259,920 للانتشار. قيمة `member_count` تساوي 2 في جميع الخلايا الـ259,920.
+- تحقق فحص الأرشيف محلياً: ZIP سليم بلا أخطاء CRC؛ كلا الملفين يبدأ بترويسة GRIB وإصدار 2 وينتهي بـ`7777`.
+- أحجام وبصمات SHA-256 للملفات:
+  - c00: 232,945 bytes — `704e8023de4636bb3bb754e9c3069b0f0f8106fca9185ae0d98a446d8e1d4c0f`
+  - p01: 234,031 bytes — `f99a5aebfb6c1fa9ba65676d1a8ad54180f8342fbec4279243c22880f6e5c9b7`
+- Artifact ID: `13640899062`؛ الحجم 1,554,461 bytes؛ SHA-256 للأرشيف `f1a275f0fd58c4ebbea2f76d6339f6dc13c88ebcb93c7ad97ebfb82831dba401`.
+- أُصلح مسار فك المستوى في decoder ليقرأ قيمة coordinate `heightAboveGround` عند غياب `GRIB_level` من attrs، وأضيف اختبار وحدة لهذا السلوك.
+- هذا smoke test يثبت تنزيل الحقل وفكّه وحساب إحصاءات العضوين المختارين؛ لا يمثل تحققاً علمياً من دقة التنبؤ ولا إحصاءات كامل أعضاء GEFS.
+
+### ECMWF — اجتاز على الرأس نفسه
+
+- Workflow: [42540998832](https://github.com/meteo2026net-oss/WebP/actions/runs/42540998832) — **success** على الرأس الحالي.
+- ecCodes فك 145 طبقة حقيقية للمتغير `msl` بوحدة Pa.
+- تم التحقق من قيم المصدر والإحداثيات ومخرجات PNG وNPZ؛ 65,160 خلية صالحة في كل طبقة.
+- Artifact ID: `13641710883`؛ الحجم 66,075,935 bytes؛ SHA-256 للأرشيف `8a7cd9b9f2906d3e05e6c92dbdaabac830e05b01779d925e111246a95b8ad9b2`.
+
+### اختبارات Python على الرأس نفسه
+
+- Workflow: [42541001600](https://github.com/meteo2026net-oss/WebP/actions/runs/42541001600) — **success**.
+- اجتاز 529 اختباراً في 19.415 ثانية، مع نجاح compilation وفحص JavaScript.
+- لا تعني هذه النتيجة أن اختبار Windows package أو قبول المستخدم على جهاز نظيف قد اكتمل.
+
+### حالة Windows وWMO والقبول
+
+- Windows desktop package على الرأس نفسه: [42541001604](https://github.com/meteo2026net-oss/WebP/actions/runs/42541001604) كان قيد التنفيذ عند آخر فحص؛ اجتازت compilation و529 اختباراً، وكان بناء مجلد PyInstaller جارياً. لا توجد بعد نتيجة نهائية أو Artifact ويندوز لهذا الرأس.
+- لا يوجد اختبار مصدر WMO مستقل في هذه النتائج؛ لا ننسب ملفات ECMWF أو NOAA إلى WMO.
+- PR #71 ما زال مفتوحاً وDraft وغير مدمج. لم يُعدّل `main`.
+- تبقى تجربة قبول على جهاز Windows نظيف، واختبار PostgreSQL فعلي اختياري على قاعدة بيانات تجريبية، خارج ما تثبته CI.
