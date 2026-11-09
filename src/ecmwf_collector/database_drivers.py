@@ -12,11 +12,11 @@ class DatabaseDriverError(RuntimeError):
 # Privileges that turn an application login into a server-level administrator
 # or grant access to server files / account management. Schema-scoped CRUD
 # grants remain valid for the explicitly selected application database.
-_ALLOWED_APPLICATION_PRIVILEGES = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+_ALLOWED_APPLICATION_PRIVILEGES = {"SELECT", "INSERT", "UPDATE", "DELETE", "CREATE"}
 
 
 def assert_mysql_application_role(connection, database: str) -> None:
-    """Require only CRUD grants scoped to the selected application database."""
+    """Require only CRUD plus approved catalog-table creation, scoped to the selected database."""
     with connection.cursor() as cursor:
         cursor.execute("SHOW GRANTS")
         grants = cursor.fetchall()
