@@ -214,6 +214,66 @@ class DatabaseProfileTests(unittest.TestCase):
         with self.assertRaises(DatabaseDriverError):
             assert_mysql_application_role(Connection())
 
+    def test_mysql_global_read_grant_is_rejected(self):
+        from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                pass
+            def fetchall(self):
+                return [("GRANT SELECT ON *.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        with self.assertRaises(DatabaseDriverError):
+            assert_mysql_application_role(Connection(), "weather")
+
+    def test_mysql_grant_outside_selected_database_is_rejected(self):
+        from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                pass
+            def fetchall(self):
+                return [("GRANT SELECT ON otherdb.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        with self.assertRaises(DatabaseDriverError):
+            assert_mysql_application_role(Connection(), "weather")
+
+    def test_mysql_schema_ddl_grant_is_rejected(self):
+        from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
+
+        class Cursor:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def execute(self, sql):
+                pass
+            def fetchall(self):
+                return [("GRANT SELECT, CREATE ON weather.* TO 'app'@'%'",)]
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        with self.assertRaises(DatabaseDriverError):
+            assert_mysql_application_role(Connection(), "weather")
+
     def test_mysql_schema_scoped_crud_grants_are_accepted(self):
         from ecmwf_collector.database_drivers import assert_mysql_application_role
 
