@@ -12,31 +12,48 @@ class DatabaseDriverError(RuntimeError):
 # Privileges that turn an application login into a server-level administrator
 # or grant access to server files / account management. Schema-scoped CRUD
 # grants remain valid for the explicitly selected application database.
-_FORBIDDEN_GLOBAL_PRIVILEGES = {
-    "ALL PRIVILEGES", "SUPER", "FILE", "PROCESS", "RELOAD", "SHUTDOWN",
-    "CREATE USER", "GRANT OPTION", "SYSTEM_USER", "SYSTEM_VARIABLES_ADMIN",
-    "CONNECTION_ADMIN", "ROLE_ADMIN", "BINLOG_ADMIN", "REPLICATION_SLAVE_ADMIN",
-    "REPLICATION_APPLIER", "PERSIST_RO_VARIABLES_ADMIN", "SET_USER_ID",
-}
+_ALLOWED_APPLICATION_PRIVILEGES = {"SELECT", "INSERT", "UPDATE", "DELETE"}
 
 
-def assert_mysql_application_role(connection) -> None:
-    """Reject global/admin grants before treating a MySQL login as an app role."""
+def assert_mysql_application_role(connection, database: str) -> None:
+    """Require only CRUD grants scoped to the selected application database."""
     with connection.cursor() as cursor:
         cursor.execute("SHOW GRANTS")
         grants = cursor.fetchall()
     if not grants:
         raise DatabaseDriverError("تعذّر التحقق من صلاحيات حساب MySQL/MariaDB.")
+
+    expected_database = database.replace("`", "").strip().lower()
+    if not expected_database:
+        raise DatabaseDriverError("اسم قاعدة البيانات المطلوبة للتحقق من الصلاحيات غير صالح.")
+
     for row in grants:
-        statement = str(row[0] if isinstance(row, (tuple, list)) else row).upper()
-        if " ON *.* " not in f" {statement} ":
+        statement = str(row[0] if isinstance(row, (tuple, list)) else row).strip().rstrip(";")
+        normalized = statement.upper().replace("`", "")
+        if not normalized.startswith("GRANT "):
+            raise DatabaseDriverError("تعذّر تفسير منح صلاحيات حساب MySQL/MariaDB.")
+        if " ON " not in normalized:
+            # Role memberships and proxy grants are not accepted for this
+            # dedicated application login. Plain USAGE is represented with ON *.*.
+            raise DatabaseDriverError("حساب MySQL/MariaDB مرتبط بدور أو امتياز غير مسموح.")
+        privilege_clause, scope_clause = normalized[6:].split(" ON ", 1)
+        if " TO " not in scope_clause:
+            raise DatabaseDriverError("تعذّر تفسير نطاق صلاحيات حساب MySQL/MariaDB.")
+        scope = scope_clause.split(" TO ", 1)[0].strip().lower()
+        privileges = {part.strip() for part in privilege_clause.split(",")}
+        if privileges == {"USAGE"} and scope == "*.*":
             continue
-        privilege_clause = statement.split(" ON *.* ", 1)[0]
-        for privilege in _FORBIDDEN_GLOBAL_PRIVILEGES:
-            if privilege in privilege_clause:
-                raise DatabaseDriverError(
-                    "حساب MySQL/MariaDB يمتلك امتيازاً عاماً أو إدارياً غير مناسب لحساب التطبيق."
-                )
+        if not privileges or not privileges.issubset(_ALLOWED_APPLICATION_PRIVILEGES):
+            raise DatabaseDriverError(
+                "حساب MySQL/MariaDB يمتلك صلاحيات تتجاوز CRUD المسموح لحساب التطبيق."
+            )
+        if scope == "*.*" or not (
+            scope == f"{expected_database}.*"
+            or scope.startswith(f"{expected_database}.")
+        ):
+            raise DatabaseDriverError(
+                "حساب MySQL/MariaDB يمتلك صلاحيات خارج قاعدة البيانات المحددة."
+            )
 
 
 def open_mysql_connection(profile, secrets, timeout: int = 5):
