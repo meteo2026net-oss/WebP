@@ -69,7 +69,7 @@ jobs:
           root = Path("output/noaa-gefs-real")
           root.mkdir(parents=True, exist_ok=True)
           run_date_text = os.environ.get("RUN_DATE", "").strip()
-          run_date = date.fromisoformat(run_date_text) if run_date_text else date.today()
+          run_date = date.fromisoformat(run_date_text) if run_date_text else (date.today() - timedelta(days=1))
           cycle = int(os.environ["CYCLE"])
           forecast_hour = int(os.environ["FORECAST_HOUR"])
           variable = os.environ["VARIABLE"]
