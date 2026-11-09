@@ -249,6 +249,7 @@ def test_database_connection(profile: DatabaseProfile, secrets, timeout: int = 5
                 password=password,
                 sslmode=profile.ssl_mode,
                 connect_timeout=timeout,
+                **({"sslrootcert": profile.ssl_ca} if profile.ssl_ca else {}),
             ) as connection:
                 connection.execute("SELECT 1")
             return True, "اتصال PostgreSQL سليم."
