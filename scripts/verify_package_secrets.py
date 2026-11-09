@@ -30,7 +30,6 @@ def scan_package(root: Path) -> list[str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
-        lowered_parts = [part.lower() for part in relative.parts]
         name = path.name.lower()
         if name in FORBIDDEN_NAMES or name.startswith(".env."):
             findings.append(f"forbidden credential/state file: {relative}")
