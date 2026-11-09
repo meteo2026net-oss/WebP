@@ -90,15 +90,33 @@ jobs:
           response = session.get(source_url, timeout=90)
           response.raise_for_status()
           payload = response.content
+          grib_path = output / filename
+          grib_path.write_bytes(payload)
+          response_details = {
+              "url": source_url,
+              "http_status": response.status_code,
+              "content_type": response.headers.get("Content-Type"),
+              "content_length_header": response.headers.get("Content-Length"),
+              "downloaded_bytes": len(payload),
+              "first_16_bytes_hex": payload[:16].hex(),
+              "last_16_bytes_hex": payload[-16:].hex(),
+              "edition_byte": payload[7] if len(payload) > 7 else None,
+          }
+          (output / "download-response.json").write_text(
+              json.dumps(response_details, indent=2) + "\\n", encoding="utf-8"
+          )
+          print(json.dumps(response_details, indent=2))
           if len(payload) < 100_000:
               raise SystemExit(f"Downloaded WIS2 GRIB file is unexpectedly small: {len(payload)} bytes")
           if payload[:4] != b"GRIB" or payload[7] != 2:
-              raise SystemExit("Downloaded WIS2 file does not have a GRIB2 edition-2 header")
+              edition = payload[7] if len(payload) > 7 else None
+              raise SystemExit(
+                  f"Downloaded WIS2 file is not a GRIB2 edition-2 message; "
+                  f"first_bytes={payload[:16].hex()} edition={edition}"
+              )
           if b"7777" not in payload[-64:]:
               raise SystemExit("Downloaded WIS2 file is missing the GRIB end marker near EOF")
 
-          grib_path = output / filename
-          grib_path.write_bytes(payload)
           digest = hashlib.sha256(payload).hexdigest()
           (output / "SHA256SUMS.txt").write_text(
               f"{digest}  {filename}\n", encoding="ascii"
