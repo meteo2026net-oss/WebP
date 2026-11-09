@@ -146,3 +146,34 @@ PR: #71 (مفتوح / Draft؛ لم يتم الدمج).
 - لا يوجد اختبار مصدر WMO مستقل في هذه النتائج؛ لا ننسب ملفات ECMWF أو NOAA إلى WMO.
 - PR #71 ما زال مفتوحاً وDraft وغير مدمج. لم يُعدّل `main`.
 - تبقى تجربة قبول على جهاز Windows نظيف، واختبار PostgreSQL فعلي اختياري على قاعدة بيانات تجريبية، خارج ما تثبته CI.
+
+
+## متابعة الرأس a98db397fc9034f40b71871f7c0de0408257e989 — 2026-11-09
+
+### إعادة التحقق من المصادر وPython
+
+- NOAA GEFS: [Workflow 42541365650](https://github.com/meteo2026net-oss/WebP/actions/runs/42541365650) — **success** على هذا الرأس. تم فحص Artifact ID `13641582025`؛ أرشيف ZIP سليم، وبصمات ملفات GRIB2 تطابق `SHA256SUMS.txt`، وملفات الإحصاءات تتضمن mean وspread وmember_count. العضوان c00 وp01، وmember_count=2 في 259,920 خلية.
+- SHA-256 لأرشيف NOAA: `294f581629536c213419a20964bf09635ca3001f2dfb6def9effa357c7dbba0a`.
+- ECMWF: [Workflow 42541365624](https://github.com/meteo2026net-oss/WebP/actions/runs/42541365624) — **success** على هذا الرأس؛ تم فك 145 طبقة msl والتحقق من قيم المصدر والإحداثيات وPNG وNPZ.
+- SHA-256 لأرشيف ECMWF: `9eba00648ad14ad2e55e4250bf063db47907fc78c0c43e133a343994c00fd037`.
+- Python: [Workflow 42541369721](https://github.com/meteo2026net-oss/WebP/actions/runs/42541369721) — **success**؛ 529 اختباراً، `Ran 529 tests in 17.215s`.
+
+### Windows portable package
+
+- [Workflow 42541369741](https://github.com/meteo2026net-oss/WebP/actions/runs/42541369741) على الرأس أعلاه. المحاولة الأولى أُلغيت قبل تنفيذ خطوات البناء، وأعيد تشغيل الـjob منفرداً (attempt 2).
+- عند تحديث هذا القسم كانت المحاولة الثانية في حالة `in_progress` عند خطوة تثبيت التطبيق وPyInstaller؛ لم تصل بعد إلى ترجمة المصادر أو الاختبارات أو PyInstaller أو preflight أو رفع Artifact.
+- لا يوجد Artifact Windows مثبت لهذه المحاولة، لذلك لا نعلن اكتمال الحزمة.
+- [قائمة القبول الميداني](WINDOWS_FINAL_ACCEPTANCE_AR.md) ما زالت تتطلب تجربة على جهاز Windows مستقل بعد توفر الحزمة.
+
+### WMO WIS2 — خطة تحقق مصدر مستقل، لا نتيجة نجاح
+
+- يوضح [دليل WMO WIS2 الرسمي](https://wmo-im.github.io/wis2-guide/guide/wis2-guide-APPROVED.html) أن اكتشاف مجموعات البيانات يتم عبر Global Discovery Catalogue، وأن سجلات WCMP2 تحتوي روابط قابلة للتنفيذ لتنزيل البيانات أو الوصول إلى API/الاشتراك.
+- يوضح [دليل WMO للعثور على البيانات وتنزيلها وفكها](https://etrp.wmo.int/pluginfile.php/98056/mod_page/content/14/finding-downloading-and-decoding-data.pdf) واجهات GDC الخاصة بـ DWD وCMA وECCC وآلية الوصول إلى البيانات.
+- خطة الاختبار المقترحة: اكتشاف سجل dataset من GDC، حفظ سجل metadata وروابطه وسياسة البيانات، اختيار رابط تنزيل canonical أو رابط data granule موثق، تنزيل ملف GRIB2 من عقدة WIS2، ثم التحقق باستخدام ecCodes من GRIB edition والرسائل والحقول والمستويات والأوقات والشبكة، وحساب SHA-256 قبل فك الحقل وحساب الإحصاءات.
+- لا يوجد حتى الآن سجل dataset محدد تم جلبه وفحصه، ولا ملف GRIB2 مستقل تم تنزيله عبر WIS2 في هذا التشغيل. لذلك تظل WMO **غير مختبرة عملياً**؛ ولا تُنسب نتائج NOAA أو ECMWF إلى WMO.
+
+### حالة المراجعة
+
+- PR #71 مفتوح وDraft وغير مدمج.
+- الرأس الحالي عند كتابة هذا القسم: `a98db397fc9034f40b71871f7c0de0408257e989`.
+- لم يتم تعديل `main`.
