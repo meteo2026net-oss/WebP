@@ -83,7 +83,7 @@ class PackageSecretScanTests(unittest.TestCase):
     def test_binary_pem_marker_does_not_create_false_positive(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "network.dll").write_bytes(b"\\x00MZ-----BEGIN PRIVATE KEY-----\\x00")
+            (root / "network.dll").write_bytes(bytes([0]) + b"MZ-----BEGIN PRIVATE KEY-----" + bytes([0]))
             self.assertEqual(scan_package(root), [])
 
     def test_bundled_proj_geodata_database_is_allowed(self):
