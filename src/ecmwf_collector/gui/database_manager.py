@@ -38,7 +38,7 @@ class _ProfileDialog(QDialog):
         self.port.setValue(profile.port if profile and profile.port else 5432)
         self.username = QLineEdit(profile.username if profile else "")
         self.ssl = QComboBox()
-        for value in ("prefer", "require", "verify-ca", "verify-full", "disable"):
+        for value in ("verify-full", "verify-ca", "require", "prefer", "disable"):
             self.ssl.addItem(value, value)
         self.ssl_ca = QLineEdit(profile.ssl_ca if profile else "")
         self.ssl_ca_browse = QPushButton("اختيار شهادة CA…")
@@ -69,7 +69,7 @@ class _ProfileDialog(QDialog):
         form.addRow("المنفذ", self.port)
         form.addRow("اسم المستخدم", self.username)
         form.addRow("SSL", self.ssl)
-        form.addRow("شهادة CA (لـ verify-ca/full)", ssl_ca_row)
+        form.addRow("شهادة CA (للتحقق من هوية الخادم)", ssl_ca_row)
         form.addRow("كلمة المرور", self.password)
         form.addRow("الحالة", self.enabled)
         self._last_backend = profile.backend if profile else "sqlite"
@@ -104,9 +104,9 @@ class _ProfileDialog(QDialog):
             widget.setEnabled(sqlite)
         for widget in (self.database, self.host, self.port, self.username, self.ssl, self.password):
             widget.setEnabled(not sqlite)
-        mysql_backend = self.backend.currentData() in {"mysql", "mariadb"}
-        self.ssl_ca.setEnabled(mysql_backend)
-        self.ssl_ca_browse.setEnabled(mysql_backend)
+        server_backend = not sqlite
+        self.ssl_ca.setEnabled(server_backend)
+        self.ssl_ca_browse.setEnabled(server_backend)
 
     def build_profile(self) -> tuple[DatabaseProfile, str | None]:
         backend = self.backend.currentData()
@@ -117,7 +117,7 @@ class _ProfileDialog(QDialog):
             port=self.port.value() if backend != "sqlite" else None,
             username=self.username.text().strip() if backend != "sqlite" else "",
             ssl_mode=self.ssl.currentData(),
-            ssl_ca=self.ssl_ca.text().strip() if backend in {"mysql", "mariadb"} else "",
+            ssl_ca=self.ssl_ca.text().strip() if backend != "sqlite" else "",
             sqlite_path=self.sqlite_path.text().strip() if backend == "sqlite" else "",
             enabled=self.enabled.currentData(),
         ) if self.profile is None else DatabaseProfile(
