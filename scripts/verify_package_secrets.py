@@ -45,7 +45,7 @@ def scan_package(root: Path) -> list[str]:
         # data, not an application credential/state database.
         is_public_proj_data = (
             path.suffix.lower() == ".db"
-            and tuple(part.lower() for part in relative.parts[-4:])
+            and tuple(part.lower() for part in relative.parts[-5:])
             == ("pyproj", "proj_dir", "share", "proj", "proj.db")
         )
         if path.suffix.lower() in FORBIDDEN_SUFFIXES and not is_public_proj_data:
