@@ -25,7 +25,7 @@ on:
       variable:
         description: "NOMADS variable"
         required: true
-        default: "TMP"
+        default: "TMAX"
         type: choice
         options: ["TMP", "UGRD", "VGRD"]
 
@@ -55,7 +55,7 @@ jobs:
           RUN_DATE: ${{ inputs.run_date || '' }}
           CYCLE: ${{ inputs.cycle || '00' }}
           FORECAST_HOUR: ${{ inputs.forecast_hour || '24' }}
-          VARIABLE: ${{ inputs.variable || 'TMP' }}
+          VARIABLE: ${{ inputs.variable || 'TMAX' }}
         run: |
           python - <<'PY'
           import json
@@ -90,8 +90,38 @@ jobs:
               downloaded.append(str(grib_path))
               print(f"Downloaded {member}: {grib_path.stat().st_size:,} bytes; sidecar={sidecar_path.name}")
 
+          # NOMADS returned GRIB parameterNumber=4 (NCEP TMAX)
+          # for the prior TMP request. Inventory actual fields before decoding.
+          from eccodes import codes_grib_new_from_file, codes_get, codes_release
+          inventory = []
+          for filename in downloaded:
+              with open(filename, "rb") as stream:
+                  while True:
+                      handle = codes_grib_new_from_file(stream)
+                      if handle is None:
+                          break
+                      row = {"file": Path(filename).name}
+                      for key in (
+                          "centre", "shortName", "name", "paramId",
+                          "discipline", "parameterCategory", "parameterNumber",
+                          "typeOfLevel", "level", "stepType", "stepRange",
+                          "number", "perturbationNumber", "gridType",
+                      ):
+                          try:
+                              row[key] = codes_get(handle, key)
+                          except Exception:
+                              row[key] = None
+                      inventory.append(row)
+                      codes_release(handle)
+          (root / "grib-inventory.json").write_text(
+              json.dumps(inventory, indent=2, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print("GRIB message inventory:")
+          print(json.dumps(inventory, indent=2, default=str))
+
           mapping = {
-              ("TMP", "2_m_above_ground"): ("2t", "heightAboveGround", 2),
+              ("TMAX", "2_m_above_ground"): ("tmax", "heightAboveGround", 2),
               ("UGRD", "10_m_above_ground"): ("10u", "heightAboveGround", 10),
               ("VGRD", "10_m_above_ground"): ("10v", "heightAboveGround", 10),
           }
