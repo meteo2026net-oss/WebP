@@ -82,6 +82,8 @@ class DatabaseHealthTests(unittest.TestCase):
                 return False
             def execute(self, sql, params=None):
                 self.statements.append(sql.strip().upper())
+            def fetchall(self):
+                return [("GRANT SELECT, INSERT, UPDATE, DELETE ON weather.* TO 'app'@'%'",)]
             def fetchone(self):
                 return self.rows.pop(0)
 
