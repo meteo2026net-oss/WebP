@@ -50,6 +50,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weather_test
+      POSTGRES_STATE_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/webp_state_test
       ASSET_PG_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_source?sslmode=disable
       ASSET_PG_TARGET_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_target?sslmode=disable
       ASSET_MYSQL_SOURCE_URL: mysql://root:mysql@127.0.0.1:3306/webp_asset_source
@@ -73,6 +74,7 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_source"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_asset_target"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_state_test"
           mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
           mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
