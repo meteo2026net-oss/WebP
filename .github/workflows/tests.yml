@@ -53,10 +53,10 @@ jobs:
       POSTGRES_STATE_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/webp_state_test
       ASSET_PG_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_source?sslmode=disable
       ASSET_PG_TARGET_URL: postgresql://postgres:postgres@localhost:5432/webp_asset_target?sslmode=disable
-      ASSET_MYSQL_SOURCE_URL: mysql://root:mysql@127.0.0.1:3306/webp_asset_source
-      ASSET_MYSQL_TARGET_URL: mysql://root:mysql@127.0.0.1:3306/webp_asset_target
-      ASSET_MARIADB_SOURCE_URL: mysql://root:mariadb@127.0.0.1:3307/webp_asset_source
-      ASSET_MARIADB_TARGET_URL: mysql://root:mariadb@127.0.0.1:3307/webp_asset_target
+      ASSET_MYSQL_SOURCE_URL: mysql://webp_app:webp_app_password@127.0.0.1:3306/webp_asset_source
+      ASSET_MYSQL_TARGET_URL: mysql://webp_app:webp_app_password@127.0.0.1:3306/webp_asset_target
+      ASSET_MARIADB_SOURCE_URL: mysql://webp_app:webp_app_password@127.0.0.1:3307/webp_asset_source
+      ASSET_MARIADB_TARGET_URL: mysql://webp_app:webp_app_password@127.0.0.1:3307/webp_asset_target
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -77,6 +77,8 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_state_test"
           mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
           mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
+          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE USER IF NOT EXISTS 'webp_app'@'%' IDENTIFIED BY 'webp_app_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_app'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_app'@'%';"
+          mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE USER IF NOT EXISTS 'webp_app'@'%' IDENTIFIED BY 'webp_app_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_app'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_app'@'%';"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/weather_platform_schema.sql
       - name: Compile Python sources
