@@ -186,6 +186,13 @@ class NoaaGefsTests(unittest.TestCase):
                 )
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
+    def test_accepts_tmax_as_a_gefs_variable(self):
+        request = self.request(variables=("TMAX",), levels=("2_m_above_ground",))
+        request.validate()
+        url = build_gefs_url(request)
+        self.assertIn("var_TMAX=on", url)
+        self.assertIn("lev_2_m_above_ground=on", url)
+
     def test_rejects_invalid_variables_and_levels(self):
         with self.assertRaises(NoaaGefsError):
             build_gefs_url(self.request(variables=("TMP&x",)))
