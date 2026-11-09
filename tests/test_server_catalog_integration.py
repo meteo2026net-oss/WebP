@@ -204,9 +204,10 @@ class ServerCatalogIntegrationTests(unittest.TestCase):
                 source_uri="https://example.invalid/tcp-drop.grib2",
                 validation_status="framing_checked", metadata_json='{"ci":true,"tcp_drop":true}',
             )
-            source_catalog.register_asset(
+            registered = source_catalog.register_asset(
                 asset, replica_profile_ids=(target.profile_id,)
             )
+            asset_key = registered["asset_key"]
             sync = AssetOutboxSynchronizer(
                 source.profile_id, store, secrets,
                 approved_target_profile_ids=(target.profile_id,),
@@ -232,9 +233,7 @@ class ServerCatalogIntegrationTests(unittest.TestCase):
             self.assertTrue(dropped["once"], "the TCP proxy did not inject the disconnect")
             self.assertEqual(first["failed"], 1)
             self.assertEqual(
-                target_catalog.load_asset_variants(
-                    source_catalog.pending_outbox()[0]["asset_key"]
-                )[0].sha256,
+                target_catalog.load_asset_variants(asset_key)[0].sha256,
                 asset.sha256,
             )
 
@@ -243,14 +242,7 @@ class ServerCatalogIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 source_catalog.pending_outbox(target_profile_id=target.profile_id), []
             )
-            self.assertEqual(
-                len(target_catalog.load_asset_variants(
-                    source_catalog.load_asset_variants(
-                        source_catalog.pending_outbox(limit=1)[0]["asset_key"]
-                    )[0].sha256
-                )),
-                1,
-            )
+            self.assertEqual(len(target_catalog.load_asset_variants(asset_key)), 1)
 
 
 if __name__ == "__main__":
