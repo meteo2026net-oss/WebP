@@ -83,7 +83,7 @@ jobs:
 
           listing_response = session.get(directory_url, timeout=30)
           listing_response.raise_for_status()
-          candidates = sorted(set(re.findall(r'href=["\\'](fc_\\d{10}icgle_006\\.grib)["\\']', listing_response.text)))
+          candidates = sorted(set(re.findall(r'href="(fc_\d{10}icgle_006\.grib)"', listing_response.text)))
           if not candidates:
               raise SystemExit("No ICON-EPS +006 GRIB files were found in the DWD directory listing")
           filename = candidates[-1]
