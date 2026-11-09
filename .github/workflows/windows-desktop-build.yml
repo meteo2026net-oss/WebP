@@ -90,9 +90,23 @@ jobs:
               }
             }
           $lines | Set-Content -LiteralPath $manifest -Encoding ascii
-      - name: Run packaged Windows acceptance preflight
+      - name: Run portable acceptance from a path containing spaces
         shell: pwsh
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File "dist/ECMWFWebP/Verify-ECMWFWebP.ps1" -StartupSeconds 12 -MapTimeoutSeconds 30
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP "ECMWF WebP Portable Acceptance"
+          if (Test-Path -LiteralPath $testRoot) {
+            Remove-Item -LiteralPath $testRoot -Recurse -Force
+          }
+          [void](New-Item -ItemType Directory -Path $testRoot -Force)
+          Copy-Item -Path "dist/ECMWFWebP/*" -Destination $testRoot -Recurse -Force
+          $verifyScript = Join-Path $testRoot "Verify-ECMWFWebP.ps1"
+          if (-not (Test-Path -LiteralPath $verifyScript -PathType Leaf)) {
+            throw "The portable acceptance script was not copied to the spaced test path."
+          }
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File $verifyScript -StartupSeconds 12 -MapTimeoutSeconds 30
+          if ($LASTEXITCODE -ne 0) {
+            throw "Portable acceptance failed when launched from a directory containing spaces."
+          }
       - name: Verify package manifest coverage and hashes
         shell: pwsh
         run: |
