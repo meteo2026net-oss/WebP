@@ -41,6 +41,8 @@ class NoaaGefsTests(unittest.TestCase):
         self.assertIn("var_TMP=on", url)
         self.assertIn("lev_10_m_above_ground=on", url)
         self.assertIn("%2Fgefs.20261106%2F12%2Fatmos%2Fpgrb2ap5", url)
+        self.assertNotIn("subregion=", url)
+        self.assertNotIn("toplat=", url)
 
     def test_download_writes_member_provenance_and_checksum(self):
         payload = b"GRIB" + b"x" * 128 + b"7777"
