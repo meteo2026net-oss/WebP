@@ -80,6 +80,20 @@ class PackageSecretScanTests(unittest.TestCase):
             (root / "material.bin").write_bytes(b"-----BEGIN PRIVATE KEY-----")
             self.assertTrue(any("private key material" in item for item in scan_package(root)))
 
+    def test_binary_pem_marker_does_not_create_false_positive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "network.dll").write_bytes(b"\\x00MZ-----BEGIN PRIVATE KEY-----\\x00")
+            self.assertEqual(scan_package(root), [])
+
+    def test_bundled_proj_geodata_database_is_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "_internal" / "pyproj" / "proj_dir" / "share" / "proj"
+            data.mkdir(parents=True)
+            (data / "proj.db").write_bytes(b"public coordinate reference data")
+            self.assertEqual(scan_package(root), [])
+
 
 class PostgresTlsCaTests(unittest.TestCase):
     def test_connection_probe_passes_explicit_ca_to_libpq(self):
