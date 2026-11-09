@@ -69,6 +69,23 @@
 
 يُعد الإصدار مقبولاً ميدانياً بعد نجاح الأقسام المناسبة أعلاه على جهاز Windows مستقل، مع نجاح اتصال ECMWF الحقيقي وتجربة PostgreSQL على قاعدة اختبار منفصلة عند تفعيل هذا الخيار. نجاح CI يثبت البناء والاختبارات الآلية وتشغيل EXE وخادم الخرائط على runner، لكنه لا يثبت صلاحية بيانات اعتماد المستخدم أو الوصول إلى خادم ECMWF أو إعداد PostgreSQL على جهازه.
 
+## أحدث حزمة تم التحقق منها — 9 نوفمبر 2026
+
+- Commit: `bf5c1e0fc0be68d61d18300dc881e14bc5bea14c`.
+- Windows build: [Run 42543301479](https://github.com/meteo2026net-oss/WebP/actions/runs/42543301479) — نجاح كامل.
+- اجتاز اختبار القبول المحمول من مسار يحتوي مسافات: `ECMWF WebP Portable Acceptance`.
+- سجل فحص التشغيل: Windows x64؛ وجود EXE وSTART.bat وmanifest؛ تحقق 3,979 بصمة؛ مجلد بيانات المستخدم قابل للكتابة؛ بقيت الواجهة تعمل 12 ثانية؛ واستجاب خادم الخرائط المحلي لملفات HTML/CSS/JS. اجتاز فحص خصوصية بيانات الاعتماد.
+- فحص ZIP مستقل: 3,980 ملفاً، وفحص CRC بلا أخطاء. غطى `SHA256SUMS.txt` كل الملفات الـ3,979 الأخرى، دون ملفات ناقصة أو زائدة أو اختلافات.
+- EXE: ترويسة PE صحيحة، المعمارية AMD64/x64 (`0x8664`)، الحجم 24,279,938 بايت.
+- Artifact: `ECMWFWebP-Windows-x64`, ID `13642223167`, size `157084555` bytes, ZIP SHA-256 `82248d83c2993c60e02b3f9836e6666007f96c9c0fa19b8d4a88f28fd2acf166`.
+- Python CI: [Run 42543301505](https://github.com/meteo2026net-oss/WebP/actions/runs/42543301505) — نجاح على الرأس نفسه.
+- NOAA GEFS: [Run 42543296708](https://github.com/meteo2026net-oss/WebP/actions/runs/42543296708) — نجاح على الرأس نفسه.
+- ECMWF GRIB2: [Run 42543296710](https://github.com/meteo2026net-oss/WebP/actions/runs/42543296710) — نجاح على الرأس نفسه.
+- WIS2 DWD ICON-EPS GRIB2: [Run 42543301451](https://github.com/meteo2026net-oss/WebP/actions/runs/42543301451) — نجاح على الرأس نفسه؛ التحقق يخص رسالة GRIB2 كاملة واحدة مستخرجة من بداية الملف، وليس فك الملف الكامل.
+- [تنزيل artifact من تشغيل Windows](https://github.com/meteo2026net-oss/WebP/actions/runs/42543301479/artifacts/13642223167).
+
+هذا تحقق آلي من الحزمة على GitHub-hosted Windows runner، وليس اختبار تثبيت ميداني على جهاز مستقل. لا يزال اختبار جهاز Windows نظيف مستقل، وتجربة PostgreSQL حية، واختبار اتصال ECMWF باستخدام بيانات اعتماد المستخدم خارج CI غير مثبتة. PR #71 ما زال Draft ولم يُدمج.
+
 ## أحدث حزمة تم التحقق منها — 7 نوفمبر 2026
 
 - Commit: `67e677a79ce5da6063960e811b99af1b1b308c44`.
