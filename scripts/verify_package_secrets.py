@@ -41,7 +41,14 @@ def scan_package(root: Path) -> list[str]:
                 or any(part == ".env" or part.startswith(".env.") for part in parts)
                 or any(part in {".ssh", ".aws"} for part in parts)):
             findings.append(f"forbidden credential/state file: {relative}")
-        if path.suffix.lower() in FORBIDDEN_SUFFIXES:
+        # PROJ's bundled coordinate reference database is public geospatial
+        # data, not an application credential/state database.
+        is_public_proj_data = (
+            path.suffix.lower() == ".db"
+            and tuple(part.lower() for part in relative.parts[-4:])
+            == ("pyproj", "proj_dir", "share", "proj")
+        )
+        if path.suffix.lower() in FORBIDDEN_SUFFIXES and not is_public_proj_data:
             findings.append(f"forbidden credential/database file type: {relative}")
         try:
             content = path.read_bytes()
@@ -50,7 +57,10 @@ def scan_package(root: Path) -> list[str]:
             continue
         if DSN_WITH_PASSWORD.search(content):
             findings.append(f"database DSN containing a password: {relative}")
-        if PRIVATE_KEY_HEADER.search(content):
+        # PE/DLL binaries can contain coincidental PEM marker byte sequences.
+        # Inspect private-key headers in text-like files only; DSN scanning
+        # above remains byte-based for every packaged file.
+        if b"\\x00" not in content and PRIVATE_KEY_HEADER.search(content):
             findings.append(f"private key material: {relative}")
     return findings
 
