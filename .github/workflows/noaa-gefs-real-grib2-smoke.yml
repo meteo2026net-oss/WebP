@@ -27,7 +27,7 @@ on:
         required: true
         default: "TMAX"
         type: choice
-        options: ["TMP", "UGRD", "VGRD"]
+        options: ["TMP", "TMAX", "UGRD", "VGRD"]
 
 permissions:
   contents: read
@@ -73,7 +73,7 @@ jobs:
           cycle = int(os.environ["CYCLE"])
           forecast_hour = int(os.environ["FORECAST_HOUR"])
           variable = os.environ["VARIABLE"]
-          level_name = "2_m_above_ground" if variable == "TMP" else "10_m_above_ground"
+          level_name = "2_m_above_ground" if variable in {"TMP", "TMAX"} else "10_m_above_ground"
           request = GefsRequest(
               run_date=run_date, cycle=cycle, forecast_hour=forecast_hour,
               member="c00", variables=(variable,), levels=(level_name,),
