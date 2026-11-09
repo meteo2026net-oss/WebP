@@ -15,7 +15,7 @@ from ecmwf_collector.secrets_store import SecretStore
 from ecmwf_collector.state_backend import (
     EXIT, REMOVE_SAVED_AND_USE_SQLITE, SQLITE_ONCE, open_state_store,
 )
-from ecmwf_collector.logging_setup import redact
+from ecmwf_collector.logging_setup import redact, register_secret
 from ecmwf_collector.startup_messages import postgres_recovery_details
 
 
@@ -24,7 +24,10 @@ def _select_postgres_dsn(secrets, *, preflight_sqlite: bool = False, environ=Non
     if preflight_sqlite:
         return None
     source = os.environ if environ is None else environ
-    return source.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
+    dsn = source.get("ECMWF_POSTGRES_DSN", "").strip() or secrets.get_postgres_dsn()
+    # Register before any connection attempt so driver exceptions cannot leak credentials.
+    register_secret(dsn)
+    return dsn
 
 
 def main() -> int:
