@@ -247,7 +247,7 @@ class FileAssetCatalog:
 
     def initialize_schema(self) -> None:
         """Explicit opt-in schema creation; never called by constructor or download flow."""
-        connection, dialect = self._connect()
+        connection, dialect = self._connect(require_schema_create=True)
         try:
             cursor = connection.cursor()
             if dialect == "mysql":
