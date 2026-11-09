@@ -26,6 +26,7 @@ jobs:
           --health-retries 10
       mysql:
         image: mysql:8.4
+        command: ["--mysql-native-password=ON"]
         env:
           MYSQL_ROOT_PASSWORD: mysql
           MYSQL_DATABASE: webp_asset_source
@@ -77,8 +78,8 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE webp_state_test"
           mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
           mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE DATABASE IF NOT EXISTS webp_asset_target CHARACTER SET utf8mb4"
-          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
-          mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
+          mysql -h 127.0.0.1 -uroot -pmysql -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
+          mysql -h 127.0.0.1 -P 3307 -uroot -pmariadb -e "CREATE USER IF NOT EXISTS 'webp_source'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_source_password'; CREATE USER IF NOT EXISTS 'webp_target'@'%' IDENTIFIED WITH mysql_native_password BY 'webp_target_password'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_source.* TO 'webp_source'@'%'; GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES ON webp_asset_target.* TO 'webp_target'@'%';"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/weather_platform_schema.sql
       - name: Compile Python sources
