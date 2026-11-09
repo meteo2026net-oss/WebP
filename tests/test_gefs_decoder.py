@@ -47,6 +47,17 @@ class GefsDecoderTests(unittest.TestCase):
         self.assertEqual(result.valid_time, "2026-11-08T00:00:00Z")
         self.assertTrue(dataset.closed)
 
+    def test_matches_level_from_cfgrib_dataset_coordinate_when_attribute_absent(self):
+        dataset = fake_field()
+        dataset.data_vars["field"].attrs.pop("GRIB_level")
+        dataset.coords["heightAboveGround"] = FakeValue(2.0)
+        with patch("ecmwf_collector.gefs_decoder._open_cfgrib_datasets", return_value=[dataset]):
+            result = decode_gefs_grib_field(
+                "member.grib2", short_name="t", type_of_level="heightAboveGround", level=2
+            )
+        self.assertEqual(result.units, "K")
+        self.assertTrue(dataset.closed)
+
     def test_rejects_extra_non_horizontal_dimensions(self):
         dataset = fake_field()
         dataset.data_vars["field"].values = np.zeros((1, 2, 2))
