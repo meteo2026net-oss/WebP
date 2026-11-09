@@ -9,7 +9,7 @@ on:
       run_date:
         description: "GEFS initialization date in UTC (YYYY-MM-DD)"
         required: true
-        default: "2026-11-07"
+        default: "2026-11-08"
         type: string
       cycle:
         description: "Initialization cycle in UTC"
@@ -69,7 +69,7 @@ jobs:
           root = Path("output/noaa-gefs-real")
           root.mkdir(parents=True, exist_ok=True)
           run_date_text = os.environ.get("RUN_DATE", "").strip()
-          run_date = date.fromisoformat(run_date_text) if run_date_text else (date.today() - timedelta(days=1))
+          run_date = date.fromisoformat(run_date_text) if run_date_text else date.today()
           cycle = int(os.environ["CYCLE"])
           forecast_hour = int(os.environ["FORECAST_HOUR"])
           variable = os.environ["VARIABLE"]
