@@ -212,7 +212,7 @@ class DatabaseProfileTests(unittest.TestCase):
                 return Cursor()
 
         with self.assertRaises(DatabaseDriverError):
-            assert_mysql_application_role(Connection())
+            assert_mysql_application_role(Connection(), "weather")
 
     def test_mysql_global_read_grant_is_rejected(self):
         from ecmwf_collector.database_drivers import DatabaseDriverError, assert_mysql_application_role
@@ -291,7 +291,7 @@ class DatabaseProfileTests(unittest.TestCase):
             def cursor(self):
                 return Cursor()
 
-        assert_mysql_application_role(Connection())
+        assert_mysql_application_role(Connection(), "weather")
 
     def test_mysql_scoped_create_for_approved_catalog_is_accepted(self):
         from ecmwf_collector.database_drivers import assert_mysql_application_role
