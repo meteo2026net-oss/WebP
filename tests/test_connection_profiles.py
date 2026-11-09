@@ -95,7 +95,7 @@ class DatabaseProfileTests(unittest.TestCase):
     def test_mysql_connection_fails_closed_without_vault_password(self):
         profile = DatabaseProfile.create(
             "MySQL", "mysql", host="localhost", port=3306,
-            database="weather", username="app",
+            database="weather", username="app", ssl_mode="prefer",
         )
         ok, message = test_database_connection(profile, secrets=None)
         self.assertFalse(ok)
