@@ -193,7 +193,7 @@ class FileAssetCatalog:
         self.timeout = timeout
         profile.validate()
 
-    def _connect(self):
+    def _connect(self, *, require_schema_create: bool = False):
         if not self.profile.enabled:
             raise FileAssetError("اتصال قاعدة البيانات معطّل.")
         if self.profile.backend == "sqlite":
@@ -205,6 +205,7 @@ class FileAssetCatalog:
         if self.profile.backend == "postgresql":
             try:
                 import psycopg
+                from .postgres_security import assert_postgres_application_role
             except ImportError as exc:
                 raise FileAssetError("موصل PostgreSQL psycopg غير مثبت.") from exc
             password = self.secrets.get_password(self.profile.credential_key) if self.secrets else None
@@ -218,7 +219,20 @@ class FileAssetCatalog:
             }
             if self.profile.ssl_ca:
                 options["sslrootcert"] = self.profile.ssl_ca
-            return psycopg.connect(**options), "postgresql"
+            connection = psycopg.connect(**options)
+            try:
+                assert_postgres_application_role(
+                    connection,
+                    schema="public",
+                    tables=("webp_file_assets", "webp_file_asset_sources", "webp_asset_outbox"),
+                    require_schema_create=require_schema_create,
+                )
+            except Exception as exc:
+                connection.close()
+                if isinstance(exc, FileAssetError):
+                    raise
+                raise FileAssetError(str(exc)) from exc
+            return connection, "postgresql"
         if self.profile.backend in {"mysql", "mariadb"}:
             from .database_drivers import open_mysql_connection, assert_mysql_application_role
             connection = open_mysql_connection(self.profile, self.secrets, timeout=self.timeout)
