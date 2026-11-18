@@ -70,3 +70,52 @@ jobs:
           path: output/ecmwf-open-data-live/
           if-no-files-found: warn
           retention-days: 14
+  windows-gui-smoke:
+    if: github.event_name == 'pull_request' && github.head_ref == 'integration/ecmwf-open-data-minimal'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install desktop application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Start the Qt desktop UI and verify ECMWF controls
+        env:
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'PY'
+          import tempfile
+          from pathlib import Path
+          from PySide6.QtWidgets import QApplication
+          from ecmwf_collector.config import AppConfig
+          from ecmwf_collector.state import StateStore
+          from ecmwf_collector.gui.main_window import MainWindow
+
+          class NoSecrets:
+              available = False
+              def get_password(self, _username):
+                  return None
+
+          app = QApplication([])
+          with tempfile.TemporaryDirectory() as tmp:
+              root = Path(tmp)
+              config = AppConfig(download_root=str(root / "downloads"))
+              config.validate()
+              state = StateStore(root / "state.db")
+              window = MainWindow(config, root / "settings.json", NoSecrets(), state)
+              assert window.ecmwf_model.count() == 3
+              assert window.ecmwf_model.itemData(0) == "ifs"
+              assert window.ecmwf_model.itemData(1) == "aifs-single"
+              assert window.ecmwf_model.itemData(2) == "aifs-ens"
+              assert window.ecmwf_resolution.currentData() == "0p25"
+              assert window.ecmwf_step.value() == 24
+              assert window.ecmwf_step_end.value() == 24
+              window.close()
+              state.close()
+          print("Windows Qt UI startup and ECMWF controls: OK")
+          PY
