@@ -13,7 +13,7 @@ def available_forecast_steps(model: str, time: int) -> list[int]:
     """Return the published forecast steps for a model and UTC cycle."""
     if time not in (0, 6, 12, 18):
         raise ValueError("دورة ECMWF يجب أن تكون 00 أو 06 أو 12 أو 18 UTC.")
-    if model == "aifs-single":
+    if model in ("aifs-single", "aifs-ens"):
         return list(range(0, 361, 6))
     if model != "ifs":
         raise ValueError("النموذج غير مدعوم.")
@@ -68,12 +68,20 @@ def retrieve_open_data(
         raise ValueError("يجب تحديد خطوة تنبؤ واحدة على الأقل.")
     for requested_step in requested_steps:
         validate_forecast_step(model, int(request.get("time", 0)), int(requested_step))
-    if model == "aifs-single":
+    if model in ("aifs-single", "aifs-ens"):
         if resolution != "0p25":
-            raise ValueError("AIFS Single متاح بدقة 0.25° فقط.")
-        request.setdefault("stream", "oper")
+            raise ValueError("نماذج AIFS متاحة بدقة 0.25° فقط.")
+        if model == "aifs-single":
+            request.setdefault("stream", "oper")
+            request.setdefault("type", "fc")
+        else:
+            request.setdefault("stream", "enfo")
+            request.setdefault("type", "pf")
+            number = request.get("number")
+            if request["type"] != "pf" or not isinstance(number, int) or not 1 <= number <= 50:
+                raise ValueError("AIFS Ensemble يتطلب اختيار عضو واحد من 1 إلى 50 ونوع pf.")
     elif model != "ifs":
-        raise ValueError("هذا الموصل يدعم حالياً IFS وAIFS Single فقط؛ دعم AIFS Ensemble يحتاج نوع طلب منفصل.")
+        raise ValueError("النموذج غير مدعوم.")
     if client_factory is None:
         try:
             from ecmwf.opendata import Client
@@ -156,7 +164,7 @@ def main():
     parser.add_argument("--step", type=int, required=True)
     parser.add_argument("--param", nargs="+", required=True)
     parser.add_argument("--type", default="fc", choices=("fc", "pf", "cf", "em", "es"))
-    parser.add_argument("--model", default="ifs", choices=("ifs", "aifs-single"))
+    parser.add_argument("--model", default="ifs", choices=("ifs", "aifs-single", "aifs-ens"))
     parser.add_argument("--resolution", default="0p25", choices=("0p25", "0p1"))
     parser.add_argument("--source", default="ecmwf", choices=("ecmwf", "aws", "azure", "google"))
     parser.add_argument("--output", type=Path, required=True)
@@ -169,6 +177,10 @@ def main():
     }
     if args.date:
         request["date"] = args.date
+    if args.model == "aifs-ens":
+        request.update({"stream": "enfo", "type": "pf", "number": 1})
+    elif args.model == "aifs-single":
+        request["stream"] = "oper"
     print(json.dumps(
         retrieve_open_data(
             request, args.output, source=args.source,
