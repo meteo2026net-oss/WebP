@@ -68,6 +68,24 @@ def _coordinate_value(data_array, name):
     return None
 
 
+def _load_source_report(source: Path) -> dict | None:
+    """Load adjacent source provenance; require attribution for ECMWF Open Data products."""
+    sidecar = Path(str(source) + ".source.json")
+    if not sidecar.is_file():
+        return None
+    try:
+        report = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Source metadata is unreadable; refusing to omit attribution: {exc}") from exc
+    if not isinstance(report, dict):
+        raise ValueError("Source metadata must be a JSON object.")
+    if report.get("source") == "ecmwf_open_data":
+        attribution = report.get("attribution")
+        if not isinstance(attribution, dict) or not attribution.get("required_text"):
+            raise ValueError("ECMWF source metadata is missing required attribution.")
+    return report
+
+
 def convert_file(source: Path, output_dir: Path, requested: str | None = None, display_unit: str | None = None) -> list[dict]:
     """Decode all cfgrib groups and every non-spatial forecast/level slice."""
     try:
@@ -79,17 +97,12 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None, d
 
     output_dir.mkdir(parents=True, exist_ok=True)
     source_id = _source_id(source)
-    source_attribution = None
-    source_sidecar = Path(str(source) + ".source.json")
-    if source_sidecar.is_file():
-        try:
-            source_report = json.loads(source_sidecar.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"ECMWF source metadata is unreadable; refusing to omit attribution: {exc}") from exc
-        if source_report.get("source") == "ecmwf_open_data":
-            source_attribution = source_report.get("attribution")
-            if not isinstance(source_attribution, dict) or not source_attribution.get("required_text"):
-                raise ValueError("ECMWF source metadata is missing required attribution.")
+    source_report = _load_source_report(source)
+    source_attribution = (
+        source_report.get("attribution")
+        if source_report and source_report.get("source") == "ecmwf_open_data"
+        else None
+    )
     datasets = cfgrib.open_datasets(str(source), backend_kwargs={"indexpath": ""})
     products = []
     errors = []
