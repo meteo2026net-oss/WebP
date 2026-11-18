@@ -85,8 +85,9 @@ def retrieve_open_data(
         try:
             report["catalog_registration"] = catalog_sink.register_sidecar(sidecar_path)
         except Exception as exc:
-            from ..catalog_errors import CatalogRegistrationError
-            raise CatalogRegistrationError(target, sidecar_path, exc) from None
+            raise RuntimeError(
+                f"تم حفظ ملف GRIB وملف المصدر، لكن تعذر تسجيله في الكتالوج: {exc}"
+            ) from None
     return report
 
 
