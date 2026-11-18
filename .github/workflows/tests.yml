@@ -61,3 +61,12 @@ jobs:
               raise SystemExit("ECMWF attribution was not propagated into map layers")
           print(f"Validated live ECMWF run {report['returned_forecast_datetime']} with {len(layers)} map layer(s)")
           PY
+
+      - name: Upload live ECMWF GRIB2 and generated map products
+        if: always() && github.event_name == 'pull_request' && github.head_ref == 'integration/ecmwf-open-data-minimal'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecmwf-open-data-live-pr-${{ github.run_id }}
+          path: output/ecmwf-open-data-live/
+          if-no-files-found: warn
+          retention-days: 14
