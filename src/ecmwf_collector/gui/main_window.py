@@ -1,6 +1,7 @@
 """الواجهة العربية (RTL): الاتصال، الاستعراض، والتنزيل (المرحلتان 1 و2)."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import posixpath
 import socket
@@ -615,7 +616,11 @@ class MainWindow(QMainWindow):
             request["date"] = self.ecmwf_date.date().toString("yyyyMMdd")
 
         target_dir = self._download_root() / "ecmwf_open_data"
-        target = target_dir / f"{model}_{run_label}_{cycle:02d}_step{step:03d}.grib2"
+        param_id = hashlib.sha256(",".join(params).encode("utf-8")).hexdigest()[:10]
+        target = target_dir / (
+            f"{model}_{source}_{resolution}_{run_label}_{cycle:02d}_"
+            f"step{step:03d}_{param_id}.grib2"
+        )
         output_dir = project_root() / "output" / "map_data"
         self._log(
             f"بدء طلب ECMWF Open Data: النموذج={model}، الدورة={run_label} {cycle:02d} UTC، "
@@ -628,12 +633,13 @@ class MainWindow(QMainWindow):
             report = retrieve_open_data(
                 request, target, source=source, model=model, resolution=resolution
             )
+            downloaded_path = Path(report["path"])
             catalog_error = None
             try:
                 self.state.upsert(
-                    f"ecmwf-open-data://{model}/{run_label}/{cycle:02d}/step/{step}",
+                    f"ecmwf-open-data://{source}/{model}/{resolution}/{report.get('returned_forecast_datetime') or run_label}/{cycle:02d}/step/{step}/{param_id}",
                     remote_size=report["size_bytes"],
-                    local_path=str(target),
+                    local_path=str(downloaded_path),
                     status="complete",
                     local_size=report["size_bytes"],
                     sha256=report["sha256"],
@@ -645,7 +651,7 @@ class MainWindow(QMainWindow):
                 )
             except Exception as exc:
                 catalog_error = f"{type(exc).__name__}: {exc}"
-            products = convert_file(target, output_dir)
+            products = convert_file(downloaded_path, output_dir)
             return report, products, catalog_error
 
         self._run(work, self._ecmwf_done)
