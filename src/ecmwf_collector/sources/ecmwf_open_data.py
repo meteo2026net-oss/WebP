@@ -9,6 +9,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def validate_forecast_step(model: str, time: int, step: int) -> None:
+    """Reject forecast steps that are not published for the selected model and UTC cycle."""
+    if time not in (0, 6, 12, 18):
+        raise ValueError("دورة ECMWF يجب أن تكون 00 أو 06 أو 12 أو 18 UTC.")
+    if step < 0:
+        raise ValueError("ساعة التنبؤ لا يمكن أن تكون سالبة.")
+    if model == "aifs-single":
+        if step > 360 or step % 6:
+            raise ValueError("AIFS Single يوفر خطوات كل 6 ساعات حتى 360 ساعة.")
+        return
+    if model != "ifs":
+        raise ValueError("النموذج غير مدعوم.")
+    if time in (6, 18):
+        if step > 90 or step % 3:
+            raise ValueError("دورتا IFS 06 و18 UTC متاحتان من 0 إلى 90 ساعة كل 3 ساعات.")
+    elif step <= 144:
+        if step % 3:
+            raise ValueError("خطوات IFS حتى 144 ساعة تكون كل 3 ساعات.")
+    elif step > 360 or step < 150 or step % 6:
+        raise ValueError("خطوات IFS بعد 144 ساعة تكون من 150 إلى 360 ساعة كل 6 ساعات.")
+
+
 def retrieve_open_data(
     request,
     target,
@@ -25,6 +47,7 @@ def retrieve_open_data(
     if not request or "param" not in request or "step" not in request:
         raise ValueError("حدد param وstep صراحةً لتجنب تنزيل مجموعة ضخمة بالخطأ.")
     request = dict(request)
+    validate_forecast_step(model, int(request.get("time", 0)), int(request["step"]))
     if model == "aifs-single":
         if resolution != "0p25":
             raise ValueError("AIFS Single متاح بدقة 0.25° فقط.")
