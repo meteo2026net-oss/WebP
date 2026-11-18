@@ -229,6 +229,7 @@ class MainWindow(QMainWindow):
         self.ecmwf_model = QComboBox()
         self.ecmwf_model.addItem("IFS", "ifs")
         self.ecmwf_model.addItem("AIFS Single", "aifs-single")
+        self.ecmwf_model.addItem("AIFS Ensemble (عضو واحد)", "aifs-ens")
         self.ecmwf_source = QComboBox()
         self.ecmwf_source.addItem("ECMWF", "ecmwf")
         self.ecmwf_source.addItem("AWS Open Data", "aws")
@@ -255,6 +256,10 @@ class MainWindow(QMainWindow):
         self.ecmwf_model.currentIndexChanged.connect(self._on_ecmwf_model_changed)
         self.ecmwf_cycle.currentIndexChanged.connect(self._on_ecmwf_model_changed)
         self._on_ecmwf_model_changed()
+        self.ecmwf_member = QSpinBox()
+        self.ecmwf_member.setRange(1, 50)
+        self.ecmwf_member.setValue(1)
+        self.ecmwf_member.setVisible(False)
         self.ecmwf_params = QLineEdit("2t 10u 10v tp")
         self.ecmwf_params.setPlaceholderText("مثال: 2t 10u 10v tp")
         self.btn_ecmwf = QPushButton("تنزيل ECMWF وتحويله إلى خريطة")
@@ -268,6 +273,7 @@ class MainWindow(QMainWindow):
         ecmwf_form.addRow("دورة التنبؤ", self.ecmwf_cycle)
         ecmwf_form.addRow("بداية التنبؤ (ساعة)", self.ecmwf_step)
         ecmwf_form.addRow("نهاية التنبؤ (ساعة) — لإنشاء إطارات متحركة", self.ecmwf_step_end)
+        ecmwf_form.addRow("عضو AIFS Ensemble (1–50)", self.ecmwf_member)
         ecmwf_form.addRow("المتغيرات (رموز ECMWF مفصولة بمسافات)", self.ecmwf_params)
         ecmwf_form.addRow(self.btn_ecmwf)
         layout.addWidget(ecmwf_box)
@@ -585,7 +591,8 @@ class MainWindow(QMainWindow):
     def _on_ecmwf_model_changed(self, *_args):
         model = self.ecmwf_model.currentData()
         cycle = self.ecmwf_cycle.currentData()
-        is_aifs = model == "aifs-single"
+        is_aifs = model in ("aifs-single", "aifs-ens")
+        self.ecmwf_member.setVisible(model == "aifs-ens")
         high_resolution_index = self.ecmwf_resolution.findData("0p1")
         if high_resolution_index >= 0:
             item = self.ecmwf_resolution.model().item(high_resolution_index)
@@ -621,8 +628,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "نطاق تنبؤ غير متاح", str(exc))
             return
         request = {"time": cycle, "step": steps, "param": params, "type": "fc"}
+        member = None
         if model == "aifs-single":
             request["stream"] = "oper"
+        elif model == "aifs-ens":
+            member = self.ecmwf_member.value()
+            request.update({"stream": "enfo", "type": "pf", "number": member})
         run_label = "latest" if self.ecmwf_latest.isChecked() else self.ecmwf_date.date().toString("yyyyMMdd")
         if not self.ecmwf_latest.isChecked():
             request["date"] = self.ecmwf_date.date().toString("yyyyMMdd")
@@ -631,13 +642,15 @@ class MainWindow(QMainWindow):
         param_id = hashlib.sha256(",".join(params).encode("utf-8")).hexdigest()[:10]
         target = target_dir / (
             f"{model}_{source}_{resolution}_{run_label}_{cycle:02d}_"
-            f"steps{step_start:03d}-{step_end:03d}_{param_id}.grib2"
+            f"steps{step_start:03d}-{step_end:03d}"
+            f"{f'_member{member:02d}' if member is not None else ''}_{param_id}.grib2"
         )
         output_dir = project_root() / "output" / "map_data"
         self._log(
             f"بدء طلب ECMWF Open Data: النموذج={model}، الدورة={run_label} {cycle:02d} UTC، "
             f"الخطوات={step_start}–{step_end} ساعة ({len(steps)} إطاراً)، "
-            f"المتغيرات={','.join(params)}. لا تُستخدم بيانات دخول WMO."
+            f"المتغيرات={','.join(params)}"
+            f"{f'، عضو المجموعة={member}' if member is not None else ''}. لا تُستخدم بيانات دخول WMO."
         )
 
         def work():
@@ -650,7 +663,7 @@ class MainWindow(QMainWindow):
             catalog_error = None
             try:
                 self.state.upsert(
-                    f"ecmwf-open-data://{source}/{model}/{resolution}/{report.get('returned_forecast_datetime') or run_label}/{cycle:02d}/steps/{step_start}-{step_end}/{param_id}",
+                    f"ecmwf-open-data://{source}/{model}/{resolution}/{report.get('returned_forecast_datetime') or run_label}/{cycle:02d}/steps/{step_start}-{step_end}/member-{member or 'deterministic'}/{param_id}",
                     remote_size=report["size_bytes"],
                     local_path=str(downloaded_path),
                     status="complete",
