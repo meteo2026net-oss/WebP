@@ -248,6 +248,10 @@ class MainWindow(QMainWindow):
         self.ecmwf_step.setRange(0, 144)
         self.ecmwf_step.setSingleStep(3)
         self.ecmwf_step.setValue(24)
+        self.ecmwf_step_end = QSpinBox()
+        self.ecmwf_step_end.setRange(0, 360)
+        self.ecmwf_step_end.setSingleStep(3)
+        self.ecmwf_step_end.setValue(24)
         self.ecmwf_model.currentIndexChanged.connect(self._on_ecmwf_model_changed)
         self.ecmwf_cycle.currentIndexChanged.connect(self._on_ecmwf_model_changed)
         self._on_ecmwf_model_changed()
@@ -262,7 +266,8 @@ class MainWindow(QMainWindow):
         ecmwf_form.addRow(self.ecmwf_latest)
         ecmwf_form.addRow("تاريخ التشغيل", self.ecmwf_date)
         ecmwf_form.addRow("دورة التنبؤ", self.ecmwf_cycle)
-        ecmwf_form.addRow("ساعة التنبؤ (0–144)", self.ecmwf_step)
+        ecmwf_form.addRow("بداية التنبؤ (ساعة)", self.ecmwf_step)
+        ecmwf_form.addRow("نهاية التنبؤ (ساعة) — لإنشاء إطارات متحركة", self.ecmwf_step_end)
         ecmwf_form.addRow("المتغيرات (رموز ECMWF مفصولة بمسافات)", self.ecmwf_params)
         ecmwf_form.addRow(self.btn_ecmwf)
         layout.addWidget(ecmwf_box)
@@ -587,12 +592,12 @@ class MainWindow(QMainWindow):
             item.setEnabled(not is_aifs)
             if is_aifs and self.ecmwf_resolution.currentData() == "0p1":
                 self.ecmwf_resolution.setCurrentIndex(self.ecmwf_resolution.findData("0p25"))
-        self.ecmwf_step.setRange(0, 360 if is_aifs or cycle in (0, 12) else 90)
-        self.ecmwf_step.setSingleStep(6 if is_aifs else 3)
-        if is_aifs:
-            self.ecmwf_step.setValue(max(0, min(360, round(self.ecmwf_step.value() / 6) * 6)))
-        else:
-            self.ecmwf_step.setValue(min(self.ecmwf_step.value(), self.ecmwf_step.maximum()))
+        max_step = 360 if is_aifs or cycle in (0, 12) else 90
+        increment = 6 if is_aifs else 3
+        for control in (self.ecmwf_step, self.ecmwf_step_end):
+            control.setRange(0, max_step)
+            control.setSingleStep(increment)
+            control.setValue(max(0, min(max_step, round(control.value() / increment) * increment)))
 
     def _on_ecmwf_download(self):
         params = self.ecmwf_params.text().split()
@@ -607,14 +612,15 @@ class MainWindow(QMainWindow):
         resolution = self.ecmwf_resolution.currentData()
         source = self.ecmwf_source.currentData()
         cycle = self.ecmwf_cycle.currentData()
-        step = self.ecmwf_step.value()
+        step_start = self.ecmwf_step.value()
+        step_end = self.ecmwf_step_end.value()
         try:
-            from ..sources.ecmwf_open_data import validate_forecast_step
-            validate_forecast_step(model, cycle, step)
+            from ..sources.ecmwf_open_data import build_forecast_steps
+            steps = build_forecast_steps(model, cycle, step_start, step_end)
         except ValueError as exc:
-            QMessageBox.warning(self, "خطوة تنبؤ غير متاحة", str(exc))
+            QMessageBox.warning(self, "نطاق تنبؤ غير متاح", str(exc))
             return
-        request = {"time": cycle, "step": step, "param": params, "type": "fc"}
+        request = {"time": cycle, "step": steps, "param": params, "type": "fc"}
         if model == "aifs-single":
             request["stream"] = "oper"
         run_label = "latest" if self.ecmwf_latest.isChecked() else self.ecmwf_date.date().toString("yyyyMMdd")
@@ -625,12 +631,13 @@ class MainWindow(QMainWindow):
         param_id = hashlib.sha256(",".join(params).encode("utf-8")).hexdigest()[:10]
         target = target_dir / (
             f"{model}_{source}_{resolution}_{run_label}_{cycle:02d}_"
-            f"step{step:03d}_{param_id}.grib2"
+            f"steps{step_start:03d}-{step_end:03d}_{param_id}.grib2"
         )
         output_dir = project_root() / "output" / "map_data"
         self._log(
             f"بدء طلب ECMWF Open Data: النموذج={model}، الدورة={run_label} {cycle:02d} UTC، "
-            f"الخطوة={step}، المتغيرات={','.join(params)}. لا تُستخدم بيانات دخول WMO."
+            f"الخطوات={step_start}–{step_end} ساعة ({len(steps)} إطاراً)، "
+            f"المتغيرات={','.join(params)}. لا تُستخدم بيانات دخول WMO."
         )
 
         def work():
@@ -643,7 +650,7 @@ class MainWindow(QMainWindow):
             catalog_error = None
             try:
                 self.state.upsert(
-                    f"ecmwf-open-data://{source}/{model}/{resolution}/{report.get('returned_forecast_datetime') or run_label}/{cycle:02d}/step/{step}/{param_id}",
+                    f"ecmwf-open-data://{source}/{model}/{resolution}/{report.get('returned_forecast_datetime') or run_label}/{cycle:02d}/steps/{step_start}-{step_end}/{param_id}",
                     remote_size=report["size_bytes"],
                     local_path=str(downloaded_path),
                     status="complete",
