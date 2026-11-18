@@ -113,7 +113,11 @@ class OpenDataTests(unittest.TestCase):
             self.assertEqual(report["message_count"], 1)
             sidecar = target.with_suffix(".grib2.source.json")
             self.assertTrue(sidecar.is_file())
-            self.assertEqual(json.loads(sidecar.read_text())["model"], "ifs")
+            sidecar_report = json.loads(sidecar.read_text())
+            self.assertEqual(sidecar_report["model"], "ifs")
+            self.assertIn("CC BY 4.0", sidecar_report["attribution"]["license"])
+            self.assertIn("ECMWF", sidecar_report["attribution"]["required_text"])
+            self.assertTrue(sidecar_report["attribution"]["source_url"])
 
     def test_catalog_sink_called_only_after_validation(self):
         class FakeClient:
