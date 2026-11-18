@@ -119,9 +119,40 @@ def retrieve_open_data(
         for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
 
+    source_provider = {
+        "ecmwf": "ECMWF Open Data portal",
+        "aws": "Amazon Web Services Open Data mirror",
+    }.get(source, source)
+    source_url = (
+        "https://data.ecmwf.int/forecasts/"
+        if source == "ecmwf"
+        else "https://registry.opendata.aws/ecmwf-forecasts/"
+        if source == "aws"
+        else "https://www.ecmwf.int/en/forecasts/datasets/open-data"
+    )
+    attribution = {
+        "required_text": (
+            "This service is based on data and products of the European Centre "
+            "for Medium-Range Weather Forecasts (ECMWF)."
+        ),
+        "dataset": f"ECMWF {model.upper()} forecast data",
+        "copyright": f"© {datetime.now(timezone.utc).year} European Centre for Medium-Range Weather Forecasts (ECMWF)",
+        "source": source_provider,
+        "source_url": source_url,
+        "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "modified": True,
+        "modification": "GRIB2 fields were decoded and converted by WebP into map images and data arrays.",
+        "disclaimer": (
+            "ECMWF does not accept liability for errors or omissions in the data, "
+            "their availability, or losses arising from their use."
+        ),
+    }
     report = {
         "source": "ecmwf_open_data",
         "endpoint": source,
+        "source_provider": source_provider,
+        "attribution": attribution,
         "model": model,
         "resolution": resolution,
         "request": request,
