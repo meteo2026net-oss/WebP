@@ -88,36 +88,3 @@ jobs:
           PYTHONPATH: src
           QT_QPA_PLATFORM: offscreen
         run: python scripts/windows_gui_smoke.py
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          python - <<'PY'
-          import tempfile
-          from pathlib import Path
-          from PySide6.QtWidgets import QApplication
-          from ecmwf_collector.config import AppConfig
-          from ecmwf_collector.state import StateStore
-          from ecmwf_collector.gui.main_window import MainWindow
-
-          class NoSecrets:
-              available = False
-              def get_password(self, _username):
-                  return None
-
-          app = QApplication([])
-          with tempfile.TemporaryDirectory() as tmp:
-              root = Path(tmp)
-              config = AppConfig(download_root=str(root / "downloads"))
-              config.validate()
-              state = StateStore(root / "state.db")
-              window = MainWindow(config, root / "settings.json", NoSecrets(), state)
-              assert window.ecmwf_model.count() == 3
-              assert window.ecmwf_model.itemData(0) == "ifs"
-              assert window.ecmwf_model.itemData(1) == "aifs-single"
-              assert window.ecmwf_model.itemData(2) == "aifs-ens"
-              assert window.ecmwf_resolution.currentData() == "0p25"
-              assert window.ecmwf_step.value() == 24
-              assert window.ecmwf_step_end.value() == 24
-              window.close()
-              state.close()
-          print("Windows Qt UI startup and ECMWF controls: OK")
-          PY
