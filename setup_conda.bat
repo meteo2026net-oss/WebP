@@ -24,6 +24,7 @@ echo.
 echo Running ecCodes and cfgrib self-checks...
 conda run -n ecmwf-webp python -m eccodes selfcheck
 conda run -n ecmwf-webp python -m cfgrib selfcheck
+conda run -n ecmwf-webp python -c "from ecmwf.opendata import Client; print('ECMWF Open Data client: OK')"
 echo.
 echo Environment ready. Run run_collector_conda.bat to start the application.
 pause
