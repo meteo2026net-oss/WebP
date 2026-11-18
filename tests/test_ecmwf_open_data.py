@@ -5,7 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ecmwf_collector.sources.ecmwf_open_data import retrieve_open_data, validate_forecast_step
+from ecmwf_collector.sources.ecmwf_open_data import (
+    build_forecast_steps, retrieve_open_data, validate_forecast_step,
+)
 
 
 class OpenDataTests(unittest.TestCase):
@@ -27,6 +29,16 @@ class OpenDataTests(unittest.TestCase):
         for step in (3, 361):
             with self.assertRaises(ValueError):
                 validate_forecast_step("aifs-single", 6, step)
+
+    def test_builds_complete_forecast_sequences_without_invalid_steps(self):
+        self.assertEqual(build_forecast_steps("ifs", 0, 0, 12), [0, 3, 6, 9, 12])
+        self.assertEqual(build_forecast_steps("ifs", 0, 144, 150), [144, 150])
+        self.assertEqual(build_forecast_steps("ifs", 6, 0, 9), [0, 3, 6, 9])
+        self.assertEqual(build_forecast_steps("aifs-single", 18, 0, 24), [0, 6, 12, 18, 24])
+        with self.assertRaises(ValueError):
+            build_forecast_steps("ifs", 6, 0, 96)
+        with self.assertRaises(ValueError):
+            build_forecast_steps("aifs-single", 0, 6, 3)
 
     def test_requires_param_and_step(self):
         with tempfile.TemporaryDirectory() as directory:
