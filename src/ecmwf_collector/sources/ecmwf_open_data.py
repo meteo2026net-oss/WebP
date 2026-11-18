@@ -61,7 +61,13 @@ def retrieve_open_data(
     if not request or "param" not in request or "step" not in request:
         raise ValueError("حدد param وstep صراحةً لتجنب تنزيل مجموعة ضخمة بالخطأ.")
     request = dict(request)
-    validate_forecast_step(model, int(request.get("time", 0)), int(request["step"]))
+    requested_steps = request["step"]
+    if not isinstance(requested_steps, (list, tuple)):
+        requested_steps = [requested_steps]
+    if not requested_steps:
+        raise ValueError("يجب تحديد خطوة تنبؤ واحدة على الأقل.")
+    for requested_step in requested_steps:
+        validate_forecast_step(model, int(request.get("time", 0)), int(requested_step))
     if model == "aifs-single":
         if resolution != "0p25":
             raise ValueError("AIFS Single متاح بدقة 0.25° فقط.")
