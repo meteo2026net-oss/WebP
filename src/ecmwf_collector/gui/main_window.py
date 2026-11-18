@@ -587,7 +587,7 @@ class MainWindow(QMainWindow):
             item.setEnabled(not is_aifs)
             if is_aifs and self.ecmwf_resolution.currentData() == "0p1":
                 self.ecmwf_resolution.setCurrentIndex(self.ecmwf_resolution.findData("0p25"))
-        self.ecmwf_step.setRange(0, 360 if is_aifs else (90 if cycle in (6, 18) else 144))
+        self.ecmwf_step.setRange(0, 360 if is_aifs or cycle in (0, 12) else 90)
         self.ecmwf_step.setSingleStep(6 if is_aifs else 3)
         if is_aifs:
             self.ecmwf_step.setValue(max(0, min(360, round(self.ecmwf_step.value() / 6) * 6)))
@@ -608,6 +608,12 @@ class MainWindow(QMainWindow):
         source = self.ecmwf_source.currentData()
         cycle = self.ecmwf_cycle.currentData()
         step = self.ecmwf_step.value()
+        try:
+            from ..sources.ecmwf_open_data import validate_forecast_step
+            validate_forecast_step(model, cycle, step)
+        except ValueError as exc:
+            QMessageBox.warning(self, "خطوة تنبؤ غير متاحة", str(exc))
+            return
         request = {"time": cycle, "step": step, "param": params, "type": "fc"}
         if model == "aifs-single":
             request["stream"] = "oper"
