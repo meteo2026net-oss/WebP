@@ -9,26 +9,40 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def validate_forecast_step(model: str, time: int, step: int) -> None:
-    """Reject forecast steps that are not published for the selected model and UTC cycle."""
+def available_forecast_steps(model: str, time: int) -> list[int]:
+    """Return the published forecast steps for a model and UTC cycle."""
     if time not in (0, 6, 12, 18):
         raise ValueError("دورة ECMWF يجب أن تكون 00 أو 06 أو 12 أو 18 UTC.")
-    if step < 0:
-        raise ValueError("ساعة التنبؤ لا يمكن أن تكون سالبة.")
     if model == "aifs-single":
-        if step > 360 or step % 6:
-            raise ValueError("AIFS Single يوفر خطوات كل 6 ساعات حتى 360 ساعة.")
-        return
+        return list(range(0, 361, 6))
     if model != "ifs":
         raise ValueError("النموذج غير مدعوم.")
     if time in (6, 18):
-        if step > 90 or step % 3:
-            raise ValueError("دورتا IFS 06 و18 UTC متاحتان من 0 إلى 90 ساعة كل 3 ساعات.")
-    elif step <= 144:
-        if step % 3:
-            raise ValueError("خطوات IFS حتى 144 ساعة تكون كل 3 ساعات.")
-    elif step > 360 or step < 150 or step % 6:
-        raise ValueError("خطوات IFS بعد 144 ساعة تكون من 150 إلى 360 ساعة كل 6 ساعات.")
+        return list(range(0, 91, 3))
+    return list(range(0, 145, 3)) + list(range(150, 361, 6))
+
+
+def validate_forecast_step(model: str, time: int, step: int) -> None:
+    """Reject forecast steps that are not published for the selected model and UTC cycle."""
+    if int(step) not in available_forecast_steps(model, int(time)):
+        raise ValueError(
+            f"خطوة التنبؤ {step} ساعة غير متاحة للنموذج {model} ودورة {int(time):02d} UTC."
+        )
+
+
+def build_forecast_steps(model: str, time: int, start: int, end: int) -> list[int]:
+    """Build an inclusive, valid forecast-step sequence without requesting unsupported hours."""
+    validate_forecast_step(model, time, start)
+    validate_forecast_step(model, time, end)
+    if end < start:
+        raise ValueError("ساعة نهاية التوقع يجب ألا تسبق ساعة البداية.")
+    steps = [
+        step for step in available_forecast_steps(model, time)
+        if int(start) <= step <= int(end)
+    ]
+    if not steps or steps[0] != int(start) or steps[-1] != int(end):
+        raise ValueError("نطاق ساعات التنبؤ لا يطابق خطوات النموذج المتاحة.")
+    return steps
 
 
 def retrieve_open_data(
