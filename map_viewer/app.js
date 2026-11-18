@@ -107,12 +107,23 @@
       legendMin.textContent = Number(entry.value_min).toPrecision(3) + " " + (entry.display_units || entry.units || "");
       legendMax.textContent = Number(entry.value_max).toPrecision(3) + " " + (entry.display_units || entry.units || "");
     }
+    const attribution = entry.source_attribution;
     info.textContent = [
       entry.long_name || entry.variable || "Weather field",
       "وحدة العرض: " + (entry.display_units || entry.units || "غير معروفة"),
       "وقت الصلاحية: " + (entry.valid_time || "غير محدد"),
       "المدى: " + Number(entry.value_min).toFixed(2) + " إلى " + Number(entry.value_max).toFixed(2),
-      "الخلايا الصالحة: " + (entry.valid_cells ?? "—")
+      "الخلايا الصالحة: " + (entry.valid_cells ?? "—"),
+      ...(attribution ? [
+        attribution.required_text || "",
+        attribution.copyright || "",
+        "مصدر البيانات: " + (attribution.source || entry.source_provider || "ECMWF"),
+        "رابط المصدر: " + (attribution.source_url || ""),
+        "الترخيص: " + (attribution.license || "CC BY 4.0"),
+        "رابط الترخيص: " + (attribution.license_url || ""),
+        attribution.modification || "",
+        attribution.disclaimer || ""
+      ].filter(Boolean) : [])
     ].join(" | ");
     setStatus("تم تحميل الطبقة: " + (entry.variable || entry.image));
   }
