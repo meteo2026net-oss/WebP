@@ -79,6 +79,17 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None, d
 
     output_dir.mkdir(parents=True, exist_ok=True)
     source_id = _source_id(source)
+    source_attribution = None
+    source_sidecar = Path(str(source) + ".source.json")
+    if source_sidecar.is_file():
+        try:
+            source_report = json.loads(source_sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"ECMWF source metadata is unreadable; refusing to omit attribution: {exc}") from exc
+        if source_report.get("source") == "ecmwf_open_data":
+            source_attribution = source_report.get("attribution")
+            if not isinstance(source_attribution, dict) or not source_attribution.get("required_text"):
+                raise ValueError("ECMWF source metadata is missing required attribution.")
     datasets = cfgrib.open_datasets(str(source), backend_kwargs={"indexpath": ""})
     products = []
     errors = []
@@ -153,6 +164,11 @@ def convert_file(source: Path, output_dir: Path, requested: str | None = None, d
                         metadata = {
                             "source_file": source.name,
                             "source_id": source_id,
+                            "source_provider": (
+                                source_report.get("source_provider")
+                                if source_attribution is not None else None
+                            ),
+                            "source_attribution": source_attribution,
                             "group_index": group_index,
                             "slice_index": slice_index,
                             "grid_type": grid_type,
