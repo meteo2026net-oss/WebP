@@ -40,6 +40,47 @@ class OpenDataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_forecast_steps("aifs-single", 0, 6, 3)
 
+    def test_aifs_ensemble_requires_and_records_one_member(self):
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.request = None
+
+            def retrieve(self, request, target):
+                self.request = request
+                Path(target).write_bytes(b"GRIB" + b"x" * 128 + b"7777")
+                return SimpleNamespace(datetime=None)
+
+        client = FakeClient()
+        with tempfile.TemporaryDirectory() as directory:
+            with patch(
+                "ecmwf_collector.fileinspect.inspect_file",
+                return_value=SimpleNamespace(
+                    verdict="ok", kind="grib2", messages=1, problem=None
+                ),
+            ):
+                report = retrieve_open_data(
+                    {"param": ["2t"], "step": [6, 12], "time": 0,
+                     "type": "pf", "number": 7},
+                    Path(directory) / "aifs-ens.grib2",
+                    model="aifs-ens",
+                    resolution="0p25",
+                    client_factory=lambda **_kwargs: client,
+                )
+            self.assertEqual(client.request["stream"], "enfo")
+            self.assertEqual(client.request["number"], 7)
+            self.assertEqual(report["request"]["type"], "pf")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "عضو واحد"):
+                retrieve_open_data(
+                    {"param": ["2t"], "step": 6, "time": 0, "type": "pf"},
+                    Path(directory) / "missing-member.grib2",
+                    model="aifs-ens",
+                    resolution="0p25",
+                    client_factory=lambda **_kwargs: self.fail("Client must not be created"),
+                )
+
     def test_requires_param_and_step(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
