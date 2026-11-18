@@ -24,6 +24,13 @@ def retrieve_open_data(
     target.parent.mkdir(parents=True, exist_ok=True)
     if not request or "param" not in request or "step" not in request:
         raise ValueError("حدد param وstep صراحةً لتجنب تنزيل مجموعة ضخمة بالخطأ.")
+    request = dict(request)
+    if model == "aifs-single":
+        if resolution != "0p25":
+            raise ValueError("AIFS Single متاح بدقة 0.25° فقط.")
+        request.setdefault("stream", "oper")
+    elif model != "ifs":
+        raise ValueError("هذا الموصل يدعم حالياً IFS وAIFS Single فقط؛ دعم AIFS Ensemble يحتاج نوع طلب منفصل.")
     if client_factory is None:
         try:
             from ecmwf.opendata import Client
@@ -98,7 +105,7 @@ def main():
     parser.add_argument("--step", type=int, required=True)
     parser.add_argument("--param", nargs="+", required=True)
     parser.add_argument("--type", default="fc", choices=("fc", "pf", "cf", "em", "es"))
-    parser.add_argument("--model", default="ifs", choices=("ifs", "aifs-single", "aifs-ens"))
+    parser.add_argument("--model", default="ifs", choices=("ifs", "aifs-single"))
     parser.add_argument("--resolution", default="0p25", choices=("0p25", "0p1"))
     parser.add_argument("--source", default="ecmwf", choices=("ecmwf", "aws", "azure", "google"))
     parser.add_argument("--output", type=Path, required=True)
