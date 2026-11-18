@@ -52,7 +52,7 @@ python -m ecmwf_collector.tools.grib_to_map downloads/ecmwf/ifs.grib2 --output-d
 
 ## اختبار حي اختياري
 
-أُضيف سير عمل يدوي باسم **ECMWF Open Data live integration smoke test** في `.github/workflows/ecmwf-open-data-live-smoke.yml`. بعد اختيار الفرع في GitHub Actions وتشغيله، اختر IFS أو AIFS Single أو AIFS Ensemble. ينزل الاختبار حقل ضغط متوسط مستوى البحر `msl` لخطوة 24 ساعة، ويتحقق من GRIB2، ثم يحوله إلى PNG وNPZ وmanifest ويرفع المخرجات كـ artifact. هذا الاختبار لم يُشغّل بعد من هذه الجلسة؛ يجب تشغيله والتحقق من نتيجته قبل إعلان نجاح التنزيل الحي.
+أُضيف سير عمل يدوي باسم **ECMWF Open Data live integration smoke test** في `.github/workflows/ecmwf-open-data-live-smoke.yml`، ويصبح قابلاً للتشغيل من واجهة GitHub Actions بعد دمج ملف سير العمل إلى الفرع الافتراضي. كما أضيف فحص حي مشروط لطلب الدمج الخاص بهذا التكامل في `.github/workflows/tests.yml`. اختر IFS أو AIFS Single أو AIFS Ensemble عند تشغيل الاختبار اليدوي. ينزل الاختبار حقل ضغط متوسط مستوى البحر `msl` لخطوة 24 ساعة، ويتحقق من GRIB2، ثم يحوله إلى PNG وNPZ وmanifest ويرفع المخرجات كـ artifact. هذا الاختبار لم يُشغّل بعد من هذه الجلسة؛ يجب تشغيله والتحقق من نتيجته قبل إعلان نجاح التنزيل الحي.
 
 ## الترخيص
 
