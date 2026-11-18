@@ -49,9 +49,16 @@ def retrieve_open_data(
             raise RuntimeError("لم ينتج المصدر ملفاً غير فارغ.")
         from ecmwf_collector.fileinspect import inspect_file
         check = inspect_file(part)
-        if check.verdict != "ok" or not check.kind.startswith("grib"):
-            raise RuntimeError(f"فشل فحص GRIB: {check.verdict}: {check.problem}")
+        if check.verdict != "ok" or check.kind != "grib2":
+            raise RuntimeError(f"فشل فحص GRIB2: {check.verdict}: {check.problem}")
         os.replace(part, target)
+        actual_datetime = getattr(result, "datetime", None)
+        if not request.get("date") and actual_datetime is not None:
+            actual_label = actual_datetime.strftime("%Y%m%dT%H")
+            actual_target = target.with_name(target.name.replace("latest", actual_label))
+            if actual_target != target:
+                os.replace(target, actual_target)
+                target = actual_target
     except Exception:
         part.unlink(missing_ok=True)
         raise
@@ -77,6 +84,7 @@ def retrieve_open_data(
             if getattr(result, "datetime", None) else None
         ),
         "file": target.name,
+        "path": str(target.resolve()),
         "size_bytes": target.stat().st_size,
         "sha256": digest.hexdigest(),
         "grib_edition": check.kind,
