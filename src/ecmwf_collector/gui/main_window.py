@@ -606,13 +606,30 @@ class MainWindow(QMainWindow):
             report = retrieve_open_data(
                 request, target, source=source, model=model, resolution=resolution
             )
+            catalog_error = None
+            try:
+                self.state.upsert(
+                    f"ecmwf-open-data://{model}/{run_label}/{cycle:02d}/step/{step}",
+                    remote_size=report["size_bytes"],
+                    local_path=str(target),
+                    status="complete",
+                    local_size=report["size_bytes"],
+                    sha256=report["sha256"],
+                    detected_type="GRIB2",
+                    validation="valid",
+                    downloaded_at=report["retrieved_at_utc"],
+                    attempts=1,
+                    last_error=None,
+                )
+            except Exception as exc:
+                catalog_error = f"{type(exc).__name__}: {exc}"
             products = convert_file(target, output_dir)
-            return report, products
+            return report, products, catalog_error
 
         self._run(work, self._ecmwf_done)
 
     def _ecmwf_done(self, result):
-        report, products = result
+        report, products, catalog_error = result
         self._log(
             f"اكتمل تنزيل ECMWF والتحويل: {report['size_bytes']:,} بايت، "
             f"رسائل GRIB={report['message_count']}، طبقات خرائط={len(products)}. "
@@ -620,6 +637,10 @@ class MainWindow(QMainWindow):
             f"ملف البيانات: {report['file']}\n"
             f"كتالوج الخرائط: {project_root() / 'output' / 'map_data' / 'manifest.json'}"
         )
+        if catalog_error:
+            self._log(f"تحذير: تم تنزيل الملف وتحويله، لكن تعذّر تحديث سجل الملفات المحلي: {catalog_error}")
+        else:
+            self._log("سُجل ملف ECMWF في قاعدة حالة الملفات المحلية.")
         self._log("يمكن الآن فتح خريطة الطقس لعرض الطبقات الجديدة.")
 
     def _on_manifest(self):
