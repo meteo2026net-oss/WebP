@@ -18,7 +18,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray
       - name: Compile Python sources
-        run: python -m compileall -q src main.py serve_map.py tests
+        run: python -m compileall -q src main.py serve_map.py tests scripts
       - name: Check map viewer JavaScript syntax
         run: node --check map_viewer/app.js
       - name: Run unit tests
@@ -86,6 +86,8 @@ jobs:
       - name: Start the Qt desktop UI and verify ECMWF controls
         env:
           PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/windows_gui_smoke.py
           QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
