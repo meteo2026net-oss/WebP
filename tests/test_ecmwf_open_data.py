@@ -5,10 +5,29 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ecmwf_collector.sources.ecmwf_open_data import retrieve_open_data
+from ecmwf_collector.sources.ecmwf_open_data import retrieve_open_data, validate_forecast_step
 
 
 class OpenDataTests(unittest.TestCase):
+    def test_ifs_forecast_steps_follow_cycle_availability(self):
+        for step in (0, 3, 144, 150, 156, 360):
+            validate_forecast_step("ifs", 0, step)
+            validate_forecast_step("ifs", 12, step)
+        for step in (0, 3, 90):
+            validate_forecast_step("ifs", 6, step)
+            validate_forecast_step("ifs", 18, step)
+        for time, step in ((0, 147), (12, 145), (0, 366), (6, 93), (18, 144)):
+            with self.subTest(time=time, step=step):
+                with self.assertRaises(ValueError):
+                    validate_forecast_step("ifs", time, step)
+
+    def test_aifs_single_forecast_steps_are_six_hourly(self):
+        for step in (0, 6, 24, 180, 360):
+            validate_forecast_step("aifs-single", 6, step)
+        for step in (3, 361):
+            with self.assertRaises(ValueError):
+                validate_forecast_step("aifs-single", 6, step)
+
     def test_requires_param_and_step(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
