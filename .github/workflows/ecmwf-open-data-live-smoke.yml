@@ -51,8 +51,10 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
+          GRIB_FILE="$(find output/ecmwf-open-data-live -maxdepth 1 -type f -name '*.grib2' -print -quit)"
+          test -n "$GRIB_FILE"
           python -m ecmwf_collector.tools.grib_to_map \
-            output/ecmwf-open-data-live/ifs_latest.grib2 \
+            "$GRIB_FILE" \
             --variable msl \
             --output-dir output/ecmwf-open-data-live/map
           python - <<'PY'
