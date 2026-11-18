@@ -2,6 +2,26 @@
 
 الهدف هو بناء مسار متكامل: **تنزيل GRIB من ECMWF ← فحص الحقول ← تحويلها إلى طبقات جغرافية ← عرضها على خريطة تفاعلية**.
 
+
+## مصدر إضافي: ECMWF Open Data
+
+أضيف موصل مستقل لبيانات ECMWF Open Data إلى جانب اتصال WMO Support الحالي. يستخدم الموصل مكتبة `ecmwf-opendata`، ويطلب متغيرات وخطوات تنبؤ محددة لتجنب التنزيلات الكبيرة غير المقصودة.
+
+مثال تنزيل انتقائي من IFS:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m ecmwf_collector.sources.ecmwf_open_data --model ifs --resolution 0p25 --time 0 --step 6 --param 2t 10u 10v --output downloads/ecmwf/ifs.grib2
+```
+
+يمكن إضافة `--date YYYY-MM-DD` لتحديد دورة بعينها. بعد التنزيل، يتحقق البرنامج من بنية GRIB، وينشئ ملف بيانات مصدر يتضمن SHA-256، ثم يمكن تمرير الملف إلى محول الخرائط الموجود:
+
+```powershell
+python -m ecmwf_collector.tools.grib_to_map downloads/ecmwf/ifs.grib2 --output-dir output/map_data/ecmwf
+```
+
+التكامل الحالي يضيف موصل التنزيل وسطر الأوامر والاختبارات والتوثيق؛ ولا يعني ذلك أن التنزيل الحي أو كل أنواع الشبكات والحقول قد اجتازت اختباراً تشغيلياً بعد. كما أن موصل Open Data منفصل عن بيانات WMO Support المقيدة. راجع [دليل ECMWF Open Data العربي](docs/ECMWF_OPEN_DATA_AR.md) وشروط الترخيص والإسناد قبل إعادة توزيع المنتجات.
+
 ## مكونات المشروع
 - `src/ecmwf_collector/`: الاتصال بالخادم، استعراض الملفات، التنزيل والاستكمال والتحقق.
 - `src/ecmwf_collector/gui/`: واجهة سطح المكتب العربية.
