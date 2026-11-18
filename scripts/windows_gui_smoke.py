@@ -23,6 +23,7 @@ class NoSecrets:
 
 def main() -> int:
     app = QApplication([])
+    app.setQuitOnLastWindowClosed(False)
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = AppConfig(download_root=str(root / "downloads"))
@@ -43,11 +44,14 @@ def main() -> int:
             assert window.ecmwf_resolution.currentData() == "0p25"
             window.ecmwf_model.setCurrentIndex(0)
             assert window.ecmwf_member.isHidden()
-            print("Windows Qt UI startup and ECMWF controls: OK")
         finally:
             if window is not None:
-                window.close()
+                window.hide()
+            window.close()
+            app.processEvents()
             state.close()
+        app.quit()
+    print("Windows Qt UI startup and ECMWF controls: OK")
     return 0
 
 
