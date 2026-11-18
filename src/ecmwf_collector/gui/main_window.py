@@ -247,6 +247,9 @@ class MainWindow(QMainWindow):
         self.ecmwf_step.setRange(0, 144)
         self.ecmwf_step.setSingleStep(3)
         self.ecmwf_step.setValue(24)
+        self.ecmwf_model.currentIndexChanged.connect(self._on_ecmwf_model_changed)
+        self.ecmwf_cycle.currentIndexChanged.connect(self._on_ecmwf_model_changed)
+        self._on_ecmwf_model_changed()
         self.ecmwf_params = QLineEdit("2t 10u 10v tp")
         self.ecmwf_params.setPlaceholderText("مثال: 2t 10u 10v tp")
         self.btn_ecmwf = QPushButton("تنزيل ECMWF وتحويله إلى خريطة")
@@ -573,6 +576,23 @@ class MainWindow(QMainWindow):
         for item in failed[:10]:
             self._log(f"لم تتم معالجة {item.get('source')}: {item.get('error')}")
 
+    def _on_ecmwf_model_changed(self, *_args):
+        model = self.ecmwf_model.currentData()
+        cycle = self.ecmwf_cycle.currentData()
+        is_aifs = model == "aifs-single"
+        high_resolution_index = self.ecmwf_resolution.findData("0p1")
+        if high_resolution_index >= 0:
+            item = self.ecmwf_resolution.model().item(high_resolution_index)
+            item.setEnabled(not is_aifs)
+            if is_aifs and self.ecmwf_resolution.currentData() == "0p1":
+                self.ecmwf_resolution.setCurrentIndex(self.ecmwf_resolution.findData("0p25"))
+        self.ecmwf_step.setRange(0, 360 if is_aifs else (90 if cycle in (6, 18) else 144))
+        self.ecmwf_step.setSingleStep(6 if is_aifs else 3)
+        if is_aifs:
+            self.ecmwf_step.setValue(max(0, min(360, round(self.ecmwf_step.value() / 6) * 6)))
+        else:
+            self.ecmwf_step.setValue(min(self.ecmwf_step.value(), self.ecmwf_step.maximum()))
+
     def _on_ecmwf_download(self):
         params = self.ecmwf_params.text().split()
         if not params:
@@ -588,6 +608,8 @@ class MainWindow(QMainWindow):
         cycle = self.ecmwf_cycle.currentData()
         step = self.ecmwf_step.value()
         request = {"time": cycle, "step": step, "param": params, "type": "fc"}
+        if model == "aifs-single":
+            request["stream"] = "oper"
         run_label = "latest" if self.ecmwf_latest.isChecked() else self.ecmwf_date.date().toString("yyyyMMdd")
         if not self.ecmwf_latest.isChecked():
             request["date"] = self.ecmwf_date.date().toString("yyyyMMdd")
