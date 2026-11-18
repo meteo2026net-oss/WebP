@@ -9,6 +9,7 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -17,10 +18,73 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip numpy Pillow pyproj scipy xarray
       - name: Compile Python sources
-        run: python -m compileall -q src main.py serve_map.py tests
+        run: python -m compileall -q src main.py serve_map.py tests scripts
       - name: Check map viewer JavaScript syntax
         run: node --check map_viewer/app.js
       - name: Run unit tests
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -t . -v
+
+      - name: Live ECMWF Open Data download and map smoke test
+        if: github.event_name == 'pull_request' && github.head_ref == 'integration/ecmwf-open-data-minimal'
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m pip install ecmwf-opendata cfgrib eccodes
+          mkdir -p output/ecmwf-open-data-live
+          python -m ecmwf_collector.sources.ecmwf_open_data \
+            --model ifs --resolution 0p25 --time 0 --step 24 \
+            --param msl --output output/ecmwf-open-data-live/latest.grib2
+          GRIB_FILE="$(find output/ecmwf-open-data-live -maxdepth 1 -type f -name '*.grib2' -print -quit)"
+          test -n "$GRIB_FILE"
+          python -m ecmwf_collector.tools.grib_to_map \
+            "$GRIB_FILE" --variable msl --output-dir output/ecmwf-open-data-live/map
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("output/ecmwf-open-data-live")
+          source = next(root.glob("*.grib2"))
+          sidecar = source.with_suffix(source.suffix + ".source.json")
+          report = json.loads(sidecar.read_text(encoding="utf-8"))
+          if report.get("integrity") != "ok" or report.get("grib_edition") != "grib2":
+              raise SystemExit("Live ECMWF GRIB2 validation failed")
+          attribution = report.get("attribution", {})
+          if not attribution.get("required_text") or "CC BY 4.0" not in attribution.get("license", ""):
+              raise SystemExit("Required ECMWF attribution or licence metadata is missing")
+          manifest_path = root / "map" / "manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          layers = [layer for layer in manifest.get("layers", []) if layer.get("variable") == "msl"]
+          if not layers:
+              raise SystemExit("No msl map layer was generated from the live ECMWF file")
+          if not all(layer.get("source_attribution", {}).get("required_text") for layer in layers):
+              raise SystemExit("ECMWF attribution was not propagated into map layers")
+          print(f"Validated live ECMWF run {report['returned_forecast_datetime']} with {len(layers)} map layer(s)")
+          PY
+
+      - name: Upload live ECMWF GRIB2 and generated map products
+        if: always() && github.event_name == 'pull_request' && github.head_ref == 'integration/ecmwf-open-data-minimal'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecmwf-open-data-live-pr-${{ github.run_id }}
+          path: output/ecmwf-open-data-live/
+          if-no-files-found: warn
+          retention-days: 14
+  windows-gui-smoke:
+    if: github.event_name == 'pull_request' && github.head_ref == 'integration/ecmwf-open-data-minimal'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install desktop application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Start the Qt desktop UI and verify ECMWF controls
+        env:
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/windows_gui_smoke.py

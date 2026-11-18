@@ -3,7 +3,9 @@ import unittest
 from pathlib import Path
 
 from ecmwf_collector.state import StateStore
-from ecmwf_collector.tools.migrate_sqlite_to_postgres import create_sqlite_backup
+from importlib.util import find_spec
+
+from ecmwf_collector.tools.sqlite_backup import create_sqlite_backup
 
 
 class SQLiteBackupTests(unittest.TestCase):
@@ -35,6 +37,11 @@ class SQLiteBackupTests(unittest.TestCase):
                 backup.close()
 
 
+@unittest.skipUnless(
+    find_spec("ecmwf_collector.postgres_provision") is not None
+    and find_spec("ecmwf_collector.postgres_state") is not None,
+    "PostgreSQL backend is not included in this build; these optional tests remain visible but skipped.",
+)
 class PostgresProvisionTests(unittest.TestCase):
     def test_provision_quotes_generated_secret_and_saves_app_login_only(self):
         import contextlib
@@ -205,6 +212,10 @@ class PostgresProvisionTests(unittest.TestCase):
         self.assertTrue(any("DROP ROLE IF EXISTS ecmwf_webp_app" in item for item in statements))
 
 
+@unittest.skipUnless(
+    find_spec("ecmwf_collector.tools.configure_postgres") is not None,
+    "PostgreSQL configuration CLI is not included in this build; these optional tests remain visible but skipped.",
+)
 class ConfigurePostgresCliTests(unittest.TestCase):
     def test_cli_saves_only_the_restricted_application_dsn(self):
         import contextlib

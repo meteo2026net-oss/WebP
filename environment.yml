@@ -12,3 +12,6 @@ dependencies:
   - pandas
   - pyside6
   - keyring
+  - pip
+  - pip:
+      - "ecmwf-opendata>=0.3.35,<0.4"
