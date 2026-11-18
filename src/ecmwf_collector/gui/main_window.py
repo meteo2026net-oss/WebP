@@ -222,6 +222,47 @@ class MainWindow(QMainWindow):
         dform.addRow(self.pbar_label)
         layout.addWidget(dl)
 
+        # ECMWF Open Data: independent public-data source; it does not use WMO FTP credentials.
+        ecmwf_box = QGroupBox("بيانات ECMWF Open Data (مصدر مفتوح منفصل)")
+        ecmwf_form = QFormLayout(ecmwf_box)
+        self.ecmwf_model = QComboBox()
+        self.ecmwf_model.addItem("IFS", "ifs")
+        self.ecmwf_model.addItem("AIFS Single", "aifs-single")
+        self.ecmwf_source = QComboBox()
+        self.ecmwf_source.addItem("ECMWF", "ecmwf")
+        self.ecmwf_source.addItem("AWS Open Data", "aws")
+        self.ecmwf_resolution = QComboBox()
+        self.ecmwf_resolution.addItem("0.25°", "0p25")
+        self.ecmwf_resolution.addItem("0.1° (إذا كان متاحاً للنموذج)", "0p1")
+        self.ecmwf_latest = QCheckBox("استخدم أحدث دورة متاحة")
+        self.ecmwf_latest.setChecked(True)
+        self.ecmwf_date = QDateEdit(QDate.currentDate())
+        self.ecmwf_date.setCalendarPopup(True)
+        self.ecmwf_date.setDisplayFormat("yyyy-MM-dd")
+        self.ecmwf_date.setEnabled(False)
+        self.ecmwf_cycle = QComboBox()
+        for cycle in ("00", "06", "12", "18"):
+            self.ecmwf_cycle.addItem(f"{cycle}:00 UTC", int(cycle))
+        self.ecmwf_step = QSpinBox()
+        self.ecmwf_step.setRange(0, 144)
+        self.ecmwf_step.setSingleStep(3)
+        self.ecmwf_step.setValue(24)
+        self.ecmwf_params = QLineEdit("2t 10u 10v tp")
+        self.ecmwf_params.setPlaceholderText("مثال: 2t 10u 10v tp")
+        self.btn_ecmwf = QPushButton("تنزيل ECMWF وتحويله إلى خريطة")
+        self.ecmwf_latest.toggled.connect(self.ecmwf_date.setDisabled)
+        self.btn_ecmwf.clicked.connect(self._on_ecmwf_download)
+        ecmwf_form.addRow("النموذج", self.ecmwf_model)
+        ecmwf_form.addRow("مصدر الملفات", self.ecmwf_source)
+        ecmwf_form.addRow("الدقة", self.ecmwf_resolution)
+        ecmwf_form.addRow(self.ecmwf_latest)
+        ecmwf_form.addRow("تاريخ التشغيل", self.ecmwf_date)
+        ecmwf_form.addRow("دورة التنبؤ", self.ecmwf_cycle)
+        ecmwf_form.addRow("ساعة التنبؤ (0–144)", self.ecmwf_step)
+        ecmwf_form.addRow("المتغيرات (رموز ECMWF مفصولة بمسافات)", self.ecmwf_params)
+        ecmwf_form.addRow(self.btn_ecmwf)
+        layout.addWidget(ecmwf_box)
+
         self.status = QPlainTextEdit()
         self.status.setReadOnly(True)
         self.status.setMinimumHeight(140)
@@ -326,7 +367,7 @@ class MainWindow(QMainWindow):
     def _busy(self, busy: bool):
         locked = busy or self._downloading
         for b in (self.btn_test, self.btn_root, self.btn_up, self.btn_refresh, self.btn_copy,
-                  self.btn_preview, self.btn_start, self.btn_process):
+                  self.btn_preview, self.btn_start, self.btn_process, self.btn_ecmwf):
             b.setEnabled(not locked)
 
     def _on_test(self):
@@ -531,6 +572,55 @@ class MainWindow(QMainWindow):
         )
         for item in failed[:10]:
             self._log(f"لم تتم معالجة {item.get('source')}: {item.get('error')}")
+
+    def _on_ecmwf_download(self):
+        params = self.ecmwf_params.text().split()
+        if not params:
+            QMessageBox.warning(self, "متغيرات ناقصة", "أدخل رمز متغير جوي واحداً على الأقل.")
+            return
+        if len(set(params)) != len(params):
+            QMessageBox.warning(self, "متغيرات مكررة", "احذف رموز المتغيرات المكررة.")
+            return
+
+        model = self.ecmwf_model.currentData()
+        resolution = self.ecmwf_resolution.currentData()
+        source = self.ecmwf_source.currentData()
+        cycle = self.ecmwf_cycle.currentData()
+        step = self.ecmwf_step.value()
+        request = {"time": cycle, "step": step, "param": params, "type": "fc"}
+        run_label = "latest" if self.ecmwf_latest.isChecked() else self.ecmwf_date.date().toString("yyyyMMdd")
+        if not self.ecmwf_latest.isChecked():
+            request["date"] = self.ecmwf_date.date().toString("yyyyMMdd")
+
+        target_dir = self._download_root() / "ecmwf_open_data"
+        target = target_dir / f"{model}_{run_label}_{cycle:02d}_step{step:03d}.grib2"
+        output_dir = project_root() / "output" / "map_data"
+        self._log(
+            f"بدء طلب ECMWF Open Data: النموذج={model}، الدورة={run_label} {cycle:02d} UTC، "
+            f"الخطوة={step}، المتغيرات={','.join(params)}. لا تُستخدم بيانات دخول WMO."
+        )
+
+        def work():
+            from ..tools.grib_to_map import convert_file
+            from ..sources.ecmwf_open_data import retrieve_open_data
+            report = retrieve_open_data(
+                request, target, source=source, model=model, resolution=resolution
+            )
+            products = convert_file(target, output_dir)
+            return report, products
+
+        self._run(work, self._ecmwf_done)
+
+    def _ecmwf_done(self, result):
+        report, products = result
+        self._log(
+            f"اكتمل تنزيل ECMWF والتحويل: {report['size_bytes']:,} بايت، "
+            f"رسائل GRIB={report['message_count']}، طبقات خرائط={len(products)}. "
+            f"بصمة SHA-256={report['sha256']}\n"
+            f"ملف البيانات: {report['file']}\n"
+            f"كتالوج الخرائط: {project_root() / 'output' / 'map_data' / 'manifest.json'}"
+        )
+        self._log("يمكن الآن فتح خريطة الطقس لعرض الطبقات الجديدة.")
 
     def _on_manifest(self):
         out = project_root() / "state" / "manifest.csv"
