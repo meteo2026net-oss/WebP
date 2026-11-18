@@ -5,6 +5,7 @@ import hashlib
 import logging
 import posixpath
 import socket
+import shutil
 import subprocess
 import sys
 import webbrowser
@@ -639,6 +640,31 @@ class MainWindow(QMainWindow):
             request["date"] = self.ecmwf_date.date().toString("yyyyMMdd")
 
         target_dir = self._download_root() / "ecmwf_open_data"
+        try:
+            free_bytes = shutil.disk_usage(target_dir.parent).free
+        except OSError as exc:
+            QMessageBox.warning(self, "تعذّر فحص مساحة القرص", str(exc))
+            return
+        minimum_free = self._read_cfg().min_free_gb * 1024 ** 3
+        if free_bytes < minimum_free:
+            QMessageBox.warning(
+                self,
+                "مساحة القرص غير كافية",
+                f"المساحة الحرة الحالية {free_bytes / 1024**3:.1f} GB، "
+                f"والحد الأدنى المحمي في الإعدادات {minimum_free / 1024**3:.1f} GB. "
+                "غيّر مجلد التنزيل أو خفّض حد المساحة الحرة قبل المتابعة.",
+            )
+            return
+        if len(steps) > 24 or len(params) > 5:
+            answer = QMessageBox.question(
+                self,
+                "تأكيد تنزيل متعدد الإطارات",
+                f"سيتم طلب {len(steps)} خطوة تنبؤ × {len(params)} متغيراً "
+                f"{'وعضو AIFS Ensemble ' + str(member) if member is not None else ''}. "
+                "قد ينتج عن ذلك ملف كبير ويستغرق التنزيل والتحويل وقتاً. هل تريد المتابعة؟",
+            )
+            if answer != QMessageBox.Yes:
+                return
         param_id = hashlib.sha256(",".join(params).encode("utf-8")).hexdigest()[:10]
         target = target_dir / (
             f"{model}_{source}_{resolution}_{run_label}_{cycle:02d}_"
